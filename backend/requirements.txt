@@ -1,0 +1,7 @@
+redis==4.6.0
+requests==2.31.0
+python-dotenv==1.0.0
+polygon-api-client==1.13.2
+psycopg2-binary==2.9.7
+sqlalchemy==2.0.21
+pytz==2023.3
