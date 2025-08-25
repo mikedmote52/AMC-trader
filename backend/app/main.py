@@ -6,7 +6,7 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 from fastapi.responses import Response
 import time
 from app.config import settings
-from app.routes import health, holdings, recommendations, trades
+from app.routes import holdings, recommendations, trades
 from app.deps import Base, engine
 
 # Configure structured logging
@@ -75,7 +75,6 @@ async def log_requests(request, call_next):
 
 # Include routers
 app.include_router(ops_router)
-app.include_router(health.router)
 app.include_router(holdings.router)
 app.include_router(recommendations.router)
 app.include_router(trades.router)
