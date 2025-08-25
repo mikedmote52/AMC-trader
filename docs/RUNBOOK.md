@@ -1,13 +1,9 @@
-# AMC-Trader Shadow Runbook
+Shadow operations
+1. Health: curl -s -w "\nHTTP %{http_code}\n" $API/health
+2. Discovery: curl -s -X POST $API/discovery/run
+3. Metrics: curl -s $API/metrics | head
+4. Verify inserts: c0=$(curl -s $API/recommendations?limit=1000 | jq length); sleep 660; c1=$(curl -s $API/recommendations?limit=1000 | jq length); echo "$c0 -> $c1"
 
-Verify end-to-end:
-1. BASE_URL=https://amc-trader.onrender.com ./scripts/verify_discovery.sh
-2. Open the dashboard; recommendations should refresh every ~15s.
-
-Manual discovery run (useful off the cron cadence):
-- BASE_URL=https://amc-trader.onrender.com ./scripts/run_discovery.sh
-
-Cut a shadow release tag after green checks:
-- ./scripts/tag_shadow.sh v0.1-shadow
-
-If cron was created natively and not with Docker, delete it. Only the Docker cron should exist.
+Risk guardrails for live flip
+- Set LIVE_TRADING=0 until a full day of green runs.
+- Configure MAX_POSITION_USD, MAX_PORTFOLIO_ALLOCATION_PCT, and KILL_SWITCH in Render before enabling live.
