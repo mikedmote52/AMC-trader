@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: amc-api
+    env: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+
+  - type: static
+    name: amc-ui
+    env: static
+    region: oregon
+    plan: starter
+    buildCommand: npm run build
+    publishPath: ./dist
+    pullRequestPreviewsEnabled: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+  - type: cron
+    name: amc-cron
+    env: python
+    region: oregon
+    plan: starter
+    schedule: "0 9 * * 1-5"  # 9 AM weekdays
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m backend.src.jobs.discover
+    envVars:
+      - key: PYTHONPATH
+        value: .
