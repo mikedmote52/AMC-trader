@@ -11,7 +11,7 @@ from app.deps import (
 logger = structlog.get_logger()
 router = APIRouter()
 
-@router.get("/health")
+# @router.get("/health")  # disabled in favor of spec-compliant ops.health
 async def health_check():
     """
     Health check endpoint - returns 200 only if all services are healthy,
