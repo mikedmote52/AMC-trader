@@ -4,12 +4,12 @@ Wrapper script for Render cron job to run discovery
 """
 import sys
 import os
+import subprocess
 
-# Add backend to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
-
-# Run the discovery job
-from src.jobs.discover import main
-
+# Run the discovery job directly as a subprocess to avoid import issues
 if __name__ == "__main__":
-    sys.exit(main())
+    result = subprocess.run(
+        [sys.executable, "backend/src/jobs/discover.py"],
+        env=os.environ.copy()
+    )
+    sys.exit(result.returncode)
