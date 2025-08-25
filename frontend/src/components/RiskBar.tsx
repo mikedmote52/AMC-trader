@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { usePolling } from '../hooks/usePolling';
 import { API_ENDPOINTS } from '../config/api';
-import type { Holding, Recommendation } from '../types/api';
 import './RiskBar.css';
 
 export function RiskBar() {
