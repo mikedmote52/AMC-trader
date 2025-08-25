@@ -1,6 +1,5 @@
 import { usePolling } from '../hooks/usePolling';
 import { API_ENDPOINTS } from '../config/api';
-import type { Holding } from '../types/api';
 import './Holdings.css';
 
 export function Holdings() {

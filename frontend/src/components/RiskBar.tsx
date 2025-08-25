@@ -5,8 +5,8 @@ import type { Holding, Recommendation } from '../types/api';
 import './RiskBar.css';
 
 export function RiskBar() {
-  const { data: holdings } = usePolling<Holding[]>(API_ENDPOINTS.holdings);
-  const { data: recommendations } = usePolling<Recommendation[]>(API_ENDPOINTS.recommendations);
+  const { data: holdings } = usePolling<any>(API_ENDPOINTS.holdings);
+  const { data: recommendations } = usePolling<any>(API_ENDPOINTS.recommendations);
 
   const riskMetrics = useMemo(() => {
     let totalValue = 0;
