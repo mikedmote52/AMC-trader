@@ -1,0 +1,26 @@
+cronJobs:
+  - name: amc-discovery
+    type: cron
+    env: docker
+    schedule: "*/5 * * * MON-FRI"
+    dockerfilePath: ./Dockerfile
+    startCommand: bash -lc "cd backend && python -m src.jobs.discover"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: POLYGON_API_KEY
+        sync: false
+      - key: ALPACA_API_KEY
+        sync: false
+      - key: ALPACA_API_SECRET
+        sync: false
+      - key: ALPACA_BASE_URL
+        value: https://paper-api.alpaca.markets
+      - key: LIVE_TRADING
+        value: "0"
+      - key: HTTP_TIMEOUT
+        value: "5"
+      - key: HTTP_RETRIES
+        value: "2"
