@@ -1,0 +1,95 @@
+.holdings {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 1.5rem;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.holdings h2 {
+  margin: 0 0 1.5rem 0;
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: #e2e8f0;
+}
+
+.holdings-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.holding-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 1rem;
+  transition: all 0.2s ease;
+}
+
+.holding-card:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
+}
+
+.holding-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.symbol {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #00d4ff;
+}
+
+.qty {
+  font-size: 0.9rem;
+  color: #94a3b8;
+}
+
+.holding-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.price-info,
+.value-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.current-price,
+.market-value {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.avg-price {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.unrealized-pl {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.unrealized-pl.positive {
+  color: #10b981;
+}
+
+.unrealized-pl.negative {
+  color: #ef4444;
+}
+
+.no-holdings {
+  text-align: center;
+  padding: 3rem;
+  color: #94a3b8;
+  font-style: italic;
+}
