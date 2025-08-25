@@ -3,25 +3,65 @@
 ## System Overview
 Professional-grade stock discovery and portfolio management system combining AlphaStack's proven VIGL pattern detection with real-time portfolio analytics.
 
+## Source of Truth: API + Ops Contract at v0.3
+
+Health endpoints:
+GET /health and GET /healthz return HTTP 200 with {"status":"healthy","components":{...}} when required env is present. They return HTTP 503 with {"status":"degraded","components":{"env":{"ok":false,"missing":[...]}}} when any required env is absent.
+
+Discovery trigger:
+GET or POST /discovery/run returns {"status":"queued","started":true,"cmd":"python -m src.jobs.discover"} and does not block the worker.
+
+Recommendations:
+GET /recommendations returns the live discovery feed ordered by most recent. The frontend polls ~every 15 seconds and must not rely on client mocks.
+
+Trading:
+Shadow by default with LIVE_TRADING=0. In live mode, requests to /trades/execute must be rejected with HTTP 400 when KILL_SWITCH=1.
+
+Metrics:
+GET /metrics exposes Prometheus text including amc_discovery_triggered_total and amc_discovery_errors_total.
+
+Required environment variables on API and discovery cron:
+DATABASE_URL, REDIS_URL, POLYGON_API_KEY, ALPACA_API_KEY, ALPACA_API_SECRET, ALPACA_BASE_URL, HTTP_TIMEOUT, HTTP_RETRIES, LIVE_TRADING. Optional guardrails: KILL_SWITCH, MAX_POSITION_USD, MAX_PORTFOLIO_ALLOCATION_PCT.
+
+Operational procedure:
+Discovery runs via a Docker cron on Render on schedule */5 * * * MON-FRI using the same Dockerfile as the API. Both services must share the same env set. Any PR that changes endpoints, response shapes, or required env must update this section and the QA smoke scripts in the same PR.
+
 ## Architecture Components
 
-### 1. API Service (Node.js/TypeScript)
+### 1. API Service (FastAPI/Python)
 **Repository**: `api/`
 **Port**: 3000
 **Database**: PostgreSQL
 
-#### Endpoints
+#### Core Endpoints
 ```
 GET  /health                 # System health (503 if any dependency down)
-GET  /api/discovery/scan     # Trigger VIGL discovery scan
-GET  /api/discovery/results  # Get latest scan results
-GET  /api/portfolio/analyze  # Analyze current positions
-GET  /api/portfolio/positions # Get current positions
-POST /api/portfolio/execute  # Execute trade recommendations
-GET  /api/metrics/daily      # Daily performance metrics
+GET  /healthz                # Alternative health check
+GET  /discovery/run          # Trigger VIGL discovery scan
+GET  /recommendations        # Live discovery feed (most recent first)
+POST /trades/execute         # Execute trade recommendations
+GET  /metrics                # Prometheus metrics
+GET  /holdings               # Alpaca cash and positions
 ```
 
-#### Database Schema
+#### FastAPI Application Requirements
+- JSON logging throughout
+- `/metrics` endpoint
+- Strict environment validation on import (fail fast)
+
+#### Dependencies (deps.py)
+- HTTPx client
+- SQLAlchemy session
+- Redis client
+
+#### Services Required
+- market
+- sentiment  
+- scoring
+- portfolio
+- execution
+
+### 2. Database Schema
 ```sql
 -- Discovery Results
 CREATE TABLE discovery_results (
@@ -67,27 +107,7 @@ CREATE TABLE analysis_history (
 );
 ```
 
-#### Environment Variables
-```bash
-# Database
-DATABASE_URL=postgresql://user:pass@localhost:5432/amc_trader
-REDIS_URL=redis://localhost:6379
-
-# Trading APIs
-ALPACA_API_KEY=PKX1WGCFOD3XXA9LBAR8
-ALPACA_SECRET_KEY=vCQUe2hVPNLLvkw4DxviLEngZtk5zvCs7jsWT3nR
-ALPACA_BASE_URL=https://paper-api.alpaca.markets
-
-# Analysis APIs
-CLAUDE_API_KEY=<required>
-POLYGON_API_KEY=<required>
-
-# System Paths
-VIGL_DISCOVERY_PATH=/app/vigl_discovery
-PORTFOLIO_ANALYZER_PATH=/app/portfolio_analyzer
-```
-
-### 2. Discovery Service (Python)
+### 3. Discovery Service (Python)
 **Repository**: `discovery/`
 **Core**: VIGL Pattern Detection (Protected Algorithm)
 
@@ -104,7 +124,7 @@ PORTFOLIO_ANALYZER_PATH=/app/portfolio_analyzer
 - WOLF risk: <0.6
 - Confidence: >85%
 
-### 3. Frontend UI (React/TypeScript)
+### 4. Frontend UI (React/TypeScript)
 **Repository**: `ui/`
 **Port**: 3001
 
@@ -152,8 +172,7 @@ interface PortfolioPosition {
 }
 ```
 
-### 4. Infrastructure (Docker/Render)
-**Repository**: Root level configs
+### 5. Infrastructure (Docker/Render)
 
 #### Docker Compose
 ```yaml
@@ -204,9 +223,9 @@ volumes:
 services:
   - type: web
     name: amc-api
-    env: node
-    buildCommand: cd api && npm install && npm run build
-    startCommand: cd api && npm start
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -255,7 +274,7 @@ databases:
 - [ ] Render deployment configs aligned
 
 ### Daily Workflow Integration
-1. **08:00 EST**: Automated VIGL discovery scan
+1. **08:00 EST**: Automated VIGL discovery scan (cron schedule: */5 * * * MON-FRI)
 2. **09:30 EST**: Portfolio position analysis
 3. **12:30 EST**: Mid-day position monitoring
 4. **16:00 EST**: End-of-day comprehensive analysis
@@ -267,6 +286,7 @@ databases:
 - Portfolio analyzer processes actual positions
 - Frontend properly displays all data fields
 - Health endpoint accurately reports system state
+- Preflight script (`scripts/preflight.py`) exits non-zero on any failure
 
 ## Deployment Checklist
 
@@ -276,7 +296,7 @@ databases:
 docker-compose up -d postgres redis
 
 # Run API
-cd api && npm install && npm run dev
+cd api && pip install -r requirements.txt && uvicorn main:app --reload
 
 # Run UI
 cd ui && npm install && npm start
@@ -304,26 +324,3 @@ curl http://localhost:3000/health
 - GitHub Issues: Feature requests and bugs
 - PR Reviews: Integration alignment checks
 - Slack: #amc-trader-dev (urgent issues)
-## Source of Truth: API + Ops Contract at v0.3
-
-Health endpoints:
-GET /health and GET /healthz return HTTP 200 with {"status":"healthy","components":{...}} when required env is present. They return HTTP 503 with {"status":"degraded","components":{"env":{"ok":false,"missing":[...]}}} when any required env is absent.
-
-Discovery trigger:
-GET or POST /discovery/run returns {"status":"queued","started":true,"cmd":"python -m src.jobs.discover"} and does not block the worker.
-
-Recommendations:
-GET /recommendations returns the live discovery feed ordered by most recent. The frontend polls ~every 15 seconds and must not rely on client mocks.
-
-Trading:
-Shadow by default with LIVE_TRADING=0. In live mode, requests to /trades/execute must be rejected with HTTP 400 when KILL_SWITCH=1.
-
-Metrics:
-GET /metrics exposes Prometheus text including amc_discovery_triggered_total and amc_discovery_errors_total.
-
-Required environment variables on API and discovery cron:
-DATABASE_URL, REDIS_URL, POLYGON_API_KEY, ALPACA_API_KEY, ALPACA_API_SECRET, ALPACA_BASE_URL, HTTP_TIMEOUT, HTTP_RETRIES, LIVE_TRADING. Optional guardrails: KILL_SWITCH, MAX_POSITION_USD, MAX_PORTFOLIO_ALLOCATION_PCT.
-
-Operational procedure:
-Discovery runs via a Docker cron on Render on schedule */5 * * * MON-FRI using the same Dockerfile as the API. Both services must share the same env set. Any PR that changes endpoints, response shapes, or required env must update this section and the QA smoke scripts in the same PR.
-
