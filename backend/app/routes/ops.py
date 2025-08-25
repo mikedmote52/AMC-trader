@@ -3,8 +3,18 @@ import os, sys, subprocess
 from pathlib import Path
 from typing import Dict, Any
 from fastapi import APIRouter, Response, status, BackgroundTasks
+from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 
 router = APIRouter()
+
+@router.get('/metrics')
+def metrics():
+    data = generate_latest()
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+
+
+DISCOVERY_TRIGGERED = Counter('amc_discovery_triggered_total','manual discovery trigger calls')
+DISCOVERY_ERRORS = Counter('amc_discovery_errors_total','manual discovery trigger errors')
 
 CRITICAL_ENVS = [
     "DATABASE_URL",
@@ -47,6 +57,7 @@ def discovery_run(background: BackgroundTasks) -> Dict[str, Any]:
     Fire-and-forget trigger. It tries to start the discover job in the background.
     Returns 202 semantics via payload without blocking the web worker.
     """
+    DISCOVERY_TRIGGERED.inc()
     project_root = Path(__file__).resolve().parents[2]  # points to backend/
     cmd = [sys.executable, "-m", "src.jobs.discover"]
 
@@ -54,6 +65,7 @@ def discovery_run(background: BackgroundTasks) -> Dict[str, Any]:
         try:
             subprocess.Popen(cmd, cwd=str(project_root))
         except Exception:
+            DISCOVERY_ERRORS.inc()
             # Swallow errors; the endpoint reports "started": False in the response below
             pass
 
@@ -61,6 +73,7 @@ def discovery_run(background: BackgroundTasks) -> Dict[str, Any]:
     try:
         background.add_task(_spawn)
     except Exception:
+            DISCOVERY_ERRORS.inc()
         started = False
 
     return {"status": "queued", "started": started, "cmd": "python -m src.jobs.discover"}
