@@ -1,6 +1,6 @@
 import redis
 import httpx
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from contextlib import contextmanager
@@ -50,7 +50,7 @@ def check_database_health() -> bool:
     """Check if database is accessible"""
     try:
         with SessionLocal() as db:
-            db.execute("SELECT 1")
+            db.execute(text("SELECT 1"))
             return True
     except Exception as e:
         logger.error("Database health check failed", error=str(e))
@@ -68,11 +68,22 @@ def check_polygon_health() -> bool:
     """Check if Polygon API is accessible"""
     try:
         with get_httpx_client() as client:
+            # Use free-tier endpoint for health check
             response = client.get(
-                f"https://api.polygon.io/v1/meta/symbols/AAPL/company",
-                params={"apikey": settings.polygon_api_key}
+                "https://api.polygon.io/v2/aggs/ticker/AAPL/prev",
+                params={"apikey": settings.polygon_api_key, "adjusted": "true"}
             )
-            return response.status_code == 200
+            if response.status_code == 200:
+                return True
+            elif response.status_code in [401, 403]:
+                # Try with Authorization header as fallback
+                response = client.get(
+                    "https://api.polygon.io/v2/aggs/ticker/AAPL/prev",
+                    headers={"Authorization": f"Bearer {settings.polygon_api_key}"},
+                    params={"adjusted": "true"}
+                )
+                return response.status_code == 200
+            return False
     except Exception as e:
         logger.error("Polygon health check failed", error=str(e))
         return False

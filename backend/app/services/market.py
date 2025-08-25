@@ -14,18 +14,30 @@ class MarketService:
         """Get current stock price from Polygon"""
         try:
             async with httpx.AsyncClient() as client:
+                # Try with query params first
                 response = await client.get(
-                    f"{self.base_url}/v2/last/trade/{symbol}",
-                    params={"apikey": self.polygon_api_key}
+                    f"{self.base_url}/v2/aggs/ticker/{symbol}/prev",
+                    params={"apikey": self.polygon_api_key, "adjusted": "true"}
                 )
+                
                 if response.status_code == 200:
                     data = response.json()
-                    return data.get("results", {})
-                else:
-                    logger.error("Failed to get stock price", 
-                               symbol=symbol, 
-                               status_code=response.status_code)
-                    return None
+                    return data.get("results", [{}])[0] if data.get("results") else {}
+                elif response.status_code in [401, 403]:
+                    # Fallback to Authorization header
+                    response = await client.get(
+                        f"{self.base_url}/v2/aggs/ticker/{symbol}/prev",
+                        headers={"Authorization": f"Bearer {self.polygon_api_key}"},
+                        params={"adjusted": "true"}
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        return data.get("results", [{}])[0] if data.get("results") else {}
+                
+                logger.error("Failed to get stock price", 
+                           symbol=symbol, 
+                           status_code=response.status_code)
+                return None
         except Exception as e:
             logger.error("Market service error", error=str(e), symbol=symbol)
             return None
