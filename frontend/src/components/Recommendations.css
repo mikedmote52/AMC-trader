@@ -1,0 +1,139 @@
+.recommendations {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 1.5rem;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.recommendations h2 {
+  margin: 0 0 1.5rem 0;
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: #e2e8f0;
+}
+
+.recommendations-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.recommendation-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 1rem;
+  transition: all 0.2s ease;
+}
+
+.recommendation-card:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
+}
+
+.recommendation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.recommendation-header .symbol {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #00d4ff;
+}
+
+.badges {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.action-badge,
+.risk-badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.action-badge.green {
+  background-color: #065f46;
+  color: #10b981;
+  border: 1px solid #10b981;
+}
+
+.action-badge.red {
+  background-color: #7f1d1d;
+  color: #ef4444;
+  border: 1px solid #ef4444;
+}
+
+.action-badge.yellow {
+  background-color: #78350f;
+  color: #f59e0b;
+  border: 1px solid #f59e0b;
+}
+
+.risk-badge.green {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.risk-badge.yellow {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.risk-badge.red {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.recommendation-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.metric .label {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.metric .value {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.thesis {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.thesis p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #cbd5e1;
+}
+
+.no-recommendations {
+  text-align: center;
+  padding: 3rem;
+  color: #94a3b8;
+  font-style: italic;
+}
