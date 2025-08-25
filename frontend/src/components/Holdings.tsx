@@ -4,7 +4,7 @@ import type { Holding } from '../types/api';
 import './Holdings.css';
 
 export function Holdings() {
-  const { data: holdings, error, isLoading } = usePolling<Holding[]>(API_ENDPOINTS.holdings);
+  const { data: holdingsResponse, error, isLoading } = usePolling<any>(API_ENDPOINTS.holdings);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -17,7 +17,10 @@ export function Holdings() {
     return `${percent >= 0 ? '+' : ''}${(percent * 100).toFixed(2)}%`;
   };
 
-  if (isLoading && !holdings) {
+  // Extract positions from API response: { success: true, data: { positions: [...] } }
+  const holdings = holdingsResponse?.data?.positions || [];
+
+  if (isLoading && !holdingsResponse) {
     return (
       <div className="holdings">
         <h2>Holdings</h2>
@@ -36,13 +39,13 @@ export function Holdings() {
         </div>
       )}
       
-      {holdings && holdings.length > 0 ? (
+      {Array.isArray(holdings) && holdings.length > 0 ? (
         <div className="holdings-grid">
           {holdings.map((holding) => (
             <div key={holding.symbol} className="holding-card">
               <div className="holding-header">
                 <span className="symbol">{holding.symbol}</span>
-                <span className="qty">{holding.qty} shares</span>
+                <span className="qty">{holding.quantity} shares</span>
               </div>
               
               <div className="holding-details">

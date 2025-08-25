@@ -13,13 +13,17 @@ export function RiskBar() {
     let totalUnrealizedPL = 0;
     let highRiskPositions = 0;
     
-    if (holdings) {
-      totalValue = holdings.reduce((sum, holding) => sum + holding.market_value, 0);
-      totalUnrealizedPL = holdings.reduce((sum, holding) => sum + holding.unrealized_pl, 0);
+    // Handle the API response format: { success: true, data: { positions: [...] } }
+    const holdingsArray = holdings?.data?.positions || [];
+    if (Array.isArray(holdingsArray)) {
+      totalValue = holdingsArray.reduce((sum, holding) => sum + holding.market_value, 0);
+      totalUnrealizedPL = holdingsArray.reduce((sum, holding) => sum + holding.unrealized_pl, 0);
     }
 
-    if (recommendations) {
-      highRiskPositions = recommendations.filter(rec => 
+    // Handle recommendations (may be wrapped in data or direct array)
+    const recsArray = recommendations?.data || recommendations || [];
+    if (Array.isArray(recsArray)) {
+      highRiskPositions = recsArray.filter(rec => 
         rec.risk_level === 'HIGH' && rec.action !== 'SELL'
       ).length;
     }
