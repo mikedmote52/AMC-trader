@@ -2,7 +2,7 @@ import os
 import sys
 from typing import Optional
 from pydantic import Field, validator
-from pydantic_settings import BaseSettings
+from pydantic import BaseSettings
 import structlog
 
 logger = structlog.get_logger()

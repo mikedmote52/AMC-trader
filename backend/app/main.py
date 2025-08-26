@@ -1,11 +1,12 @@
 import structlog
 from fastapi import FastAPI
+from app.routes.ops import router as ops_router
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 import time
 from app.config import settings
-from app.routes import health, holdings, recommendations, trades
+from app.routes import holdings, recommendations, trades
 from app.deps import Base, engine
 
 # Configure structured logging
@@ -73,7 +74,7 @@ async def log_requests(request, call_next):
     return response
 
 # Include routers
-app.include_router(health.router)
+app.include_router(ops_router)
 app.include_router(holdings.router)
 app.include_router(recommendations.router)
 app.include_router(trades.router)
@@ -105,3 +106,15 @@ if __name__ == "__main__":
         port=8000,
         reload=settings.environment == "development"
     )
+
+
+from starlette.responses import JSONResponse
+import os
+@app.middleware('http')
+async def live_killswitch(request, call_next):
+    if request.url.path.startswith('/trades/execute'):
+        live = os.getenv('LIVE_TRADING','0')=='1'
+        kill = os.getenv('KILL_SWITCH','1')=='1'
+        if live and kill:
+            return JSONResponse(status_code=400, content={'error':'killswitch_engaged','message':'Trades disabled by KILL_SWITCH'})
+    return await call_next(request)

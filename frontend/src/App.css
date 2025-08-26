@@ -1,0 +1,76 @@
+.app {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #ffffff;
+}
+
+.app-header {
+  padding: 2rem;
+  text-align: center;
+  border-bottom: 1px solid #333;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 2.5rem;
+  font-weight: 300;
+  background: linear-gradient(45deg, #00d4ff, #5a67d8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.app-main {
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  grid-template-rows: auto 1fr;
+  gap: 2rem;
+  min-height: calc(100vh - 200px);
+}
+
+.risk-section {
+  grid-column: 1 / -1;
+}
+
+.holdings-section {
+  grid-column: 1;
+}
+
+.recommendations-section {
+  grid-column: 2;
+}
+
+.loading {
+  text-align: center;
+  padding: 2rem;
+  color: #888;
+  font-style: italic;
+}
+
+.error-banner {
+  background-color: #dc2626;
+  color: white;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  border: 1px solid #b91c1c;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+  
+  .risk-section,
+  .holdings-section,
+  .recommendations-section {
+    grid-column: 1;
+  }
+}
