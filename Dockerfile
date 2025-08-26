@@ -7,13 +7,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY backend/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY . .
 
-COPY backend /app/backend
-
-WORKDIR /app/backend
+RUN pip install --no-cache-dir -r backend/requirements.txt
 
 EXPOSE 10000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "10000"]
+CMD ["uvicorn", "backend.src.app:app", "--host", "0.0.0.0", "--port", "10000"]
