@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { API_BASE } from "../config";
 import { getJSON } from "../lib/api";
-import RecommendationTile from "./RecommendationTile";
+import RecommendationCard from "./RecommendationCard";
 
 type Candidate = {
   symbol: string;
@@ -29,7 +29,7 @@ export default function Recommendations() {
         setErr("");
         const data = await getJSON<any>(`${API_BASE}/discovery/contenders`);
         const list: Candidate[] = Array.isArray(data) ? data : [];
-        list.sort((a,b) => (b.score ?? b.confidence ?? 0) - (a.score ?? a.confidence ?? 0));
+        list.sort((a,b) => (b.score ?? 0) - (a.score ?? 0));
         if (alive) setItems(list);
       } catch (e:any) {
         if (alive) setErr(e?.message || String(e));
@@ -38,7 +38,7 @@ export default function Recommendations() {
       }
     }
     run();
-    const id = setInterval(run, 30_000);
+    const id = setInterval(run, 15_000);
     return () => { alive = false; clearInterval(id); };
   }, []);
 
@@ -49,7 +49,7 @@ export default function Recommendations() {
   return (
     <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(320px, 1fr))", gap:12}}>
       {items.map((it) => (
-        <RecommendationTile key={it.symbol} item={it} />
+        <RecommendationCard key={it.symbol} item={it} />
       ))}
     </div>
   );
