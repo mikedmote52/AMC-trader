@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { usePolling } from '../hooks/usePolling';
 import { API_ENDPOINTS } from '../config/api';
+import { API_BASE } from '../config';
 import TradeModal from './TradeModal';
 import './Holdings.css';
 
 export function Holdings() {
   const { data: holdingsResponse, error, isLoading, refresh } = usePolling<any>(API_ENDPOINTS.holdings);
+  const { data: contendersData } = usePolling<any>(`${API_BASE}/discovery/contenders`, 15000);
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [selectedHolding, setSelectedHolding] = useState<any>(null);
   const [tradeAction, setTradeAction] = useState<'BUY' | 'SELL'>('BUY');
@@ -32,6 +34,13 @@ export function Holdings() {
     return `${percent >= 0 ? '+' : ''}${(percent * 100).toFixed(2)}%`;
   };
 
+  // Score pill styling based on thresholds
+  const getScorePillClass = (score: number) => {
+    if (score >= 75) return 'bg-green-600 text-white';
+    if (score >= 70) return 'bg-yellow-600 text-white';
+    return 'bg-gray-600 text-white';
+  };
+
   const handleAdjustPosition = (holding: any, action: 'BUY' | 'SELL', qty?: number) => {
     setSelectedHolding(holding);
     setTradeAction(action);
@@ -48,6 +57,10 @@ export function Holdings() {
 
   // Extract positions from API response: handle various response structures
   const holdings = holdingsResponse?.data?.positions || holdingsResponse?.positions || holdingsResponse || [];
+  
+  // Extract contenders for score matching
+  const contenders = Array.isArray(contendersData) ? contendersData : (contendersData?.items || []);
+  const contendersBySymbol = new Map(contenders.map((c: any) => [c.symbol, c]));
 
   if (isLoading && !holdingsResponse) {
     return (
@@ -71,36 +84,31 @@ export function Holdings() {
       {Array.isArray(holdings) && holdings.length > 0 ? (
         <div className="holdings-grid">
           {holdings.map((holding) => {
-            // Use backend fields directly - no client-side derivations
+            // Display backend fields verbatim as specified
             const symbol = holding.symbol || "—";
-            const quantity = holding.quantity || 0;
-            const avgPrice = holding.avg_price || 0;
-            const lastPrice = holding.last_price || 0;
-            const marketValue = holding.market_value || 0;
-            const unrealizedPL = holding.unrealized_pl || 0;
-            const unrealizedPLPct = holding.unrealized_pl_pct || 0;
-            const suggestion = holding.suggestion;
+            const qty = holding.qty;
+            const lastPrice = holding.last_price;
+            const marketValue = holding.market_value;
+            const avgEntryPrice = holding.avg_entry_price;
+            const unrealizedPL = holding.unrealized_pl;
+            const unrealizedPLPct = holding.unrealized_pl_pct;
             const thesis = holding.thesis;
-            const confidence = holding.confidence;
-            const score = holding.score;
-            const targetPrice = holding.target_price;
-            const stopPrice = holding.stop_price;
+            const suggestion = holding.suggestion;
+            
+            // Check if this holding appears in contenders for score
+            const contender = contendersBySymbol.get(symbol);
+            const contenderScore = contender?.score;
             
             return (
               <div key={symbol} className="holding-card">
                 <div className="holding-header">
                   <span className="symbol">{symbol}</span>
-                  <span className="qty">{quantity} shares</span>
+                  <span className="qty">{qty} shares</span>
                   <div className="flex gap-2">
-                    {score !== undefined && (
-                      <span className="score text-sm text-green-400">
-                        {Math.round(score * 100)}
-                      </span>
-                    )}
-                    {confidence !== undefined && (
-                      <span className="confidence text-sm text-blue-400">
-                        {(confidence * 100).toFixed(1)}%
-                      </span>
+                    {contenderScore !== undefined && (
+                      <div className={`px-2 py-0.5 text-xs rounded-full ${getScorePillClass(Math.round(contenderScore))}`}>
+                        Score {Math.round(contenderScore)}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -108,7 +116,7 @@ export function Holdings() {
                 <div className="holding-details">
                   <div className="price-info">
                     <span className="current-price">{formatCurrency(lastPrice)}</span>
-                    <span className="avg-price">Avg: {formatCurrency(avgPrice)}</span>
+                    <span className="avg-price">Avg: {formatCurrency(avgEntryPrice)}</span>
                   </div>
                   
                   <div className="value-info">
@@ -161,7 +169,7 @@ export function Holdings() {
                       </button>
                       <button
                         className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 text-white rounded"
-                        onClick={() => handleAdjustPosition(holding, 'SELL', quantity)}
+                        onClick={() => handleAdjustPosition(holding, 'SELL', qty)}
                       >
                         Sell All
                       </button>

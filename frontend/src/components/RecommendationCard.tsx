@@ -29,8 +29,15 @@ export default function RecommendationCard({ item, onOpenTradeModal }: Recommend
     return `${relVol.toFixed(1)}x`;
   };
 
-  // Calculate integer score 0..100
-  const integerScore = item.score ? Math.round(item.score * 100) : 0;
+  // Score is already 0-100, use directly
+  const score = Math.round(item.score || 0);
+  
+  // Score pill styling based on thresholds
+  const getScorePillClass = (score: number) => {
+    if (score >= 75) return 'bg-green-600 text-white';
+    if (score >= 70) return 'bg-yellow-600 text-white';
+    return 'bg-gray-600 text-white';
+  };
 
   // Calculate ATR-based targets if not provided by backend
   const lastPrice = item.last_price || item.price || 0;
@@ -58,13 +65,9 @@ export default function RecommendationCard({ item, onOpenTradeModal }: Recommend
           <div className="flex-1">
             <div className="flex items-baseline gap-2 mb-1">
               <h3 className="text-xl font-semibold">{item.symbol}</h3>
-              <span className="text-lg font-bold text-green-400">{integerScore}</span>
-              {/* Sector pill with tooltip */}
-              <div 
-                className="px-2 py-0.5 bg-purple-600 text-white text-xs rounded-full cursor-help"
-                title={`${item.sector_etf || 'N/A'} • RS20: ${formatPercent(item.rs_20d)} • RS5d: ${formatPercent(item.rs_5d)}`}
-              >
-                {item.sector || "—"}
+              {/* Score pill with color coding */}
+              <div className={`px-2 py-0.5 text-xs rounded-full ${getScorePillClass(score)}`}>
+                Score {score}
               </div>
             </div>
             
