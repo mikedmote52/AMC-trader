@@ -25,6 +25,12 @@ class TradeReq(BaseModel):
     price: Optional[float] = Field(None, ge=0, description="Limit price; omit for market")
     notional_usd: Optional[float] = Field(None, ge=1, description="Dollar sizing if qty omitted")
     time_in_force: TIF = Field("day")
+    order_type: Literal["market","limit"] = Field("market", description="Order type")
+    bracket: Optional[bool] = Field(False, description="Enable bracket order")
+    take_profit_pct: Optional[float] = Field(None, description="Take profit as % gain, e.g. 0.05 for +5%")
+    stop_loss_pct: Optional[float] = Field(None, description="Stop loss as % loss, e.g. 0.03 for -3%")
+    take_profit_price: Optional[float] = Field(None, description="Absolute take profit price")
+    stop_loss_price: Optional[float] = Field(None, description="Absolute stop loss price")
 
     @field_validator("symbol")
     @classmethod
@@ -84,16 +90,53 @@ async def execute(req: TradeReq):
             execution_result=ExecResult(status="shadow_logged", execution_mode="shadow", message="Shadow trade recorded."),
         )
 
+    # build Alpaca payload
+    side = "buy" if req.action=="BUY" else "sell"
+    type_ = req.order_type if req.order_type in ("market","limit") else ("limit" if px>0 else "market")
+    payload = {
+        "symbol": req.symbol,
+        "qty": int(qty),
+        "side": side,
+        "type": type_,
+        "time_in_force": req.time_in_force,
+    }
+    
+    if type_ == "limit":
+        payload["limit_price"] = float(px)
+    
+    # bracket computation
+    if req.bracket:
+        # ensure we have a reference price for pct math
+        ref_px = float(px) if px and px > 0 else float(px or 0.0)
+        if ref_px <= 0:
+            try:
+                m = await poly_singleton.agg_last_minute(req.symbol)
+                ref_px = float(m.get("price") or 0.0)
+            except Exception:
+                p = await poly_singleton.prev_day(req.symbol)
+                ref_px = float(p.get("price") or 0.0)
+        
+        tp_price = req.take_profit_price
+        sl_price = req.stop_loss_price
+        if tp_price is None and req.take_profit_pct:
+            tp_price = round(ref_px * (1.0 + float(req.take_profit_pct)), 2)
+        if sl_price is None and req.stop_loss_pct:
+            sl_price = round(ref_px * (1.0 - float(req.stop_loss_pct)), 2)
+        
+        # build Alpaca bracket
+        payload["order_class"] = "bracket"
+        if tp_price:
+            payload["take_profit"] = {"limit_price": float(tp_price)}
+        if sl_price:
+            # use stop_price, optional limit for stop-limit; start with stop only
+            payload["stop_loss"] = {"stop_price": float(sl_price)}
+    
     # live broker call
     headers = {
         "APCA-API-KEY-ID": os.getenv("ALPACA_API_KEY",""),
         "APCA-API-SECRET-KEY": os.getenv("ALPACA_API_SECRET",""),
         "content-type": "application/json",
     }
-    side = "buy" if req.action=="BUY" else "sell"
-    type_ = "limit" if px > 0 else "market"
-    payload = {"symbol": req.symbol, "qty": int(qty), "side": side, "type": type_, "time_in_force": req.time_in_force}
-    if px > 0: payload["limit_price"] = px
 
     try:
         async with httpx.AsyncClient(base_url=os.getenv("ALPACA_BASE_URL","https://paper-api.alpaca.markets"), headers=headers, timeout=10.0) as c:
@@ -124,4 +167,8 @@ example_notional = {
  "summary":"Dollar-sized buy",
  "value":{"symbol":"QUBT","action":"BUY","mode":"live","notional_usd":25}
 }
-execute.__dict__["__docs_examples__"]= [example_market, example_limit, example_notional]  # Fast hack to carry examples
+example_bracket = {
+ "summary":"Bracket order with stop loss and take profit",
+ "value":{"symbol":"QUBT","action":"BUY","mode":"live","qty":10,"bracket":True,"take_profit_pct":0.05,"stop_loss_pct":0.03}
+}
+execute.__dict__["__docs_examples__"]= [example_market, example_limit, example_notional, example_bracket]  # Fast hack to carry examples
