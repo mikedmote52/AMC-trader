@@ -1,11 +1,15 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
-import os, math, httpx
+import os, math, httpx, json
 from prometheus_client import Counter
 from typing import Literal, Optional
 from backend.src.services.polygon_client import poly_singleton
+from backend.src.shared.redis_client import get_redis_client
 
 router = APIRouter()
+
+# Price cap configuration
+PRICE_CAP = float(os.getenv("AMC_PRICE_CAP", "100"))
 
 # Prometheus
 guardrail_blocks = Counter("amc_guardrail_blocks_total","Trade blocks by guardrails",["reason"])
@@ -70,9 +74,52 @@ async def execute(req: TradeReq):
             effective_mode = "shadow"
         # -----------------------------------
 
+        # Fetch latest price for price cap validation
+        latest_price = 0.0
+        if req.price and req.price > 0:
+            latest_price = float(req.price)
+        else:
+            try:
+                m = await poly_singleton.agg_last_minute(req.symbol)
+                latest_price = float(m.get("price") or 0.0)
+            except Exception:
+                try:
+                    p = await poly_singleton.prev_day(req.symbol)
+                    latest_price = float(p.get("price") or 0.0)
+                except Exception:
+                    pass
+
+        # Price cap guards
+        if latest_price > PRICE_CAP:
+            guardrail_blocks.labels("price_cap_exceeded").inc()
+            raise HTTPException(status_code=400, detail={
+                "success": False,
+                "error": "price_cap_exceeded",
+                "price": latest_price,
+                "cap": PRICE_CAP
+            })
+        
+        if req.notional_usd and req.notional_usd > PRICE_CAP:
+            guardrail_blocks.labels("price_cap_exceeded").inc()
+            raise HTTPException(status_code=400, detail={
+                "success": False,
+                "error": "price_cap_exceeded",
+                "price": req.notional_usd,
+                "cap": PRICE_CAP
+            })
+        
+        if req.qty and latest_price > 0 and (req.qty * latest_price) > PRICE_CAP:
+            guardrail_blocks.labels("price_cap_exceeded").inc()
+            raise HTTPException(status_code=400, detail={
+                "success": False,
+                "error": "qty_total",
+                "price": req.qty * latest_price,
+                "cap": PRICE_CAP
+            })
+
         # derive qty (allow notional)
         qty = req.qty
-        px  = float(req.price or 0.0)
+        px  = float(req.price or latest_price or 0.0)
         if qty is None:
             if req.notional_usd is None:
                 raise HTTPException(status_code=400, detail={
@@ -142,10 +189,34 @@ async def execute(req: TradeReq):
             
             tp_price = req.take_profit_price
             sl_price = req.stop_loss_price
-            if tp_price is None and req.take_profit_pct:
-                tp_price = round(ref_px * (1.0 + float(req.take_profit_pct)), 2)
-            if sl_price is None and req.stop_loss_pct:
-                sl_price = round(ref_px * (1.0 - float(req.stop_loss_pct)), 2)
+            tp_pct = req.take_profit_pct
+            sl_pct = req.stop_loss_pct
+            
+            # If bracket True and no TP/SL provided, prefill from contenders
+            if not any([tp_price, sl_price, tp_pct, sl_pct]):
+                try:
+                    redis_client = get_redis_client()
+                    contenders_data = redis_client.get("amc:discovery:contenders.latest")
+                    if contenders_data:
+                        contenders = json.loads(contenders_data)
+                        for contender in contenders:
+                            if isinstance(contender, dict) and contender.get("symbol") == req.symbol:
+                                if not sl_pct and contender.get("stop_loss_pct"):
+                                    sl_pct = float(contender["stop_loss_pct"])
+                                if not sl_price and contender.get("stop_price"):
+                                    sl_price = float(contender["stop_price"])
+                                if not tp_pct and contender.get("take_profit_pct"):
+                                    tp_pct = float(contender["take_profit_pct"])
+                                if not tp_price and contender.get("take_profit_price"):
+                                    tp_price = float(contender["take_profit_price"])
+                                break
+                except Exception:
+                    pass  # Continue with defaults if Redis lookup fails
+            
+            if tp_price is None and tp_pct:
+                tp_price = round(ref_px * (1.0 + float(tp_pct)), 2)
+            if sl_price is None and sl_pct:
+                sl_price = round(ref_px * (1.0 - float(sl_pct)), 2)
             
             # build Alpaca bracket
             payload["order_class"] = "bracket"
@@ -216,3 +287,96 @@ example_bracket = {
  "value":{"symbol":"QUBT","action":"BUY","mode":"live","qty":10,"bracket":True,"take_profit_pct":0.05,"stop_loss_pct":0.03}
 }
 execute.__dict__["__docs_examples__"]= [example_market, example_limit, example_notional, example_bracket]  # Fast hack to carry examples
+
+@router.get("/defaults/{symbol}")
+async def get_trade_defaults(symbol: str):
+    """Get trade defaults for a symbol with contender data or ATR fallback"""
+    symbol = symbol.upper()
+    
+    # Get latest price
+    price = 0.0
+    try:
+        m = await poly_singleton.agg_last_minute(symbol)
+        price = float(m.get("price") or 0.0)
+    except Exception:
+        try:
+            p = await poly_singleton.prev_day(symbol)
+            price = float(p.get("price") or 0.0)
+        except Exception:
+            pass
+    
+    defaults = {
+        "symbol": symbol,
+        "order_type": "market",
+        "time_in_force": "day",
+        "mode": "live",
+        "bracket": True,
+        "stop_loss_pct": None,
+        "take_profit_pct": None,
+        "stop_price": None,
+        "take_profit_price": None,
+        "r_multiple": None,
+        "last_price": price,
+        "price_cap": PRICE_CAP
+    }
+    
+    # Try to get defaults from contenders first
+    try:
+        redis_client = get_redis_client()
+        contenders_data = redis_client.get("amc:discovery:contenders.latest")
+        if contenders_data:
+            contenders = json.loads(contenders_data)
+            for contender in contenders:
+                if isinstance(contender, dict) and contender.get("symbol") == symbol:
+                    if contender.get("stop_loss_pct"):
+                        defaults["stop_loss_pct"] = float(contender["stop_loss_pct"])
+                    if contender.get("take_profit_pct"):
+                        defaults["take_profit_pct"] = float(contender["take_profit_pct"])
+                    if contender.get("stop_price"):
+                        defaults["stop_price"] = float(contender["stop_price"])
+                    if contender.get("take_profit_price"):
+                        defaults["take_profit_price"] = float(contender["take_profit_price"])
+                    if contender.get("r_multiple"):
+                        defaults["r_multiple"] = float(contender["r_multiple"])
+                    return defaults
+    except Exception:
+        pass
+    
+    # Fallback: compute ATR from recent day bars if no contender found
+    try:
+        # Get recent bars for ATR calculation
+        bars_data = await poly_singleton.get_bars(symbol, timespan="day", limit=14)
+        if bars_data and len(bars_data) >= 2:
+            # Simple ATR calculation
+            trs = []
+            for i in range(1, len(bars_data)):
+                prev_close = bars_data[i-1].get("c", 0)
+                high = bars_data[i].get("h", 0)
+                low = bars_data[i].get("l", 0)
+                tr = max(
+                    high - low,
+                    abs(high - prev_close) if prev_close else 0,
+                    abs(low - prev_close) if prev_close else 0
+                )
+                trs.append(tr)
+            
+            if trs and price > 0:
+                atr = sum(trs) / len(trs)
+                atr_pct = atr / price
+                
+                # Set conservative defaults based on ATR
+                defaults["stop_loss_pct"] = min(0.05, max(0.02, atr_pct * 1.5))  # 1.5x ATR or 2-5%
+                defaults["take_profit_pct"] = min(0.10, max(0.03, atr_pct * 3.0))  # 3x ATR or 3-10%
+                defaults["r_multiple"] = defaults["take_profit_pct"] / defaults["stop_loss_pct"] if defaults["stop_loss_pct"] else 2.0
+    except Exception:
+        pass
+    
+    # Set safe defaults if enrichment failed
+    if not defaults.get("stop_loss_pct"):
+        defaults["stop_loss_pct"] = 0.03  # 3% stop loss
+    if not defaults.get("take_profit_pct"):
+        defaults["take_profit_pct"] = 0.06  # 6% take profit (2:1 R:R)
+    if not defaults.get("r_multiple"):
+        defaults["r_multiple"] = 2.0
+    
+    return defaults

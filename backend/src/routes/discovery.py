@@ -36,16 +36,16 @@ def _load_selector():
 
 @router.get("/contenders")
 async def get_contenders() -> List[Dict]:
-    """Ensure each item has confidence to prevent NaN in UI"""
+    """Ensure each item has confidence, return as-is for UI"""
     try:
         redis_client = get_redis_client()
         cached_data = redis_client.get("amc:discovery:contenders.latest")
         if cached_data:
             items = json.loads(cached_data)
             # Ensure each item has confidence
-            for it in items:
-                if isinstance(it, dict):
-                    it["confidence"] = it.get("confidence") or _conf(it)
+            for item in items:
+                if isinstance(item, dict) and not item.get("confidence"):
+                    item["confidence"] = (item.get("score", 0) or 0) / 100.0
             return items
         return []
     except Exception:
@@ -76,14 +76,74 @@ async def discovery_explain():
 
 @router.get("/audit")
 async def discovery_audit():
-    """Returns what the UI sees for contender inspection"""
+    """Compact view of latest contenders with factor fields"""
     try:
         raw = get_redis_client().get("amc:discovery:contenders.latest") or b"[]"
         items = json.loads(raw)
-        keep = ["symbol","price","dollar_vol","compression_pct","score","rs_5d","atr_pct","confidence","thesis"]
-        return [{k:i.get(k) for k in keep} for i in items]
+        keep = ["symbol", "price", "dollar_vol", "score", "confidence", "rel_vol_30m", 
+                "atr_pct", "float", "si", "borrow", "util", "pcr", "iv_pctl", 
+                "call_oi_up", "sent_score", "trending", "ema_cross", "rsi_zone_ok", "thesis"]
+        result = []
+        for item in items:
+            if isinstance(item, dict):
+                audit_item = {k: item.get(k) for k in keep}
+                # Ensure confidence
+                if not audit_item.get("confidence"):
+                    audit_item["confidence"] = (item.get("score", 0) or 0) / 100.0
+                result.append(audit_item)
+        return result
     except Exception:
         return []
+
+@router.get("/audit/{symbol}")
+async def discovery_audit_symbol(symbol: str):
+    """Full record for symbol plus factor weights and env policy"""
+    try:
+        raw = get_redis_client().get("amc:discovery:contenders.latest") or b"[]"
+        items = json.loads(raw)
+        
+        # Find the symbol
+        item = None
+        for i in items:
+            if isinstance(i, dict) and i.get("symbol") == symbol:
+                item = i
+                break
+        
+        if not item:
+            return {"symbol": symbol, "item": None, "weights": {}, "gates": {}}
+        
+        # Ensure confidence
+        if not item.get("confidence"):
+            item["confidence"] = (item.get("score", 0) or 0) / 100.0
+        
+        # Factor weights from environment
+        weights = {
+            "volume": float(os.getenv("W_VOLUME", "0.2")),
+            "momentum": float(os.getenv("W_MOMENTUM", "0.15")),
+            "technicals": float(os.getenv("W_TECHNICALS", "0.15")),
+            "options": float(os.getenv("W_OPTIONS", "0.2")),
+            "sentiment": float(os.getenv("W_SENTIMENT", "0.15")),
+            "fundamentals": float(os.getenv("W_FUNDAMENTALS", "0.15"))
+        }
+        
+        # Policy gates from environment
+        gates = {
+            "REL_VOL_MIN": float(os.getenv("REL_VOL_MIN", "2.0")),
+            "PRICE_MIN": float(os.getenv("PRICE_MIN", "1.0")),
+            "PRICE_MAX": float(os.getenv("PRICE_MAX", "50.0")),
+            "DOLLAR_VOL_MIN": float(os.getenv("DOLLAR_VOL_MIN", "5000000")),
+            "ATR_PCT_MAX": float(os.getenv("ATR_PCT_MAX", "0.08")),
+            "FLOAT_MIN": float(os.getenv("FLOAT_MIN", "10000000"))
+        }
+        
+        return {
+            "symbol": symbol,
+            "item": item,
+            "weights": weights,
+            "gates": gates
+        }
+    except Exception:
+        return {"symbol": symbol, "item": None, "weights": {}, "gates": {}}
 
 @router.get("/test")
 async def discovery_test(relaxed: bool = Query(True), limit: int = Query(10)):
