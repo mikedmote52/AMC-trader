@@ -47,8 +47,8 @@ PY
 
 # 4) Prove select_candidates is available at build time
 RUN python - <<'PY'
-import importlib, sys
-mods = ("backend.src.jobs.discovery","backend.src.jobs.discover")
+import importlib
+mods = ("src.jobs.discovery","src.jobs.discover")
 found = []
 for mod in mods:
     try:
@@ -58,7 +58,7 @@ for mod in mods:
             found.append(mod)
     except Exception:
         pass
-assert found, "No select_candidates in jobs.discovery or jobs.discover"
+assert found, "No select_candidates in src.jobs.discovery or src.jobs.discover"
 print("SELECTOR_OK:", ",".join(found))
 PY
 
