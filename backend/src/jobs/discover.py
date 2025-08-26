@@ -601,6 +601,32 @@ def build_thesis(sym, f):
     
     return thesis + "."
 
+def current_policy_dict():
+    """Return current policy settings for audit"""
+    return {
+        "price_cap": AMC_PRICE_CAP,
+        "min_dollar_vol": AMC_MIN_DOLLAR_VOL,
+        "rel_vol_min": REL_VOL_MIN,
+        "atr_pct_min": ATR_PCT_MIN,
+        "float_max": FLOAT_MAX,
+        "big_float_min": BIG_FLOAT_MIN,
+        "si_min": SI_MIN,
+        "borrow_min": BORROW_MIN,
+        "util_min": UTIL_MIN,
+        "iv_pctl_min": IV_PCTL_MIN,
+        "pcr_min": PCR_MIN,
+        "compression_pctl_max": COMPRESSION_PCTL_MAX,
+        "exclude_funds": EXCLUDE_FUNDS,
+        "exclude_adrs": EXCLUDE_ADRS,
+        "pipeline_tag": PIPELINE_TAG
+    }
+
+def thesis_string_from(factors):
+    """Build thesis string from factors (alias for build_thesis)"""
+    # Extract symbol from somewhere or use placeholder
+    symbol = factors.get('symbol', 'SYM')
+    return build_thesis(symbol, factors)
+
 # In-process cache for symbol classifications
 _symbol_cache = {}
 
@@ -1023,40 +1049,34 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         items = []
         return (items, trace.to_dict()) if with_trace else items
 
-    # classify stage: exclude funds/ADRs if configured
+    # classify stage: enforce fund/ADR exclusion just after universe/liquidity
     if EXCLUDE_FUNDS or EXCLUDE_ADRS:
         trace.enter("classify", kept_syms)
         classify_kept = []
         classify_rejected = []
         
         async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
-            # Classify all symbols
-            classifications = await asyncio.gather(*[_classify_symbol(client, sym) for sym in kept_syms], return_exceptions=True)
-            
-            for sym, classification in zip(kept_syms, classifications):
-                if isinstance(classification, Exception):
-                    # On classification error, default to keep (conservative)
-                    classify_kept.append(sym)
-                    continue
+            # Process symbols individually to enforce exclusion properly
+            for sym in kept_syms:
+                try:
+                    meta = await _classify_symbol(client, sym)  # cached polygon ref
                     
-                should_exclude = (
-                    (EXCLUDE_FUNDS and classification.get("is_fund", False)) or
-                    (EXCLUDE_ADRS and classification.get("is_adr", False))
-                )
-                
-                if should_exclude:
-                    reason = []
-                    if EXCLUDE_FUNDS and classification.get("is_fund", False):
-                        reason.append("fund")
-                    if EXCLUDE_ADRS and classification.get("is_adr", False):
-                        reason.append("adr")
-                    classify_rejected.append({
-                        "symbol": sym, 
-                        "reason": "_".join(reason),
-                        "type": classification.get("type", ""),
-                        "name": classification.get("name", "")[:50]
-                    })
-                else:
+                    # Check fund exclusion
+                    if EXCLUDE_FUNDS and meta.get("is_fund", False):
+                        classify_rejected.append({"symbol": sym, "reason": "fund/etf"})
+                        continue
+                        
+                    # Check ADR exclusion  
+                    if EXCLUDE_ADRS and meta.get("is_adr", False):
+                        classify_rejected.append({"symbol": sym, "reason": "adr"})
+                        continue
+                        
+                    # Passed all filters
+                    classify_kept.append(sym)
+                    
+                except Exception as e:
+                    logger.warning(f"Classification failed for {sym}: {e}")
+                    # On error, default to keep (conservative)
                     classify_kept.append(sym)
         
         kept_syms = classify_kept
@@ -1097,12 +1117,12 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
     tight.sort(key=lambda x: x["compression_pct"])
     trace.exit("compression_filter", [t["symbol"] for t in tight])
 
-    # simple score: tighter is better. extend later with short interest, catalysts.
+    # prepare candidates for factor analysis 
     out = []
     for t in tight[: (limit or MAX_CANDIDATES)]:
         out.append({
             "symbol": t["symbol"],
-            "score": round(1.0 - t["compression_pct"], 4),
+            "compression_pctl": t["compression_pct"],  # keep compression, but do NOT use as score
             "reason": "compression",
         })
     trace.exit("score_and_take", [o["symbol"] for o in out])
@@ -1157,13 +1177,14 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                             factors.get("util", 0) >= UTIL_MIN)):
                         return {"symbol": sym, "reason": "float_gate", "gate_failed": True}
                 
-                # Score the candidate
-                score, avail_factors = score_from_factors(factors)
+                # Score the candidate using composite factor scoring
+                total, _w = score_from_factors(factors)  # 0..100
                 
-                if score < 70:  # Score gate
+                if total < 70:  # Score gate
                     return {"symbol": sym, "reason": "score_low", "gate_failed": True}
                 
-                # Build thesis
+                # Build thesis with symbol context
+                factors["symbol"] = sym  # Add symbol to factors for thesis
                 thesis = build_thesis(sym, factors)
                 
                 # Compute ATR-based targets
@@ -1175,18 +1196,21 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 take_profit_pct = round((R_MULT * risk_abs / price) * 100, 1)
                 r_multiple = R_MULT
                 
-                # Get compression_pct from tight cohort
-                compression_pct = next((t["compression_pct"] for t in tight if t["symbol"] == sym), 0.0)
+                # Get compression_pctl from original candidate
+                compression_pctl = next((o.get("compression_pctl", 0.0) for o in out if o["symbol"] == sym), 0.0)
                 
                 return {
                     "symbol": sym,
                     "price": price,
                     "dollar_vol": dollar_vol,
-                    "compression_pct": compression_pct,
-                    "score": score,
+                    "compression_pctl": compression_pctl,  # keep, but do NOT use as score
+                    "score": round(total, 1),  # <-- the rank key from composite scoring
+                    "confidence": round(total/100.0, 4),
+                    "factors": factors,  # volume/short/catalyst/sent/options/tech
+                    "gates": current_policy_dict(),  # price/rel_vol/atr/etc used for audit
                     "thesis": thesis,
-                    "tradeable": score >= 75,
-                    # Raw features
+                    "tradeable": total >= 75,
+                    # Raw features for backwards compatibility
                     "rs_5d": factors.get("rs_5d", 0.0),
                     "atr_pct": factors.get("atr_pct", 0.0),
                     "rel_vol_30m": factors.get("rel_vol_30m", 1.0),
