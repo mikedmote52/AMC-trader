@@ -48,6 +48,14 @@ W_SENT     = float(os.getenv("AMC_W_SENT",     "0.15"))
 W_OPTIONS  = float(os.getenv("AMC_W_OPTIONS",  "0.10"))
 W_TECH     = float(os.getenv("AMC_W_TECH",     "0.10"))
 
+# sector momentum knobs
+AMC_ENABLE_SECTOR = bool(int(os.getenv("AMC_ENABLE_SECTOR","1")))
+AMC_W_SECTOR      = float(os.getenv("AMC_W_SECTOR","0.10"))   # weight in 0..1, renormalized if disabled
+# JSON map: theme -> ETF ticker (used only for momentum; ETFs are never candidates)
+AMC_SECTOR_ETFS   = os.getenv("AMC_SECTOR_ETFS",
+  '{"BIOTECH":"XBI","SEMIS":"SMH","AI_SOFTWARE":"IGV","EV":"CARZ","ENERGY":"XLE","URANIUM":"URA","GOLD_MINERS":"GDX","AIRLINES":"JETS","RETAIL":"XRT","SMALL_CAP":"IWM"}'
+)
+
 # thresholds
 REL_VOL_MIN  = float(os.getenv("AMC_REL_VOL_MIN",  "3"))
 ATR_PCT_MIN  = float(os.getenv("AMC_ATR_PCT_MIN",  "0.04"))
@@ -65,6 +73,14 @@ INTRADAY     = bool(int(os.getenv("AMC_INTRADAY", "0")))  # 1 to enable minute f
 R_MULT         = float(os.getenv("AMC_R_MULT", "2.0"))        # target = entry + R_MULT * risk
 ATR_STOP_MULT  = float(os.getenv("AMC_ATR_STOP_MULT", "1.5")) # stop = entry - ATR_STOP_MULT * ATR_abs
 MIN_STOP_PCT   = float(os.getenv("AMC_MIN_STOP_PCT", "0.02")) # 2% floor
+
+# Pipeline versioning and Redis keys
+PIPELINE_TAG = os.getenv("AMC_PIPELINE_TAG", "squeeze-v1")
+REDIS_KEY_V2_CONT = "amc:discovery:v2:contenders.latest"
+REDIS_KEY_V2_TRACE = "amc:discovery:v2:explain.latest"
+REDIS_KEY_V1_CONT = "amc:discovery:contenders.latest"
+REDIS_KEY_V1_TRACE = "amc:discovery:explain.latest"
+REDIS_KEY_STATUS   = "amc:discovery:status"
 
 # Configure logging
 logging.basicConfig(
@@ -232,6 +248,82 @@ def _compute_technical_indicators(rows):
             break
     
     return ema_cross, rsi_zone_ok, green_streak
+
+async def _get_etf_momentum(client, etf_ticker, days=20):
+    """Get ETF momentum score over specified period"""
+    try:
+        daily_bars = await _daily_bars(client, etf_ticker, limit=days+5)
+        if len(daily_bars) < days:
+            return None
+        
+        # Calculate momentum as % return over period
+        start_price = daily_bars[-(days+1)].get("c", 0)
+        end_price = daily_bars[-1].get("c", 0)
+        
+        if not start_price or not end_price:
+            return None
+            
+        momentum = (end_price - start_price) / start_price
+        return float(momentum)
+    except Exception:
+        return None
+
+def _classify_stock_sector(symbol):
+    """Classify individual stocks into sectors based on symbol patterns and known mappings"""
+    symbol = symbol.upper()
+    
+    # Biotech indicators
+    if any(x in symbol for x in ['BIO', 'GENE', 'CELL', 'THER', 'VAX', 'CURE', 'MEDI']):
+        return "BIOTECH"
+    
+    # Semiconductor indicators  
+    if any(x in symbol for x in ['SEMI', 'CHIP', 'NVDA', 'AMD', 'AVGO', 'QCOM', 'INTC', 'MRVL']):
+        return "SEMIS"
+    
+    # AI/Software indicators
+    if any(x in symbol for x in ['SOFT', 'DATA', 'CLOUD', 'AI']):
+        return "AI_SOFTWARE"
+    
+    # Energy indicators
+    if any(x in symbol for x in ['OIL', 'GAS', 'PETRO', 'ENGY', 'XOM', 'CVX', 'COP']):
+        return "ENERGY"
+    
+    # Known tech giants
+    if symbol in ['AAPL', 'MSFT', 'GOOGL', 'GOOG', 'META', 'AMZN', 'NFLX']:
+        return "AI_SOFTWARE" 
+    
+    # EV indicators
+    if any(x in symbol for x in ['TESLA', 'TSLA', 'EV', 'ELEC', 'AUTO']):
+        return "EV"
+    
+    # Default to small cap for unclassified
+    return "SMALL_CAP"
+
+async def _compute_sector_momentum_score(client, symbol, etf_map):
+    """Compute sector momentum score using ETF proxies"""
+    try:
+        # Classify the stock into a sector
+        sector = _classify_stock_sector(symbol)
+        
+        # Get the ETF ticker for this sector
+        etf_ticker = etf_map.get(sector)
+        if not etf_ticker:
+            # Fall back to small cap ETF
+            etf_ticker = etf_map.get("SMALL_CAP", "IWM")
+        
+        # Get ETF momentum
+        momentum = await _get_etf_momentum(client, etf_ticker, days=20)
+        if momentum is None:
+            return 0.5  # Neutral score if no data
+        
+        # Convert momentum to 0-1 score
+        # Positive momentum = higher score
+        # Scale: -20% = 0, +20% = 1.0, 0% = 0.5
+        score = max(0.0, min(1.0, (momentum + 0.2) / 0.4))
+        
+        return float(score)
+    except Exception:
+        return 0.5  # Neutral score on error
 
 @dataclass
 class StageTrace:
@@ -443,6 +535,32 @@ async def compute_factors(sym, redis_client):
         tech_components.append(0.3)
     factor_scores["tech"] = sum(tech_components) if tech_components else None
     
+    # Sector momentum score (if enabled)
+    if AMC_ENABLE_SECTOR:
+        try:
+            # Parse ETF map from environment
+            etf_map = json.loads(AMC_SECTOR_ETFS)
+            
+            # Compute sector momentum score
+            async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
+                sector_score = await _compute_sector_momentum_score(client, sym, etf_map)
+                factor_scores["sector"] = sector_score
+                
+                # Add audit fields
+                sector_classification = _classify_stock_sector(sym)
+                etf_ticker = etf_map.get(sector_classification, etf_map.get("SMALL_CAP", "IWM"))
+                factors["sector_classification"] = sector_classification
+                factors["sector_etf"] = etf_ticker
+        except Exception as e:
+            logger.warning(f"Error computing sector momentum for {sym}: {e}")
+            factor_scores["sector"] = None
+            factors["sector_classification"] = None
+            factors["sector_etf"] = None
+    else:
+        factor_scores["sector"] = None
+        factors["sector_classification"] = None
+        factors["sector_etf"] = None
+    
     # Combine raw features and factor scores
     result = {**factors, **factor_scores}
     return result
@@ -451,6 +569,11 @@ def score_from_factors(f):
     """Calculate weighted score from available factors"""
     weights = {"volume": W_VOLUME, "short": W_SHORT, "catalyst": W_CATALYST, 
                "sent": W_SENT, "options": W_OPTIONS, "tech": W_TECH}
+    
+    # Add sector weight if enabled and available
+    if AMC_ENABLE_SECTOR:
+        weights["sector"] = AMC_W_SECTOR
+    
     avail = {k: w for k, w in weights.items() if f.get(k) is not None}
     Z = sum(avail.values()) or 1.0
     total = 100.0 * sum(f[k] * avail[k] for k in avail) / Z
@@ -462,12 +585,21 @@ def build_thesis(sym, f):
     si_pct = int((f.get('si') or 0) * 100)
     iv_pct = int((f.get('iv_pctl') or 0) * 100)
     
-    return (f"{sym}: rel vol {f.get('rel_vol_30m', 1.0):.1f}×, "
-            f"ATR {f.get('atr_pct', 0)*100:.1f}%, "
-            f"{'VWAP reclaim' if f.get('above_vwap') else 'under VWAP'}, "
-            f"float {float_m}M, SI {si_pct}%, "
-            f"catalyst {f.get('catalyst_tag', 'none')}, "
-            f"PCR {f.get('pcr', 'n/a')}, IV%ile {iv_pct}.")
+    # Build base thesis
+    thesis = (f"{sym}: rel vol {f.get('rel_vol_30m', 1.0):.1f}×, "
+              f"ATR {f.get('atr_pct', 0)*100:.1f}%, "
+              f"{'VWAP reclaim' if f.get('above_vwap') else 'under VWAP'}, "
+              f"float {float_m}M, SI {si_pct}%, "
+              f"catalyst {f.get('catalyst_tag', 'none')}, "
+              f"PCR {f.get('pcr', 'n/a')}, IV%ile {iv_pct}")
+    
+    # Add sector momentum info if available
+    if f.get('sector_classification') and f.get('sector_etf'):
+        sector_score = f.get('sector', 0.5)
+        sector_pct = int((sector_score - 0.5) * 2 * 100)  # Convert 0.5-1.0 to -100% to +100%
+        thesis += f", sector {f['sector_classification']} ({f['sector_etf']}) {sector_pct:+d}%"
+    
+    return thesis + "."
 
 # In-process cache for symbol classifications
 _symbol_cache = {}
@@ -1123,15 +1255,42 @@ def main():
             # Use live selector with real Polygon data
             items, tr = asyncio.run(select_candidates(relaxed=False, limit=MAX_CANDIDATES, with_trace=True))
             
-            # Publish to Redis
+            # Build status and explain objects for v2 publishing
+            now_iso = datetime.now(timezone.utc).isoformat() + "Z"
+            explain = {
+                "pipeline": PIPELINE_TAG,
+                "stages": tr.get("stages", []) if isinstance(tr, dict) else [],
+                "counts_in": tr.get("counts_in", {}) if isinstance(tr, dict) else {},
+                "counts_out": tr.get("counts_out", {}) if isinstance(tr, dict) else {},
+                "rejections": tr.get("rejections", {}) if isinstance(tr, dict) else {},
+                "ts": now_iso,
+                "count": len(items)
+            }
+            status = {"count": len(items), "ts": now_iso, "pipeline": PIPELINE_TAG}
+            
+            # Delete legacy keys before writing new data (prevents stale reads)
             from lib.redis_client import get_redis_client
             r = get_redis_client()
-            r.set("amc:discovery:contenders.latest", json.dumps(items), ex=600)
-            r.set("amc:discovery:explain.latest", json.dumps({
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), 
-                "count": len(items), 
-                "trace": tr
-            }), ex=600)
+            try:
+                r.delete(REDIS_KEY_V1_CONT, REDIS_KEY_V1_TRACE)
+            except Exception:
+                pass  # non-fatal
+            
+            # Add pipeline tag to each item and build blob
+            blob = []
+            for item in items:
+                item["pipeline"] = PIPELINE_TAG
+                blob.append(item)
+            
+            # Publish to both v2 and v1 keys for compatibility
+            r.set(REDIS_KEY_V2_CONT, json.dumps(blob), ex=600)
+            r.set(REDIS_KEY_V2_TRACE, json.dumps(explain), ex=600)
+            r.set(REDIS_KEY_V1_CONT, json.dumps(blob), ex=600)
+            r.set(REDIS_KEY_V1_TRACE, json.dumps(explain), ex=600)
+            r.set(REDIS_KEY_STATUS, json.dumps(status), ex=600)
+            
+            # Log to stdout for verification in Render logs
+            print(f"PUBLISH_OK pipeline={PIPELINE_TAG} count={len(blob)} ts={now_iso}")
             
             logger.info(f"Discovery completed successfully: {len(items)} contenders found and published")
             sys.exit(0)
