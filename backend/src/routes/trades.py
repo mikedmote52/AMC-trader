@@ -48,6 +48,7 @@ class TradeResp(BaseModel):
     mode: Literal["live","shadow"]
     execution_result: Optional[ExecResult] = None
     error: Optional[dict] = None
+    handler_tag: Optional[str] = None
 
 # --- ROUTE ---
 
@@ -56,103 +57,139 @@ class TradeResp(BaseModel):
     502: {"description":"Broker error"},
 })
 async def execute(req: TradeReq):
-    # env + mode decision
-    live = int(os.getenv("LIVE_TRADING","0"))
-    kill = int(os.getenv("KILL_SWITCH","1"))
-    _EFFECTIVE = "shadow" if not (live==1 and kill==0) else ("shadow" if req.mode=="shadow" else "live")
-
-    # derive qty (allow notional)
-    qty = req.qty
-    px  = float(req.price or 0.0)
-    if qty is None:
-        if req.notional_usd is None:
-            raise HTTPException(status_code=400, detail={"error":"missing_qty_or_notional"})
-        if px <= 0:
-            try:
-                m = await poly_singleton.agg_last_minute(req.symbol)
-                px = float(m.get("price") or 0.0)
-            except Exception:
-                p = await poly_singleton.prev_day(req.symbol)
-                px = float(p.get("price") or 0.0)
-        qty = max(1, int(req.notional_usd // max(px, 1e-6)))
-
-    # guardrails (keep simple notional cap; allocation optional)
-    max_pos = float(os.getenv("MAX_POSITION_USD","100"))
-    notional = (px if px>0 else 0.0) * qty
-    if notional > 0 and notional > max_pos:
-        guardrail_blocks.labels("max_position").inc()
-        raise HTTPException(status_code=400, detail={"error":"max_position_exceeded","proposed":notional,"cap":max_pos})
-
-    # shadow path
-    if _EFFECTIVE != "live":
-        trade_submissions.labels(mode="shadow", result="accepted").inc()
-        return TradeResp(success=True, mode="shadow",
-            execution_result=ExecResult(status="shadow_logged", execution_mode="shadow", message="Shadow trade recorded."),
-        )
-
-    # build Alpaca payload
-    side = "buy" if req.action=="BUY" else "sell"
-    type_ = req.order_type if req.order_type in ("market","limit") else ("limit" if px>0 else "market")
-    payload = {
-        "symbol": req.symbol,
-        "qty": int(qty),
-        "side": side,
-        "type": type_,
-        "time_in_force": req.time_in_force,
-    }
-    
-    if type_ == "limit":
-        payload["limit_price"] = float(px)
-    
-    # bracket computation
-    if req.bracket:
-        # ensure we have a reference price for pct math
-        ref_px = float(px) if px and px > 0 else float(px or 0.0)
-        if ref_px <= 0:
-            try:
-                m = await poly_singleton.agg_last_minute(req.symbol)
-                ref_px = float(m.get("price") or 0.0)
-            except Exception:
-                p = await poly_singleton.prev_day(req.symbol)
-                ref_px = float(p.get("price") or 0.0)
-        
-        tp_price = req.take_profit_price
-        sl_price = req.stop_loss_price
-        if tp_price is None and req.take_profit_pct:
-            tp_price = round(ref_px * (1.0 + float(req.take_profit_pct)), 2)
-        if sl_price is None and req.stop_loss_pct:
-            sl_price = round(ref_px * (1.0 - float(req.stop_loss_pct)), 2)
-        
-        # build Alpaca bracket
-        payload["order_class"] = "bracket"
-        if tp_price:
-            payload["take_profit"] = {"limit_price": float(tp_price)}
-        if sl_price:
-            # use stop_price, optional limit for stop-limit; start with stop only
-            payload["stop_loss"] = {"stop_price": float(sl_price)}
-    
-    # live broker call
-    headers = {
-        "APCA-API-KEY-ID": os.getenv("ALPACA_API_KEY",""),
-        "APCA-API-SECRET-KEY": os.getenv("ALPACA_API_SECRET",""),
-        "content-type": "application/json",
-    }
-
     try:
+        # env + mode decision
+        live = int(os.getenv("LIVE_TRADING","0"))
+        kill = int(os.getenv("KILL_SWITCH","1"))
+        _EFFECTIVE = "shadow" if not (live==1 and kill==0) else ("shadow" if req.mode=="shadow" else "live")
+
+        # derive qty (allow notional)
+        qty = req.qty
+        px  = float(req.price or 0.0)
+        if qty is None:
+            if req.notional_usd is None:
+                raise HTTPException(status_code=400, detail={
+                    "error":"missing_qty_or_notional",
+                    "handler_tag": "trace_v1"
+                })
+            if px <= 0:
+                try:
+                    m = await poly_singleton.agg_last_minute(req.symbol)
+                    px = float(m.get("price") or 0.0)
+                except Exception:
+                    p = await poly_singleton.prev_day(req.symbol)
+                    px = float(p.get("price") or 0.0)
+            qty = max(1, int(req.notional_usd // max(px, 1e-6)))
+
+        # guardrails (keep simple notional cap; allocation optional)
+        max_pos = float(os.getenv("MAX_POSITION_USD","100"))
+        notional = (px if px>0 else 0.0) * qty
+        if notional > 0 and notional > max_pos:
+            guardrail_blocks.labels("max_position").inc()
+            raise HTTPException(status_code=400, detail={
+                "error":"max_position_exceeded",
+                "proposed":notional,
+                "cap":max_pos,
+                "handler_tag": "trace_v1"
+            })
+
+        # shadow path
+        if _EFFECTIVE != "live":
+            trade_submissions.labels(mode="shadow", result="accepted").inc()
+            return TradeResp(
+                success=True, 
+                mode="shadow",
+                execution_result=ExecResult(
+                    status="shadow_logged", 
+                    execution_mode="shadow", 
+                    message="Shadow trade recorded."
+                ),
+                handler_tag="trace_v1"
+            )
+
+        # build Alpaca payload
+        side = "buy" if req.action=="BUY" else "sell"
+        type_ = req.order_type if req.order_type in ("market","limit") else ("limit" if px>0 else "market")
+        payload = {
+            "symbol": req.symbol,
+            "qty": int(qty),
+            "side": side,
+            "type": type_,
+            "time_in_force": req.time_in_force,
+        }
+        
+        if type_ == "limit":
+            payload["limit_price"] = float(px)
+        
+        # bracket computation
+        if req.bracket:
+            # ensure we have a reference price for pct math
+            ref_px = float(px) if px and px > 0 else float(px or 0.0)
+            if ref_px <= 0:
+                try:
+                    m = await poly_singleton.agg_last_minute(req.symbol)
+                    ref_px = float(m.get("price") or 0.0)
+                except Exception:
+                    p = await poly_singleton.prev_day(req.symbol)
+                    ref_px = float(p.get("price") or 0.0)
+            
+            tp_price = req.take_profit_price
+            sl_price = req.stop_loss_price
+            if tp_price is None and req.take_profit_pct:
+                tp_price = round(ref_px * (1.0 + float(req.take_profit_pct)), 2)
+            if sl_price is None and req.stop_loss_pct:
+                sl_price = round(ref_px * (1.0 - float(req.stop_loss_pct)), 2)
+            
+            # build Alpaca bracket
+            payload["order_class"] = "bracket"
+            if tp_price:
+                payload["take_profit"] = {"limit_price": float(tp_price)}
+            if sl_price:
+                # use stop_price, optional limit for stop-limit; start with stop only
+                payload["stop_loss"] = {"stop_price": float(sl_price)}
+        
+        # live broker call
+        headers = {
+            "APCA-API-KEY-ID": os.getenv("ALPACA_API_KEY",""),
+            "APCA-API-SECRET-KEY": os.getenv("ALPACA_API_SECRET",""),
+            "content-type": "application/json",
+        }
+
         async with httpx.AsyncClient(base_url=os.getenv("ALPACA_BASE_URL","https://paper-api.alpaca.markets"), headers=headers, timeout=10.0) as c:
             r = await c.post("/v2/orders", json=payload)
         if r.status_code >= 400:
             trade_submissions.labels(mode="live", result="error").inc()
             body = r.json() if "json" in r.headers.get("content-type","") else {"text": r.text}
-            raise HTTPException(status_code=502, detail={"error":"broker_reject","status":r.status_code,"body":body})
+            raise HTTPException(status_code=502, detail={
+                "error":"broker_reject",
+                "status":r.status_code,
+                "body":body,
+                "handler_tag": "trace_v1"
+            })
         j = r.json()
         trade_submissions.labels(mode="live", result="ok").inc()
-        return TradeResp(success=True, mode="live",
-            execution_result=ExecResult(status=j.get("status","submitted"), alpaca_order_id=j.get("id"), execution_mode="live", raw=j)
+        return TradeResp(
+            success=True, 
+            mode="live",
+            execution_result=ExecResult(
+                status=j.get("status","submitted"), 
+                alpaca_order_id=j.get("id"), 
+                execution_mode="live", 
+                raw=j
+            ),
+            handler_tag="trace_v1"
         )
-    except httpx.HTTPError as e:
-        trade_submissions.labels(mode="live", result="error").inc()
-        raise HTTPException(status_code=502, detail={"error":"broker_http_error","message":str(e)})
+        
+    except HTTPException:
+        # if we already raised with detail above, let it propagate
+        raise
+    except Exception as e:
+        # anything unexpected becomes a 500 with a visible message and tag
+        raise HTTPException(status_code=500, detail={
+            "error": "unhandled_exception",
+            "message": str(e),
+            "handler_tag": "trace_v1"
+        })
 
 # OpenAPI examples
 example_market = {
