@@ -1,6 +1,7 @@
 import httpx
 from typing import Dict, List, Optional
 import structlog
+from datetime import datetime, timedelta
 from app.config import settings
 
 logger = structlog.get_logger()
@@ -54,9 +55,16 @@ class MarketService:
     async def get_volume_data(self, symbol: str, days: int = 30) -> Optional[Dict]:
         """Get volume data for a symbol over specified days"""
         try:
+            # Calculate absolute dates for Polygon API
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
+            
+            start_str = start_date.strftime("%Y-%m-%d")
+            end_str = end_date.strftime("%Y-%m-%d")
+            
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    f"{self.base_url}/v2/aggs/ticker/{symbol}/range/1/day/{days}days/ago/now",
+                    f"{self.base_url}/v2/aggs/ticker/{symbol}/range/1/day/{start_str}/{end_str}",
                     params={"apikey": self.polygon_api_key}
                 )
                 if response.status_code == 200:
