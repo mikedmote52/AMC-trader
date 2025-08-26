@@ -8,22 +8,19 @@ from backend.src.shared.redis_client import get_redis_client
 
 router = APIRouter()
 
-def _sigmoid(x):
-    """Sigmoid function for normalization"""
-    return 1 / (1 + math.exp(-x))
+# Confidence computation functions
+w_score = float(os.getenv("AMC_W_SCORE", "0.6"))
+w_rs    = float(os.getenv("AMC_W_RS",    "0.3"))
+w_atr   = float(os.getenv("AMC_W_ATR",   "0.1"))
 
-def _compute_confidence(item: Dict) -> float:
-    """Compute confidence based on tightness, RS, and ATR"""
-    w_score = float(os.getenv("AMC_W_SCORE", "0.6"))
-    w_rs = float(os.getenv("AMC_W_RS", "0.3"))
-    w_atr = float(os.getenv("AMC_W_ATR", "0.1"))
-    
-    tight = float(item.get("score", 0.0))  # already 0..1
-    rsn = _sigmoid((float(item.get("rs_5d", 0.0))) / 0.05)  # ±5% maps to ~0.27..0.73
-    atrn = max(0.0, 1.0 - min(1.0, float(item.get("atr_pct", 0.0)) / 0.05))  # ≤5% ATR preferred
-    
-    confidence = w_score * tight + w_rs * rsn + w_atr * atrn
-    return max(0.0, min(1.0, confidence))
+def _sigmoid(x): 
+    return 1/(1+math.exp(-x))
+
+def _conf(it):
+    tight = float(it.get("score") or 0.0)
+    rsn   = _sigmoid((float(it.get("rs_5d") or 0.0))/0.05)
+    atrn  = max(0.0, 1.0 - min(1.0, float(it.get("atr_pct") or 0.0)/0.05))
+    return max(0.0, min(1.0, w_score*tight + w_rs*rsn + w_atr*atrn))
 
 def _load_selector():
     """Load select_candidates function from available jobs modules"""
@@ -39,17 +36,17 @@ def _load_selector():
 
 @router.get("/contenders")
 async def get_contenders() -> List[Dict]:
-    """Return contenders data with computed confidence to prevent NaN in UI"""
+    """Ensure each item has confidence to prevent NaN in UI"""
     try:
         redis_client = get_redis_client()
         cached_data = redis_client.get("amc:discovery:contenders.latest")
         if cached_data:
-            raw_items = json.loads(cached_data)
-            # Inject confidence for each item if missing
-            for item in raw_items:
-                if isinstance(item, dict):
-                    item["confidence"] = item.get("confidence") or _compute_confidence(item)
-            return raw_items
+            items = json.loads(cached_data)
+            # Ensure each item has confidence
+            for it in items:
+                if isinstance(it, dict):
+                    it["confidence"] = it.get("confidence") or _conf(it)
+            return items
         return []
     except Exception:
         return []
@@ -78,30 +75,13 @@ async def discovery_explain():
         return {"ts": None, "count": 0, "trace": {"stages":[], "counts_in":{}, "counts_out":{}, "rejections":{}, "samples":{}}}
 
 @router.get("/audit")
-async def get_audit() -> List[Dict]:
-    """Read-only audit endpoint for inspecting contender data"""
+async def discovery_audit():
+    """Returns what the UI sees for contender inspection"""
     try:
-        redis_client = get_redis_client()
-        cached_data = redis_client.get("amc:discovery:contenders.latest")
-        if cached_data:
-            raw_items = json.loads(cached_data)
-            audit_items = []
-            for item in raw_items:
-                if isinstance(item, dict):
-                    confidence = item.get("confidence") or _compute_confidence(item)
-                    audit_items.append({
-                        "symbol": item.get("symbol", ""),
-                        "price": item.get("price", 0),
-                        "dollar_vol": item.get("dollar_vol", 0),
-                        "compression_pct": item.get("compression_pct", 0),
-                        "score": item.get("score", 0),
-                        "rs_5d": item.get("rs_5d", 0),
-                        "atr_pct": item.get("atr_pct", 0),
-                        "confidence": confidence,
-                        "thesis": item.get("thesis", "")
-                    })
-            return audit_items
-        return []
+        raw = get_redis_client().get("amc:discovery:contenders.latest") or b"[]"
+        items = json.loads(raw)
+        keep = ["symbol","price","dollar_vol","compression_pct","score","rs_5d","atr_pct","confidence","thesis"]
+        return [{k:i.get(k) for k in keep} for i in items]
     except Exception:
         return []
 
