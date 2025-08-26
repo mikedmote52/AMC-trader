@@ -1,11 +1,17 @@
 import structlog
 import os
+from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from backend.src.routes.trades import router as trades_router
 from backend.src.routes.debug_polygon import router as polygon_debug
+
+# Trace v3 constants
+APP_TAG    = "trace_v3"
+APP_COMMIT = os.getenv("RENDER_GIT_COMMIT", "unknown")
+APP_BUILD  = os.getenv("RENDER_SERVICE_BUILD_ID", "unknown")
 
 # Configure structured logging
 structlog.configure(
@@ -34,22 +40,28 @@ app = FastAPI(
 @app.get("/_whoami")
 def whoami():
     return {
-        "commit": os.getenv("RENDER_GIT_COMMIT","unknown"),
-        "build": os.getenv("RENDER_SERVICE_BUILD_ID","unknown"),
-        "handler_tag": "trace_v1"
+        "tag": APP_TAG,
+        "commit": APP_COMMIT,
+        "build": APP_BUILD,
+        "ts": datetime.now(timezone.utc).isoformat()
     }
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exc_handler(request: Request, exc: StarletteHTTPException):
     return JSONResponse(
         status_code=exc.status_code,
-        content={"success": False, "error": exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}, "handler_tag": "trace_v1"},
+        content={
+            "success": False,
+            "error": exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)},
+            "tag": APP_TAG,
+        },
     )
 
 @app.middleware("http")
 async def add_trace_header(request: Request, call_next):
     resp = await call_next(request)
-    resp.headers["x-amc-trades-handler"] = "trace_v1"
+    resp.headers["x-amc-trades-handler"] = APP_TAG
+    resp.headers["x-amc-commit"] = APP_COMMIT
     return resp
 
 # CORS middleware - allow frontend origins
@@ -127,9 +139,19 @@ async def health():
         all_ok = all(comp.get("ok", False) for comp in components.values())
         status_code = 200 if all_ok else 503
         
+        # Add version fields
+        resp = {
+            "status": "healthy" if all_ok else "degraded",
+            "components": components,
+            "tag": APP_TAG,
+            "commit": APP_COMMIT,
+            "build": APP_BUILD
+        }
+        
         from fastapi import Response
+        import json
         return Response(
-            content='{"status":"' + ("healthy" if all_ok else "degraded") + '","components":' + str(components).replace("'", '"').replace("True", "true").replace("False", "false") + '}',
+            content=json.dumps(resp),
             status_code=status_code,
             media_type="application/json"
         )
