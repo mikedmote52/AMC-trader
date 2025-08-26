@@ -1,0 +1,13 @@
+name: Render Deploy
+on:
+  push:
+    branches: [ "main" ]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
+    steps:
+      - name: Trigger Render deploy hook
+        run: |
+          set -euo pipefail
+          curl -sS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" -H "Accept: application/json"
