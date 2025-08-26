@@ -184,3 +184,29 @@ async def health():
 # Include routers
 app.include_router(trades_router)
 app.include_router(polygon_debug, prefix="/debug")
+
+# Compatibility routes for old frontend paths
+from starlette.responses import RedirectResponse
+
+@app.get("/api/recommendations")
+@app.get("/recommendations")
+async def compat_recommendations():
+    return RedirectResponse(url="/discovery/contenders", status_code=307)
+
+@app.get("/api/holdings")
+@app.get("/holdings")
+async def compat_holdings():
+    return RedirectResponse(url="/portfolio/holdings", status_code=307)
+
+# Optional buy-now alias if the UI ever posts here:
+from fastapi import Body
+@app.post("/api/buy")
+async def compat_buy(payload: dict = Body(...)):
+    # forward to the actual executor
+    from fastapi import Request
+    # re-use existing trades endpoint by calling it directly
+    # safest and simplest is to import the router function if available; otherwise call via HTTP to self:
+    import httpx
+    async with httpx.AsyncClient(base_url="http://127.0.0.1:8000", timeout=60) as client:
+        r = await client.post("/trades/execute", json=payload)
+        return r.json()
