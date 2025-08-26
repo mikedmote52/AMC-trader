@@ -32,7 +32,7 @@ function QuickBuy() {
       const r = await fetch(`${import.meta.env.VITE_API_URL}/trades/execute`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ symbol: symbol.trim().toUpperCase(), action: "BUY", qty: 1, mode: "auto" })
+        body: JSON.stringify({ symbol: symbol.trim().toUpperCase(), action: "BUY", qty: 1, mode: "live" })
       });
       const body = await r.json();
       if (!r.ok) throw body;
@@ -77,7 +77,7 @@ export function BuyNowRow({ rec }: { rec: Rec }) {
       const r = await fetch(`${import.meta.env.VITE_API_URL}/trades/execute`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ symbol, action: "BUY", qty, mode: "auto" })
+        body: JSON.stringify({ symbol, action: "BUY", qty, mode: "live" })
       });
       const body = await r.json();
       if (!r.ok) throw body;
