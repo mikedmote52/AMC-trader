@@ -35,9 +35,7 @@ def _load_selector():
 async def get_contenders():
     r = get_redis_client()
     items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
-    for it in items:
-        if isinstance(it, dict):
-            it["confidence"] = it.get("confidence") or ((it.get("score") or 0)/100.0)
+    # Return objects as-is so UI gets score, factors, thesis, compression_pctl
     return items
 
 @router.get("/explain")
@@ -152,11 +150,12 @@ async def discovery_audit_symbol(symbol: str):
         return {
             "symbol": symbol,
             "item": item,
+            "factors": item.get("factors", {}),
             "weights": weights,
             "gates": gates
         }
     except Exception:
-        return {"symbol": symbol, "item": None, "weights": {}, "gates": {}}
+        return {"symbol": symbol, "item": None, "factors": {}, "weights": {}, "gates": {}}
 
 @router.get("/test")
 async def discovery_test(relaxed: bool = Query(True), limit: int = Query(10)):
