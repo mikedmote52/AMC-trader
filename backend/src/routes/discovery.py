@@ -8,19 +8,16 @@ from backend.src.shared.redis_client import get_redis_client
 
 router = APIRouter()
 
-# Confidence computation functions
-w_score = float(os.getenv("AMC_W_SCORE", "0.6"))
-w_rs    = float(os.getenv("AMC_W_RS",    "0.3"))
-w_atr   = float(os.getenv("AMC_W_ATR",   "0.1"))
+# Redis keys
+V2_CONT = "amc:discovery:v2:contenders.latest"
+V2_TRACE = "amc:discovery:v2:explain.latest"
+V1_CONT = "amc:discovery:contenders.latest"
+V1_TRACE = "amc:discovery:explain.latest"
+STATUS = "amc:discovery:status"
 
-def _sigmoid(x): 
-    return 1/(1+math.exp(-x))
-
-def _conf(it):
-    tight = float(it.get("score") or 0.0)
-    rsn   = _sigmoid((float(it.get("rs_5d") or 0.0))/0.05)
-    atrn  = max(0.0, 1.0 - min(1.0, float(it.get("atr_pct") or 0.0)/0.05))
-    return max(0.0, min(1.0, w_score*tight + w_rs*rsn + w_atr*atrn))
+def _get_json(r, key):
+    raw = r.get(key)
+    return json.loads(raw) if raw else None
 
 def _load_selector():
     """Load select_candidates function from available jobs modules"""
@@ -35,51 +32,63 @@ def _load_selector():
     return None, None
 
 @router.get("/contenders")
-async def get_contenders() -> List[Dict]:
-    """Ensure each item has confidence, return as-is for UI"""
-    try:
-        redis_client = get_redis_client()
-        cached_data = redis_client.get("amc:discovery:contenders.latest")
-        if cached_data:
-            items = json.loads(cached_data)
-            # Ensure each item has confidence
-            for item in items:
-                if isinstance(item, dict) and not item.get("confidence"):
-                    item["confidence"] = (item.get("score", 0) or 0) / 100.0
-            return items
-        return []
-    except Exception:
-        return []
-
-@router.get("/status")
-async def get_discovery_status() -> Dict:
-    try:
-        redis_client = get_redis_client()
-        status_data = redis_client.get("amc:discovery:status")
-        if status_data:
-            return json.loads(status_data)
-        else:
-            return {"count": 0, "ts": None}
-    except Exception:
-        return {"count": 0, "ts": None}
+async def get_contenders():
+    r = get_redis_client()
+    items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
+    for it in items:
+        if isinstance(it, dict):
+            it["confidence"] = it.get("confidence") or ((it.get("score") or 0)/100.0)
+    return items
 
 @router.get("/explain")
-async def discovery_explain():
-    try:
-        redis_client = get_redis_client()
-        raw = redis_client.get("amc:discovery:explain.latest")
-        if not raw:
-            return {"ts": None, "count": 0, "trace": {"stages":[], "counts_in":{}, "counts_out":{}, "rejections":{}, "samples":{}}}
-        return json.loads(raw)
-    except Exception:
-        return {"ts": None, "count": 0, "trace": {"stages":[], "counts_in":{}, "counts_out":{}, "rejections":{}, "samples":{}}}
+async def explain():
+    r = get_redis_client()
+    return _get_json(r, V2_TRACE) or _get_json(r, V1_TRACE) or {"stages":[], "counts_in":{}, "counts_out":{}}
+
+@router.get("/status")
+async def status():
+    r = get_redis_client()
+    s = _get_json(r, STATUS)
+    if s: return s
+    tr = _get_json(r, V2_TRACE) or _get_json(r, V1_TRACE)
+    return {"count": (tr or {}).get("count", 0), "ts": (tr or {}).get("ts")}
+
+@router.get("/policy")
+async def policy():
+    # echo live env gates/weights so you can see what the job used
+    env = {
+      "PRICE_CAP": float(os.getenv("AMC_PRICE_CAP","100")),
+      "REL_VOL_MIN": float(os.getenv("AMC_REL_VOL_MIN","3")),
+      "ATR_PCT_MIN": float(os.getenv("AMC_ATR_PCT_MIN","0.04")),
+      "FLOAT_MAX": float(os.getenv("AMC_FLOAT_MAX","50000000")),
+      "BIG_FLOAT_MIN": float(os.getenv("AMC_BIG_FLOAT_MIN","150000000")),
+      "SI_MIN": float(os.getenv("AMC_SI_MIN","0.20")),
+      "BORROW_MIN": float(os.getenv("AMC_BORROW_MIN","0.20")),
+      "UTIL_MIN": float(os.getenv("AMC_UTIL_MIN","0.85")),
+      "IV_PCTL_MIN": float(os.getenv("AMC_IV_PCTL_MIN","0.80")),
+      "PCR_MIN": float(os.getenv("AMC_PCR_MIN","2.0")),
+      "W": {
+        "volume": float(os.getenv("AMC_W_VOLUME","0.25")),
+        "short":  float(os.getenv("AMC_W_SHORT","0.20")),
+        "catalyst":float(os.getenv("AMC_W_CATALYST","0.20")),
+        "sent":   float(os.getenv("AMC_W_SENT","0.15")),
+        "options":float(os.getenv("AMC_W_OPTIONS","0.10")),
+        "tech":   float(os.getenv("AMC_W_TECH","0.10")),
+      },
+      "INTRADAY": int(os.getenv("AMC_INTRADAY","0")),
+      "LOOKBACK_DAYS": int(os.getenv("LOOKBACK_DAYS","60")),
+      "R_MULT": float(os.getenv("AMC_R_MULT","2.0")),
+      "ATR_STOP_MULT": float(os.getenv("AMC_ATR_STOP_MULT","1.5")),
+      "MIN_STOP_PCT": float(os.getenv("AMC_MIN_STOP_PCT","0.02")),
+    }
+    return env
 
 @router.get("/audit")
 async def discovery_audit():
     """Compact view of latest contenders with factor fields"""
     try:
-        raw = get_redis_client().get("amc:discovery:contenders.latest") or b"[]"
-        items = json.loads(raw)
+        r = get_redis_client()
+        items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
         keep = ["symbol", "price", "dollar_vol", "score", "confidence", "rel_vol_30m", 
                 "atr_pct", "float", "si", "borrow", "util", "pcr", "iv_pctl", 
                 "call_oi_up", "sent_score", "trending", "ema_cross", "rsi_zone_ok", "thesis"]
@@ -99,8 +108,8 @@ async def discovery_audit():
 async def discovery_audit_symbol(symbol: str):
     """Full record for symbol plus factor weights and env policy"""
     try:
-        raw = get_redis_client().get("amc:discovery:contenders.latest") or b"[]"
-        items = json.loads(raw)
+        r = get_redis_client()
+        items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
         
         # Find the symbol
         item = None
