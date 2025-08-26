@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { TradeModal } from "./TradeModal";
 
 type Rec = { 
   symbol?: string; 
@@ -22,27 +23,7 @@ const API_BASE = (typeof window !== "undefined" && (window as any).API_BASE) || 
 
 function QuickBuy() {
   const [symbol, setSymbol] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  async function submit() {
-    if (!symbol.trim()) return;
-    setLoading(true); setMsg(null);
-    try {
-      const r = await fetch(`${import.meta.env.VITE_API_URL}/trades/execute`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ symbol: symbol.trim().toUpperCase(), action: "BUY", mode: "live", notional_usd: 100, qty: 1 })
-      });
-      const body = await r.json();
-      if (!r.ok) throw body;
-      setMsg(body.mode === "live" ? "Live order submitted" : "Shadow order recorded");
-    } catch (e:any) {
-      setMsg(`Rejected: ${e?.error ?? "unknown_error"}`);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [open, setOpen] = useState(false);
 
   return (
     <div className="flex items-center gap-2 mb-3">
@@ -53,53 +34,24 @@ function QuickBuy() {
         className="px-3 py-2 rounded border bg-white/10"
       />
       <button
-        onClick={submit}
-        disabled={loading}
+        onClick={() => symbol.trim() && setOpen(true)}
+        disabled={!symbol.trim()}
         className="px-3 py-2 rounded bg-black text-white disabled:opacity-50"
       >
-        {loading ? "Submitting..." : "Buy $100 (1 share)"}
+        Buy
       </button>
-      {msg && <span className="text-sm">{msg}</span>}
+      {open && <TradeModal symbol={symbol.trim()} onClose={() => setOpen(false)} />}
     </div>
   );
 }
 
 export function BuyNowRow({ rec }: { rec: Rec }) {
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  async function buy(symbol: string, notional: number) {
-    try {
-      setLoading(true); 
-      setMsg(null);
-      const price = rec.price ?? rec.last ?? 0;
-      const qty = Math.max(1, Math.floor(notional / Math.max(price, 1)));
-      const r = await fetch(`${import.meta.env.VITE_API_URL}/trades/execute`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ symbol, action: "BUY", mode: "live", notional_usd: notional, qty })
-      });
-      const body = await r.json();
-      if (!r.ok) throw body;
-      setMsg(body.mode === "live" ? "Live order submitted" : "Shadow order recorded");
-    } catch (e: any) {
-      setMsg(`Rejected: ${e?.error ?? "unknown_error"}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  const [open, setOpen] = useState(false);
   return (
     <div className="flex items-center gap-3">
       <span className="font-medium">{rec.symbol}</span>
-      <button
-        className="px-3 py-1 rounded bg-black text-white disabled:opacity-50"
-        disabled={loading}
-        onClick={() => buy(rec.symbol || rec.ticker || "", 100)}
-      >
-        {loading ? "Submitting..." : "Buy $100"}
-      </button>
-      {msg && <span className="text-sm">{msg}</span>}
+      <button className="px-3 py-1 rounded bg-black text-white" onClick={()=>setOpen(true)}>Buy</button>
+      {open && <TradeModal symbol={rec.symbol || rec.ticker || ""} onClose={()=>setOpen(false)} />}
     </div>
   );
 }
