@@ -5,36 +5,31 @@ from backend.src.shared.redis_client import get_redis_client
 
 router = APIRouter()
 
-def get_holding_recommendation(symbol: str, unrealized_pl_pct: float, contenders_dict: Dict) -> Dict:
-    """Generate recommendation based on contenders and performance"""
-    if symbol in contenders_dict:
-        score = contenders_dict[symbol].get("score", 0)
-        thesis = contenders_dict[symbol].get("thesis", "")
-        
-        if score >= 0.97:
-            return {"suggestion": "increase", "thesis": thesis}
-        elif score >= 0.94:
-            return {"suggestion": "hold", "thesis": thesis}
-    
-    if symbol not in contenders_dict and unrealized_pl_pct < -0.05:
-        return {"suggestion": "reduce", "thesis": "Position underperforming and not in current contenders"}
-    
-    return {"suggestion": "hold", "thesis": ""}
-
 def build_holding_with_accurate_math(raw_position: Dict, contenders_dict: Dict) -> Dict:
-    """Build holding with accurate math and recommendation"""
+    """Build holding with accurate math, thesis, and confidence"""
     symbol = raw_position.get("symbol", "")
+    
+    # Derive accurate values per user specification
     qty = float(raw_position.get("qty", raw_position.get("quantity", 0)))
     avg_entry_price = float(raw_position.get("avg_entry_price", raw_position.get("cost_basis", 0)))
-    last_price = float(raw_position.get("last_price", raw_position.get("current_price", 0)))
+    last_price = float(raw_position.get("current_price") or raw_position.get("asset_price") or avg_entry_price)
     
-    # Calculate accurate values
-    market_value = qty * last_price
-    unrealized_pl = (last_price - avg_entry_price) * qty
-    unrealized_pl_pct = (last_price / avg_entry_price - 1) if avg_entry_price > 0 else 0
+    # Calculate rounded values
+    market_value = round(last_price * qty, 2)
+    unrealized_pl = round((last_price - avg_entry_price) * qty, 2)
+    unrealized_pl_pct = round((last_price / avg_entry_price - 1.0) if avg_entry_price else 0.0, 4)
     
-    # Get recommendation
-    recommendation = get_holding_recommendation(symbol, unrealized_pl_pct, contenders_dict)
+    # Join discovery context
+    contender = contenders_dict.get(symbol, {})
+    thesis = contender.get("thesis")
+    confidence = contender.get("confidence") or contender.get("score")
+    
+    # Generate suggestion based on confidence and performance
+    suggestion = (
+        "increase" if (confidence or 0) >= 0.97 else
+        "reduce" if unrealized_pl_pct < -0.05 else
+        "hold"
+    )
     
     return {
         "symbol": symbol,
@@ -44,8 +39,9 @@ def build_holding_with_accurate_math(raw_position: Dict, contenders_dict: Dict) 
         "market_value": market_value,
         "unrealized_pl": unrealized_pl,
         "unrealized_pl_pct": unrealized_pl_pct,
-        "suggestion": recommendation["suggestion"],
-        "thesis": recommendation["thesis"],
+        "thesis": thesis,
+        "confidence": confidence,
+        "suggestion": suggestion,
         # Legacy frontend compatibility
         "quantity": qty,
         "current_price": last_price
@@ -56,14 +52,11 @@ async def get_holdings() -> Dict:
     try:
         positions = []
         
-        # Get contenders data from Redis for recommendations
+        # Get contenders data from Redis for thesis and confidence
         contenders_dict = {}
         try:
-            redis_client = get_redis_client()
-            cached_data = redis_client.get("amc:discovery:contenders.latest")
-            if cached_data:
-                contenders_list = json.loads(cached_data)
-                contenders_dict = {c.get("symbol", ""): c for c in contenders_list if isinstance(c, dict)}
+            contenders = json.loads(get_redis_client().get("amc:discovery:contenders.latest") or "[]")
+            contenders_dict = {c["symbol"]: c for c in contenders if isinstance(c, dict) and "symbol" in c}
         except Exception:
             pass
         
