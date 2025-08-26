@@ -1,5 +1,7 @@
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from backend.src.routes.trades import router as trades_router
 from backend.src.routes.debug_polygon import router as polygon_debug
@@ -27,6 +29,14 @@ app = FastAPI(
     description="Paper trading execution API with risk guardrails",
     version="1.0.0"
 )
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exc_handler(request: Request, exc: StarletteHTTPException):
+    # Preserve status and include detail in a consistent shape
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "error": (exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)})},
+    )
 
 # CORS middleware - allow frontend origins
 app.add_middleware(
