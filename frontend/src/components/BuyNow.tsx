@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { TradeModal } from "./TradeModal";
+import TradeModal from "./TradeModal";
 import { API_BASE } from '../config';
 
 type Rec = { 
