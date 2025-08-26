@@ -45,5 +45,22 @@ assert hasattr(app_main, "app"), "app.main:app not found"
 print("IMPORT_OK_ALIAS")
 PY
 
+# 4) Prove select_candidates is available at build time
+RUN python - <<'PY'
+import importlib, sys
+mods = ("backend.src.jobs.discovery","backend.src.jobs.discover")
+found = []
+for mod in mods:
+    try:
+        m = importlib.import_module(mod)
+        f = getattr(m, "select_candidates", None)
+        if callable(f):
+            found.append(mod)
+    except Exception:
+        pass
+assert found, "No select_candidates in jobs.discovery or jobs.discover"
+print("SELECTOR_OK:", ",".join(found))
+PY
+
 EXPOSE 8000
 CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000"]
