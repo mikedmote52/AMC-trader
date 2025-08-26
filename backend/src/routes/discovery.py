@@ -8,7 +8,7 @@ router = APIRouter()
 
 def _load_selector():
     """Load select_candidates function from available jobs modules"""
-    for mod in ("backend.src.jobs.discovery", "backend.src.jobs.discover"):
+    for mod in ("src.jobs.discovery", "src.jobs.discover"):
         try:
             m = importlib.import_module(mod)
             f = getattr(m, "select_candidates", None)
@@ -81,7 +81,7 @@ async def discovery_explain():
 async def discovery_test(relaxed: bool = Query(True), limit: int = Query(10)):
     f, mod = _load_selector()
     if not f:
-        return {"items": [], "trace": {}, "error": "select_candidates not found in jobs.discovery or jobs.discover"}
+        return {"items": [], "trace": {}, "error": "select_candidates not found in src.jobs.discovery or src.jobs.discover"}
     try:
         res = await f(relaxed=relaxed, limit=limit, with_trace=True)  # type: ignore
         if isinstance(res, tuple) and len(res) == 2:
