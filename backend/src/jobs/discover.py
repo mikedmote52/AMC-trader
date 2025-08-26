@@ -18,6 +18,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from shared.database import get_db_session, Recommendation
 from shared.redis_client import redis_lock, get_redis_client  
 from shared.market_hours import is_market_hours, get_market_status
+from lib.redis_client import publish_discovery_contenders
 from polygon import RESTClient
 import requests
 
@@ -263,6 +264,34 @@ class DiscoveryPipeline:
                 'market_status': market_status,
                 'duration_seconds': (datetime.now() - start_time).total_seconds()
             }
+        
+        # Publish contenders to Redis for API consumption
+        try:
+            # Transform recommendations into contenders format for Redis
+            contenders = []
+            for rec in recommendations:
+                contender = {
+                    'symbol': rec['symbol'],
+                    'score': rec['composite_score'],
+                    'reason': rec['reason'],
+                    'price': rec['price'],
+                    'volume': rec['volume'],
+                    'sentiment_score': rec.get('sentiment_score'),
+                    'technical_score': rec['technical_score']
+                }
+                contenders.append(contender)
+            
+            # Sort by composite score descending (best contenders first)
+            contenders.sort(key=lambda x: x['score'], reverse=True)
+            
+            # Publish to Redis with 10-minute TTL
+            publish_discovery_contenders(contenders, ttl=600)
+            
+            logger.info(f"Published {len(contenders)} contenders to Redis")
+            
+        except Exception as e:
+            logger.error(f"Failed to publish contenders to Redis: {e}")
+            # Don't fail the entire pipeline if Redis publishing fails
         
         # Write recommendations
         written_count = self.write_recommendations(recommendations)
