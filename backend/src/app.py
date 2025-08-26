@@ -2,6 +2,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.src.routes import trades
+from backend.src.routes.debug_polygon import router as polygon_debug
 
 # Configure structured logging
 structlog.configure(
@@ -38,6 +39,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(trades.router)
+app.include_router(polygon_debug)
 
 @app.get("/")
 async def root():
