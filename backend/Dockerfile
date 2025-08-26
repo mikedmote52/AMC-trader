@@ -46,6 +46,25 @@ for m in mods:
 print("PROOF_OK:", ",".join(ok))
 for m,e in warn:
     print("PROOF_WARN:", m, e)
+
+# Holdings field validation proof (warn-only)
+try:
+    from backend.src.routes.portfolio import build_holding_with_accurate_math
+    sample_holding = {
+        "symbol": "AAPL",
+        "qty": 100,
+        "avg_entry_price": 150.0,
+        "last_price": 160.0
+    }
+    result = build_holding_with_accurate_math(sample_holding, {})
+    required_fields = ["symbol", "qty", "avg_entry_price", "last_price", "market_value", "unrealized_pl", "unrealized_pl_pct", "suggestion"]
+    missing = [f for f in required_fields if f not in result]
+    present = [f for f in required_fields if f in result]
+    print("HOLDINGS_PROOF_OK:", ",".join(present))
+    if missing:
+        print("HOLDINGS_PROOF_WARN: missing fields:", ",".join(missing))
+except Exception as e:
+    print("HOLDINGS_PROOF_WARN:", repr(e))
 PY
 
 EXPOSE 8000
