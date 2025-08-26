@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { API_BASE } from '../config';
 
 export function TradeModal({ symbol, onClose }: { symbol: string; onClose: () => void }) {
   const [amount, setAmount] = useState(100);        // dollar notional
@@ -33,7 +34,7 @@ export function TradeModal({ symbol, onClose }: { symbol: string; onClose: () =>
         if (tpAbs) body.take_profit_price = Number(tpAbs);
         if (slAbs) body.stop_loss_price = Number(slAbs);
       }
-      const r = await fetch(`${import.meta.env.VITE_API_URL}/trades/execute`, {
+      const r = await fetch(`${API_BASE}/trades/execute`, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       });
