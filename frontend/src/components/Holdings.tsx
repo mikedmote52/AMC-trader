@@ -82,17 +82,27 @@ export function Holdings() {
             const suggestion = holding.suggestion;
             const thesis = holding.thesis;
             const confidence = holding.confidence;
+            const score = holding.score;
+            const targetPrice = holding.target_price;
+            const stopPrice = holding.stop_price;
             
             return (
               <div key={symbol} className="holding-card">
                 <div className="holding-header">
                   <span className="symbol">{symbol}</span>
                   <span className="qty">{quantity} shares</span>
-                  {confidence !== undefined && (
-                    <span className="confidence text-sm text-blue-400">
-                      {(confidence * 100).toFixed(1)}%
-                    </span>
-                  )}
+                  <div className="flex gap-2">
+                    {score !== undefined && (
+                      <span className="score text-sm text-green-400">
+                        {Math.round(score * 100)}
+                      </span>
+                    )}
+                    {confidence !== undefined && (
+                      <span className="confidence text-sm text-blue-400">
+                        {(confidence * 100).toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
                 </div>
                 
                 <div className="holding-details">
@@ -117,6 +127,27 @@ export function Holdings() {
                   {thesis && (
                     <div className="thesis text-sm opacity-80 mt-2">
                       {thesis}
+                    </div>
+                  )}
+                  
+                  {/* Show targets if available */}
+                  {(targetPrice || stopPrice) && (
+                    <div className="targets border-t border-gray-700 pt-2 mt-2">
+                      <div className="text-xs opacity-70 mb-1">Targets</div>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        {targetPrice && (
+                          <div>
+                            <span className="opacity-70">Target</span>
+                            <div className="text-green-400">{formatCurrency(targetPrice)}</div>
+                          </div>
+                        )}
+                        {stopPrice && (
+                          <div>
+                            <span className="opacity-70">Stop</span>
+                            <div className="text-red-400">{formatCurrency(stopPrice)}</div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                   
