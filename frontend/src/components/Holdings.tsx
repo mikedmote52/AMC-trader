@@ -14,31 +14,18 @@ type Holding = {
   [key: string]: any;
 };
 
-type Contender = {
-  symbol: string;
-  score?: number;
-  thesis?: string;
-};
 
 export default function Holdings() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
-  const [contenders, setContenders] = useState<Contender[]>([]);
   const [err, setErr] = useState<string>("");
   const [showTradeModal, setShowTradeModal] = useState(false);
-  const [tradePreset, setTradePreset] = useState<{symbol: string; action: "BUY" | "SELL"; qty?: number} | null>(null);
+  const [tradePreset, setTradePreset] = useState<{symbol: string; action: "BUY" | "SELL"} | null>(null);
 
   async function fetchData() {
     try {
       setErr("");
-      
-      // Fetch holdings and contenders in parallel
-      const [holdingsData, contendersData] = await Promise.all([
-        getJSON<any>(`${API_BASE}/portfolio/holdings`),
-        getJSON<any>(`${API_BASE}/discovery/contenders`)
-      ]);
-      
+      const holdingsData = await getJSON<any>(`${API_BASE}/portfolio/holdings`);
       setHoldings(Array.isArray(holdingsData) ? holdingsData : []);
-      setContenders(Array.isArray(contendersData) ? contendersData : []);
     } catch (e: any) {
       setErr(e?.message || String(e));
     }
@@ -50,13 +37,9 @@ export default function Holdings() {
     return () => clearInterval(id);
   }, []);
 
-  const handleTrade = (symbol: string, action: "BUY" | "SELL", qty?: number) => {
-    setTradePreset({ symbol, action, qty });
+  const handleTrade = (symbol: string, action: "BUY" | "SELL") => {
+    setTradePreset({ symbol, action });
     setShowTradeModal(true);
-  };
-
-  const findContender = (symbol: string) => {
-    return contenders.find(c => c.symbol === symbol);
   };
 
   if (err) return <div style={{padding:12, color:"#c00"}}>Error loading holdings: {err}</div>;
@@ -64,55 +47,36 @@ export default function Holdings() {
 
   return (
     <>
-      <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(320px, 1fr))", gap:12}}>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))", gap:12}}>
         {holdings.map((holding) => {
-          const contender = findContender(holding.symbol);
           const plColor = holding.unrealized_pl >= 0 ? "#22c55e" : "#ef4444";
           
           return (
             <div key={holding.symbol} style={cardStyle}>
-              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
-                <div style={{fontWeight:700, fontSize:16}}>{holding.symbol}</div>
-                {contender?.score && (
-                  <div style={{
-                    background: contender.score >= 75 ? "#16a34a" : contender.score >= 70 ? "#d97706" : "#6b7280",
-                    color: "white",
-                    padding: "2px 8px",
-                    borderRadius: 999,
-                    fontSize: 12,
-                    fontWeight: 600
-                  }}>
-                    {Math.round(contender.score)}
-                  </div>
-                )}
+              <div style={{fontSize:16, fontWeight:700, marginBottom:8}}>
+                {holding.symbol} • {holding.qty}
               </div>
               
-              <div style={{fontSize:13, marginBottom:8, lineHeight:1.4}}>
-                <div>Qty: {holding.qty} • Avg: ${holding.avg_entry_price.toFixed(2)}</div>
-                <div>Last: ${holding.last_price.toFixed(2)} • Value: ${holding.market_value.toFixed(2)}</div>
+              <div style={{fontSize:14, marginBottom:8, lineHeight:1.4}}>
+                <div>Last: ${holding.last_price.toFixed(2)} | Avg: ${holding.avg_entry_price.toFixed(2)}</div>
+                <div>Value: ${holding.market_value.toFixed(2)}</div>
                 <div style={{color: plColor}}>
                   P&L: ${holding.unrealized_pl.toFixed(2)} ({(holding.unrealized_pl_pct * 100).toFixed(1)}%)
                 </div>
               </div>
-              
-              {contender?.thesis && (
-                <div style={{fontSize:12, color:"#bbb", marginBottom:12, lineHeight:1.3}}>
-                  {contender.thesis}
-                </div>
-              )}
               
               <div style={{display:"flex", gap:8}}>
                 <button 
                   onClick={() => handleTrade(holding.symbol, "BUY")} 
                   style={buyBtn}
                 >
-                  Buy / Increase
+                  Buy/Increase
                 </button>
                 <button 
-                  onClick={() => handleTrade(holding.symbol, "SELL", holding.qty)} 
+                  onClick={() => handleTrade(holding.symbol, "SELL")} 
                   style={sellBtn}
                 >
-                  Reduce / Sell
+                  Reduce/Sell
                 </button>
               </div>
             </div>
@@ -124,7 +88,6 @@ export default function Holdings() {
         <TradeModal
           presetSymbol={tradePreset.symbol}
           presetAction={tradePreset.action}
-          presetQty={tradePreset.qty}
           onClose={() => {
             setShowTradeModal(false);
             setTradePreset(null);

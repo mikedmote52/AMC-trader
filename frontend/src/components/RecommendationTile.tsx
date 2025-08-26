@@ -3,20 +3,16 @@ import { API_BASE } from "../config";
 import { getJSON } from "../lib/api";
 import TradeModal from "./TradeModal";
 
-type Candidate = {
-  symbol: string;
-  price?: number | null;
-  score?: number | null;
-  confidence?: number | null;
-  thesis?: string | null;
-  thesis_rich?: any | null;
-  atr_pct?: number | null;
-  dollar_vol?: number | null;
-  rel_vol_30m?: number | null;
-  reason?: string | null;
-};
+interface Contender {
+  symbol: string; 
+  price?: number; 
+  thesis?: string;
+  score: number; 
+  confidence?: number;
+  factors?: Record<string, any>;
+}
 
-export default function RecommendationTile({ item }: { item: Candidate }) {
+export default function RecommendationTile({ item }: { item: Contender }) {
   const score = normScore(item.score ?? item.confidence ?? 0);
   const [hover, setHover] = useState(false);
   const [open, setOpen] = useState(false);

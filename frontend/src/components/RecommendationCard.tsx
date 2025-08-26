@@ -3,13 +3,14 @@ import { API_BASE } from "../config";
 import { getJSON } from "../lib/api";
 import TradeModal from "./TradeModal";
 
-type Candidate = {
-  symbol: string;
-  price?: number | null;
-  score?: number | null;
-  thesis?: string | null;
-  [key: string]: any;
-};
+interface Contender {
+  symbol: string; 
+  price?: number; 
+  thesis?: string;
+  score: number; 
+  confidence?: number;
+  factors?: Record<string, any>;
+}
 
 type AuditData = {
   volume?: { rel_vol_30m?: number };
@@ -22,14 +23,13 @@ type AuditData = {
   dollar_vol?: number;
 };
 
-export default function RecommendationCard({ item }: { item: Candidate }) {
+export default function RecommendationCard({ item }: { item: Contender }) {
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [auditData, setAuditData] = useState<AuditData | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Use item.score directly, not compression percentile
-  const score = Math.round(item.score ?? 0);
+  const displayScore = Math.round(item.score ?? (item.confidence ? item.confidence * 100 : 0));
   
   const getScoreClass = (score: number) => {
     if (score >= 75) return "bg-green-600 text-white";
@@ -62,8 +62,8 @@ export default function RecommendationCard({ item }: { item: Candidate }) {
               ${item.price?.toFixed(2) || "N/A"}
             </div>
           </div>
-          <div className={`px-2 py-1 text-xs rounded-full font-bold ${getScoreClass(score)}`}>
-            {score}
+          <div className={`px-2 py-1 text-xs rounded-full font-bold ${getScoreClass(displayScore)}`}>
+            {displayScore}
           </div>
         </div>
         

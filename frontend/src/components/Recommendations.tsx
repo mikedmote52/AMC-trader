@@ -3,21 +3,17 @@ import { API_BASE } from "../config";
 import { getJSON } from "../lib/api";
 import RecommendationCard from "./RecommendationCard";
 
-type Candidate = {
-  symbol: string;
-  price?: number | null;
-  score?: number | null;
-  confidence?: number | null;
-  thesis?: string | null;
-  thesis_rich?: any | null;
-  atr_pct?: number | null;
-  dollar_vol?: number | null;
-  rel_vol_30m?: number | null;
-  reason?: string | null;
-};
+interface Contender {
+  symbol: string; 
+  price?: number; 
+  thesis?: string;
+  score: number; 
+  confidence?: number;
+  factors?: Record<string, any>;
+}
 
 export default function Recommendations() {
-  const [items, setItems] = useState<Candidate[]>([]);
+  const [items, setItems] = useState<Contender[]>([]);
   const [err, setErr] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
@@ -28,8 +24,8 @@ export default function Recommendations() {
         setLoading(true);
         setErr("");
         const data = await getJSON<any>(`${API_BASE}/discovery/contenders`);
-        const list: Candidate[] = Array.isArray(data) ? data : [];
-        list.sort((a,b) => (b.score ?? 0) - (a.score ?? 0));
+        const list: Contender[] = Array.isArray(data) ? data : [];
+        list.sort((a,b) => b.score - a.score);
         if (alive) setItems(list);
       } catch (e:any) {
         if (alive) setErr(e?.message || String(e));
