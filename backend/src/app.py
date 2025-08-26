@@ -1,5 +1,6 @@
 import structlog
-from fastapi import FastAPI
+import os, json
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from backend.src.routes import trades
 
@@ -36,8 +37,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/_version")
+def version():
+    # Render exposes these; fall back to git SHA you set later
+    return {
+        "render_commit": os.getenv("RENDER_GIT_COMMIT", "unknown"),
+        "render_build_id": os.getenv("RENDER_SERVICE_BUILD_ID", "unknown")
+    }
+
+@app.get("/_routes")
+def routes(request: Request):
+    return {"routes": [r.path for r in request.app.routes]}
+
 # Include routers
 app.include_router(trades.router)
+app.include_router(trades.diag)
 
 @app.get("/")
 async def root():
