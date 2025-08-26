@@ -1,4 +1,11 @@
-import structlog
+try:
+    import structlog  # optional
+    log = structlog.get_logger("amc")
+except Exception:
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    log = logging.getLogger("amc")
+
 import os
 from datetime import datetime, timezone
 from fastapi import FastAPI, Request
@@ -13,22 +20,26 @@ APP_TAG    = "trace_v3"
 APP_COMMIT = os.getenv("RENDER_GIT_COMMIT", "unknown")
 APP_BUILD  = os.getenv("RENDER_SERVICE_BUILD_ID", "unknown")
 
-# Configure structured logging
-structlog.configure(
-    processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-        structlog.processors.JSONRenderer()
-    ],
-    wrapper_class=structlog.stdlib.BoundLogger,
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    cache_logger_on_first_use=True,
-)
+# Configure structured logging if available
+try:
+    structlog.configure(
+        processors=[
+            structlog.stdlib.filter_by_level,
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.PositionalArgumentsFormatter(),
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer()
+        ],
+        wrapper_class=structlog.stdlib.BoundLogger,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
+except NameError:
+    # structlog not available, already configured logging fallback above
+    pass
 
 # Create FastAPI app
 app = FastAPI(
