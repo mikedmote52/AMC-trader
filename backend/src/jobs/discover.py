@@ -9,9 +9,14 @@ import os
 import sys
 import logging
 import json
+import asyncio
+import httpx
+import time
+import math
+import statistics as stats
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 # Add src to path for imports
@@ -23,6 +28,15 @@ from shared.market_hours import is_market_hours, get_market_status
 from lib.redis_client import publish_discovery_contenders
 from polygon import RESTClient
 import requests
+
+# Environment variables for live discovery
+POLY_KEY = os.getenv("POLYGON_API_KEY")
+PRICE_CAP = float(os.getenv("AMC_PRICE_CAP", "100"))             # keep ≤ 100 by default
+MIN_DOLLAR_VOL = float(os.getenv("AMC_MIN_DOLLAR_VOL", "20000000"))  # $20M
+LOOKBACK_DAYS = int(os.getenv("AMC_COMPRESSION_LOOKBACK", "60"))
+COMPRESSION_PCTL_MAX = float(os.getenv("AMC_COMPRESSION_PCTL_MAX", "0.15"))  # tightest 15%
+MAX_CANDIDATES = int(os.getenv("AMC_MAX_CANDIDATES", "15"))
+UNIVERSE_FALLBACK = [s.strip().upper() for s in os.getenv("AMC_DISCOVERY_UNIVERSE","AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,AMD,AVGO,PLTR,COIN,CRM,ORCL,ABNB,SNOW,UBER,NFLX,SHOP,INTC,MRVL,SMCI").split(",") if s.strip()]
 
 # Configure logging
 logging.basicConfig(
@@ -59,6 +73,37 @@ class StageTrace:
             "rejections": {k: dict(v) for k, v in self.rejections.items()},
             "samples": self.sample_rejects,
         }
+
+def _last_trading_date_yyyymmdd_approx():
+    # simple "yesterday" in UTC; Polygon accepts previous session
+    return (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+async def _poly_get(client, path, params=None, timeout=20):
+    p = {"apiKey": POLY_KEY}
+    if params: p.update(params)
+    r = await client.get(f"https://api.polygon.io{path}", params=p, timeout=timeout)
+    r.raise_for_status()
+    return r.json()
+
+def _bandwidth_percentile(closes, highs, lows, window=20, lookback=60):
+    # Bollinger Band width / close, then percentile of last value vs history
+    bw = []
+    for i in range(len(closes)):
+        if i < window: 
+            bw.append(None); continue
+        window_closes = closes[i-window:i]
+        mu = stats.fmean(window_closes)
+        sd = stats.pstdev(window_closes) or 1e-9
+        upper = mu + 2*sd
+        lower = mu - 2*sd
+        width = (upper - lower) / (closes[i-1] or 1e-9)
+        bw.append(width)
+    series = [x for x in bw[-lookback:] if x is not None]
+    if not series or bw[-1] is None:
+        return 1.0  # worst (loose)
+    last = bw[-1]
+    rank = sum(1 for x in series if x <= last) / len(series)
+    return rank  # 0 is tightest, 1 is loosest
 
 class DiscoveryPipeline:
     def __init__(self):
@@ -381,121 +426,104 @@ class DiscoveryPipeline:
         logger.info(f"Discovery pipeline completed: {result}")
         return result
 
-async def select_candidates(relaxed: bool = False, limit: int | None = None, with_trace: bool = False) -> tuple[list[dict], dict]:
-    """
-    Dry-run entrypoint that executes the same discovery pipeline without writing anything.
-    
-    Args:
-        relaxed: Apply more lenient filters (not implemented in current pipeline)
-        limit: Maximum number of candidates to return
-        with_trace: Include trace information in return
-    
-    Returns:
-        tuple: (candidates, trace_dict)
-    """
-    trace = StageTrace()
-    pipeline = DiscoveryPipeline()
-    
+async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trace: bool=False):
+    # StageTrace from earlier instrumentation
     try:
-        # Run the full pipeline with tracing but without Redis/DB writes
-        # We'll extract the contenders directly from the pipeline
-        start_time = datetime.now()
-        market_status = get_market_status()
-        
-        # Read universe
-        symbols = pipeline.read_universe()
-        if not symbols:
-            return [], trace.to_dict() if with_trace else {}
-        
-        trace.enter("universe", symbols)
-        trace.exit("universe", symbols)
-        
-        # Fetch price data
-        price_data = pipeline.fetch_polygon_prices(symbols)
-        price_symbols = list(price_data.keys())
-        failed_price_symbols = []
-        for symbol in symbols:
-            if symbol not in price_data:
-                failed_price_symbols.append({'symbol': symbol, 'reason': 'no_price_data'})
-        
-        trace.enter("price_fetch", symbols)
-        trace.exit("price_fetch", price_symbols, failed_price_symbols)
-        
-        # Generate recommendations with tracing
-        trace.enter("compute_features", price_symbols)
-        recommendations = []
-        symbols_with_sentiment = 0
-        compute_failures = []
-        
-        for symbol in price_symbols:
-            data = price_data[symbol]
-            
-            try:
-                sentiment = pipeline.compute_sentiment_score(symbol, data)
-                technical = pipeline.compute_technical_score(symbol, data)
-                scores = pipeline.compose_scores(symbol, sentiment, technical)
-                
-                if sentiment is not None:
-                    symbols_with_sentiment += 1
-                
-                recommendation = {
-                    'symbol': symbol,
-                    'price': data['price'],
-                    'volume': data['volume'],
-                    **scores
-                }
-                recommendations.append(recommendation)
-                
-            except Exception as e:
-                compute_failures.append({'symbol': symbol, 'reason': f'compute_error: {str(e)}'})
-        
-        successful_symbols = [rec['symbol'] for rec in recommendations]
-        trace.exit("compute_features", successful_symbols, compute_failures)
-        
-        # Apply sentiment filter
-        trace.enter("sentiment_filter", successful_symbols)
-        if market_status['is_open'] and symbols_with_sentiment == 0:
-            trace.exit("sentiment_filter", [], [{'reason': 'insufficient_live_sentiment', 'count': len(recommendations)}])
-            return [], trace.to_dict() if with_trace else {}
-        else:
-            trace.exit("sentiment_filter", successful_symbols)
-        
-        # Score and sort
-        trace.enter("score_and_sort", successful_symbols)
-        contenders = []
-        for rec in recommendations:
-            contender = {
-                'symbol': rec['symbol'],
-                'score': rec['composite_score'],
-                'reason': rec['reason'],
-                'price': rec['price'],
-                'volume': rec['volume'],
-                'sentiment_score': rec.get('sentiment_score'),
-                'technical_score': rec['technical_score']
-            }
-            contenders.append(contender)
-        
-        contenders.sort(key=lambda x: x['score'], reverse=True)
-        final_symbols = [c['symbol'] for c in contenders]
-        trace.exit("score_and_sort", final_symbols)
-        
-        # Apply limit if specified
-        if limit and len(contenders) > limit:
-            trace.enter("take_top", final_symbols)
-            limited_contenders = contenders[:limit]
-            limited_symbols = [c['symbol'] for c in limited_contenders]
-            rejected_symbols = [{'symbol': c['symbol'], 'reason': f'beyond_limit_{limit}'} for c in contenders[limit:]]
-            trace.exit("take_top", limited_symbols, rejected_symbols)
-            contenders = limited_contenders
-        
-        return contenders, trace.to_dict() if with_trace else {}
-        
-    except Exception as e:
-        logger.error(f"Error in select_candidates: {e}")
-        return [], trace.to_dict() if with_trace else {}
+        trace = StageTrace()
+    except NameError:
+        class _T:
+            def __init__(self): self.d={"stages":[], "counts_in":{}, "counts_out":{}, "rejections":{}, "samples":{}}
+            def enter(self,n,syms): self.d["stages"].append(n); self.d["counts_in"][n]=len(syms)
+            def exit(self,n,kept,rejected=None,reason_key="reason"):
+                self.d["counts_out"][n]=len(kept)
+                if rejected: 
+                    from collections import Counter
+                    c=Counter([r.get(reason_key,"unspecified") for r in rejected]); self.d["rejections"][n]=dict(c); self.d["samples"][n]=rejected[:25]
+            def to_dict(self): return self.d
+        trace=_T()
+
+    timeout = httpx.Timeout(25.0, connect=6.0)
+    limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
+
+    kept_syms = []
+    rejected = []
+
+    date = _last_trading_date_yyyymmdd_approx()
+    trace.enter("universe", ["<grouped>"])
+    try:
+        async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
+            g = await _poly_get(client, f"/v2/aggs/grouped/locale/us/market/stocks/{date}", params={"adjusted":"true"})
+        rows = g.get("results") or []
+        # cheap gates first
+        pcap = PRICE_CAP * (1.2 if relaxed else 1.0)  # allow slight slack in relaxed mode
+        dvmin = MIN_DOLLAR_VOL * (0.5 if relaxed else 1.0)
+        for r in rows:
+            sym = r.get("T")
+            c = float(r.get("c") or 0.0)
+            v = float(r.get("v") or 0.0)
+            dollar_vol = c * v
+            if not sym or c <= 0:
+                continue
+            if c > pcap:
+                rejected.append({"symbol": sym, "reason": "price_cap"})
+            elif dollar_vol < dvmin:
+                rejected.append({"symbol": sym, "reason": "dollar_vol_min"})
+            else:
+                kept_syms.append(sym)
+    except Exception:
+        # fallback to curated universe to stay real but lighter
+        kept_syms = UNIVERSE_FALLBACK[:]
+    trace.exit("universe", kept_syms, rejected)
+
+    if not kept_syms:
+        items = []
+        return (items, trace.to_dict()) if with_trace else items
+
+    # fetch per-symbol daily bars for compression only on survivors
+    async def fetch_bars(sym):
+        try:
+            async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
+                bars = await _poly_get(client, f"/v2/aggs/ticker/{sym}/range/1/day/1970-01-01/2099-01-01", params={"adjusted":"true","limit":LOOKBACK_DAYS+120})
+            res = bars.get("results") or []
+            closes = [float(x.get("c") or 0) for x in res][- (LOOKBACK_DAYS+25):]
+            highs  = [float(x.get("h") or 0) for x in res][- (LOOKBACK_DAYS+25):]
+            lows   = [float(x.get("l") or 0) for x in res][- (LOOKBACK_DAYS+25):]
+            if len(closes) < 25:
+                return sym, None
+            pct = _bandwidth_percentile(closes, highs, lows, window=20, lookback=LOOKBACK_DAYS)
+            return sym, pct
+        except Exception:
+            return sym, None
+
+    # cap survivors before expensive step
+    prelimit = min(len(kept_syms), 400 if not relaxed else 800)
+    kept_syms = kept_syms[:prelimit]
+
+    pairs = await asyncio.gather(*[fetch_bars(s) for s in kept_syms])
+    comp = {s:p for s,p in pairs if p is not None}
+    trace.exit("compression_calc", list(comp.keys()),
+               [{"symbol":s,"reason":"no_history"} for s,p in pairs if p is None])
+
+    # choose tightest compression cohort
+    cutoff = COMPRESSION_PCTL_MAX * (1.5 if relaxed else 1.0)
+    tight = [{ "symbol": s, "compression_pct": p } for s,p in comp.items() if p <= cutoff]
+    tight.sort(key=lambda x: x["compression_pct"])
+    trace.exit("compression_filter", [t["symbol"] for t in tight])
+
+    # simple score: tighter is better. extend later with short interest, catalysts.
+    out = []
+    for t in tight[: (limit or MAX_CANDIDATES)]:
+        out.append({
+            "symbol": t["symbol"],
+            "score": round(1.0 - t["compression_pct"], 4),
+            "reason": "compression",
+        })
+    trace.exit("score_and_take", [o["symbol"] for o in out])
+
+    return (out, trace.to_dict()) if with_trace else out
 
 def main():
-    """Main entry point with Redis locking"""
+    """Main entry point with Redis locking using live selector"""
     lock_key = "discovery_job_lock"
     
     try:
@@ -504,38 +532,24 @@ def main():
                 logger.warning("Another discovery job is running - exiting")
                 sys.exit(1)
                 
-            pipeline = DiscoveryPipeline()
-            result = pipeline.run()
+            # Use live selector with real Polygon data
+            items, tr = asyncio.run(select_candidates(relaxed=False, limit=MAX_CANDIDATES, with_trace=True))
             
-            if result['success']:
-                if result.get('reason') == 'insufficient live sentiment':
-                    logger.info("Exiting cleanly: insufficient live sentiment during off-hours")
-                    sys.exit(0)  # Zero exit code for clean off-hours exit
-                else:
-                    logger.info(f"Discovery completed successfully: {result['recommendations_count']} recommendations")
-                    sys.exit(0)
-            else:
-                logger.error(f"Discovery failed: {result.get('error', 'Unknown error')}")
-                sys.exit(1)
+            # Publish to Redis
+            from lib.redis_client import get_redis_client
+            r = get_redis_client()
+            r.set("amc:discovery:contenders.latest", json.dumps(items), ex=600)
+            r.set("amc:discovery:explain.latest", json.dumps({
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), 
+                "count": len(items), 
+                "trace": tr
+            }), ex=600)
+            
+            logger.info(f"Discovery completed successfully: {len(items)} contenders found and published")
+            sys.exit(0)
                 
     except Exception as e:
         logger.error(f"Fatal error in discovery pipeline: {e}")
-        sys.exit(1)
-
-async def async_main():
-    """Async version of main for CLI usage"""
-    pipeline = DiscoveryPipeline()
-    result = pipeline.run()
-    
-    if result['success']:
-        if result.get('reason') == 'insufficient live sentiment':
-            logger.info("Exiting cleanly: insufficient live sentiment during off-hours")
-            sys.exit(0)
-        else:
-            logger.info(f"Discovery completed successfully: {result['recommendations_count']} recommendations")
-            sys.exit(0)
-    else:
-        logger.error(f"Discovery failed: {result.get('error', 'Unknown error')}")
         sys.exit(1)
 
 if __name__ == "__main__":
