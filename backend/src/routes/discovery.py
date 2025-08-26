@@ -37,7 +37,11 @@ async def get_contenders():
     items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
     for it in items:
         if isinstance(it, dict):
-            it["confidence"] = it.get("confidence") or ((it.get("score") or 0)/100.0)
+            # Ensure score exists (0..100) and set confidence = score/100 if missing
+            if "score" not in it:
+                it["score"] = 0
+            if "confidence" not in it:
+                it["confidence"] = it["score"] / 100.0
     return items
 
 @router.get("/explain")
@@ -88,21 +92,31 @@ async def policy():
 
 @router.get("/audit")
 async def discovery_audit():
-    """Compact view of latest contenders with factor fields"""
+    """Returns list of candidates with factors, score, thesis"""
     try:
         r = get_redis_client()
         items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
-        keep = ["symbol", "price", "dollar_vol", "score", "confidence", "rel_vol_30m", 
-                "atr_pct", "float", "si", "borrow", "util", "pcr", "iv_pctl", 
-                "call_oi_up", "sent_score", "trending", "ema_cross", "rsi_zone_ok", "thesis",
-                "sector", "sector_etf", "sector_score", "sector_rs20", "sector_ret5", "sector_ema"]
         result = []
         for item in items:
             if isinstance(item, dict):
-                audit_item = {k: item.get(k) for k in keep}
-                # Ensure confidence
-                if not audit_item.get("confidence"):
-                    audit_item["confidence"] = (item.get("score", 0) or 0) / 100.0
+                # Build stable frontend shape
+                audit_item = {
+                    "symbol": item.get("symbol"),
+                    "price": item.get("price"),
+                    "thesis": item.get("thesis"),
+                    "score": item.get("score", 0),
+                    "confidence": item.get("confidence") or (item.get("score", 0) / 100.0),
+                    "factors": item.get("factors", {}),
+                    "weights_used": {
+                        "volume": float(os.getenv("AMC_W_VOLUME", "0.25")),
+                        "short": float(os.getenv("AMC_W_SHORT", "0.20")),
+                        "catalyst": float(os.getenv("AMC_W_CATALYST", "0.20")),
+                        "sent": float(os.getenv("AMC_W_SENT", "0.15")),
+                        "options": float(os.getenv("AMC_W_OPTIONS", "0.10")),
+                        "tech": float(os.getenv("AMC_W_TECH", "0.10")),
+                        "sector": float(os.getenv("AMC_W_SECTOR", "0.05"))
+                    }
+                }
                 result.append(audit_item)
         return result
     except Exception:
@@ -110,7 +124,7 @@ async def discovery_audit():
 
 @router.get("/audit/{symbol}")
 async def discovery_audit_symbol(symbol: str):
-    """Full record for symbol plus factor weights and env policy"""
+    """Returns single full record including factors and latest trace slice"""
     try:
         r = get_redis_client()
         items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
@@ -123,40 +137,51 @@ async def discovery_audit_symbol(symbol: str):
                 break
         
         if not item:
-            return {"symbol": symbol, "item": None, "weights": {}, "gates": {}}
+            return {
+                "symbol": symbol, 
+                "price": None,
+                "thesis": None,
+                "score": 0,
+                "confidence": 0.0,
+                "factors": {}, 
+                "weights_used": {}
+            }
         
-        # Ensure confidence
-        if not item.get("confidence"):
-            item["confidence"] = (item.get("score", 0) or 0) / 100.0
-        
-        # Factor weights from environment
-        weights = {
-            "volume": float(os.getenv("W_VOLUME", "0.2")),
-            "momentum": float(os.getenv("W_MOMENTUM", "0.15")),
-            "technicals": float(os.getenv("W_TECHNICALS", "0.15")),
-            "options": float(os.getenv("W_OPTIONS", "0.2")),
-            "sentiment": float(os.getenv("W_SENTIMENT", "0.15")),
-            "fundamentals": float(os.getenv("W_FUNDAMENTALS", "0.15"))
-        }
-        
-        # Policy gates from environment
-        gates = {
-            "REL_VOL_MIN": float(os.getenv("REL_VOL_MIN", "2.0")),
-            "PRICE_MIN": float(os.getenv("PRICE_MIN", "1.0")),
-            "PRICE_MAX": float(os.getenv("PRICE_MAX", "50.0")),
-            "DOLLAR_VOL_MIN": float(os.getenv("DOLLAR_VOL_MIN", "5000000")),
-            "ATR_PCT_MAX": float(os.getenv("ATR_PCT_MAX", "0.08")),
-            "FLOAT_MIN": float(os.getenv("FLOAT_MIN", "10000000"))
-        }
-        
-        return {
+        # Build stable frontend shape with full record
+        result = {
             "symbol": symbol,
-            "item": item,
-            "weights": weights,
-            "gates": gates
+            "price": item.get("price"),
+            "thesis": item.get("thesis"),
+            "score": item.get("score", 0),
+            "confidence": item.get("confidence") or (item.get("score", 0) / 100.0),
+            "factors": item.get("factors", {}),
+            "weights_used": {
+                "volume": float(os.getenv("AMC_W_VOLUME", "0.25")),
+                "short": float(os.getenv("AMC_W_SHORT", "0.20")),
+                "catalyst": float(os.getenv("AMC_W_CATALYST", "0.20")),
+                "sent": float(os.getenv("AMC_W_SENT", "0.15")),
+                "options": float(os.getenv("AMC_W_OPTIONS", "0.10")),
+                "tech": float(os.getenv("AMC_W_TECH", "0.10")),
+                "sector": float(os.getenv("AMC_W_SECTOR", "0.05"))
+            }
         }
+        
+        # Add latest trace slice if available
+        trace = _get_json(r, V2_TRACE) or _get_json(r, V1_TRACE)
+        if trace:
+            result["trace"] = trace
+            
+        return result
     except Exception:
-        return {"symbol": symbol, "item": None, "weights": {}, "gates": {}}
+        return {
+            "symbol": symbol, 
+            "price": None,
+            "thesis": None,
+            "score": 0,
+            "confidence": 0.0,
+            "factors": {}, 
+            "weights_used": {}
+        }
 
 @router.get("/test")
 async def discovery_test(relaxed: bool = Query(True), limit: int = Query(10)):
