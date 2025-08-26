@@ -212,3 +212,4 @@ The job will automatically handle off-hours with clean exits.<!-- API redeploy t
 <!-- Trades contract deploy trigger Mon Aug 25 19:55:39 PDT 2025 -->
 <!-- Trace trades handler v2 deploy trigger Mon Aug 25 20:24:53 PDT 2025 -->
 <!-- FORCE MANUAL DEPLOY: Clear cache & deploy c3cee3e Mon Aug 25 20:30:16 PDT 2025 -->
+<!-- RENDER MANUAL DEPLOY: Clear cache & deploy build-proof fix Mon Aug 25 21:01:04 PDT 2025 -->
