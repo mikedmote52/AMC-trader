@@ -9,8 +9,10 @@ import os
 import sys
 import logging
 import json
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -28,6 +30,35 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+@dataclass
+class StageTrace:
+    stages: List[str] = field(default_factory=list)
+    counts_in: Dict[str, int] = field(default_factory=dict)
+    counts_out: Dict[str, int] = field(default_factory=dict)
+    rejections: Dict[str, Counter] = field(default_factory=lambda: defaultdict(Counter))
+    sample_rejects: Dict[str, List[Dict[str, Any]]] = field(default_factory=lambda: defaultdict(list))
+
+    def enter(self, name: str, symbols: List[str]):
+        self.stages.append(name)
+        self.counts_in[name] = len(symbols)
+
+    def exit(self, name: str, kept: List[str], rejected: List[Dict[str, Any]] | None = None, reason_key: str = "reason"):
+        self.counts_out[name] = len(kept)
+        if rejected:
+            for r in rejected:
+                self.rejections[name][r.get(reason_key, "unspecified")] += 1
+            # keep a small sample for inspection
+            self.sample_rejects[name] = rejected[:25]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "stages": self.stages,
+            "counts_in": self.counts_in,
+            "counts_out": self.counts_out,
+            "rejections": {k: dict(v) for k, v in self.rejections.items()},
+            "samples": self.sample_rejects,
+        }
 
 class DiscoveryPipeline:
     def __init__(self):
@@ -200,10 +231,13 @@ class DiscoveryPipeline:
                 session.close()
             return 0
     
-    def run(self) -> Dict:
+    def run(self, trace: Optional[StageTrace] = None) -> Dict:
         """Main discovery pipeline execution"""
         start_time = datetime.now()
         market_status = get_market_status()
+        
+        if trace is None:
+            trace = StageTrace()
         
         logger.info(f"Starting discovery pipeline - Market status: {market_status}")
         
@@ -217,6 +251,9 @@ class DiscoveryPipeline:
                 'duration_seconds': (datetime.now() - start_time).total_seconds()
             }
         
+        trace.enter("universe", symbols)
+        trace.exit("universe", symbols)  # No filtering at this stage
+        
         # Fetch price data
         price_data = self.fetch_polygon_prices(symbols)
         if not price_data:
@@ -227,36 +264,54 @@ class DiscoveryPipeline:
                 'duration_seconds': (datetime.now() - start_time).total_seconds()
             }
         
-        # Generate recommendations
-        recommendations = []
-        symbols_with_sentiment = 0
-        
+        # Track symbols that failed price fetch
+        price_symbols = list(price_data.keys())
+        failed_price_symbols = []
         for symbol in symbols:
             if symbol not in price_data:
-                logger.warning(f"No price data for {symbol} - skipping")
-                continue
-                
+                failed_price_symbols.append({'symbol': symbol, 'reason': 'no_price_data'})
+        
+        trace.enter("price_fetch", symbols)
+        trace.exit("price_fetch", price_symbols, failed_price_symbols)
+        
+        # Generate recommendations
+        trace.enter("compute_features", price_symbols)
+        recommendations = []
+        symbols_with_sentiment = 0
+        compute_failures = []
+        
+        for symbol in price_symbols:
             data = price_data[symbol]
             
-            # Compute scores
-            sentiment = self.compute_sentiment_score(symbol, data)
-            technical = self.compute_technical_score(symbol, data)
-            scores = self.compose_scores(symbol, sentiment, technical)
-            
-            if sentiment is not None:
-                symbols_with_sentiment += 1
-            
-            recommendation = {
-                'symbol': symbol,
-                'price': data['price'],
-                'volume': data['volume'],
-                **scores
-            }
-            recommendations.append(recommendation)
+            try:
+                # Compute scores
+                sentiment = self.compute_sentiment_score(symbol, data)
+                technical = self.compute_technical_score(symbol, data)
+                scores = self.compose_scores(symbol, sentiment, technical)
+                
+                if sentiment is not None:
+                    symbols_with_sentiment += 1
+                
+                recommendation = {
+                    'symbol': symbol,
+                    'price': data['price'],
+                    'volume': data['volume'],
+                    **scores
+                }
+                recommendations.append(recommendation)
+                
+            except Exception as e:
+                compute_failures.append({'symbol': symbol, 'reason': f'compute_error: {str(e)}'})
+                logger.error(f"Failed to compute scores for {symbol}: {e}")
         
-        # Check if we have sufficient live sentiment data during market hours
+        successful_symbols = [rec['symbol'] for rec in recommendations]
+        trace.exit("compute_features", successful_symbols, compute_failures)
+        
+        # Apply sentiment filter during market hours
+        trace.enter("sentiment_filter", successful_symbols)
         if market_status['is_open'] and symbols_with_sentiment == 0:
             logger.info("Market open but no live sentiment available - exiting cleanly")
+            trace.exit("sentiment_filter", [], [{'reason': 'insufficient_live_sentiment', 'count': len(recommendations)}])
             return {
                 'success': True,
                 'reason': 'insufficient live sentiment',
@@ -264,30 +319,46 @@ class DiscoveryPipeline:
                 'market_status': market_status,
                 'duration_seconds': (datetime.now() - start_time).total_seconds()
             }
+        else:
+            # Passed sentiment filter
+            trace.exit("sentiment_filter", successful_symbols)
+        
+        # Score and sort final contenders
+        trace.enter("score_and_sort", successful_symbols)
+        contenders = []
+        for rec in recommendations:
+            contender = {
+                'symbol': rec['symbol'],
+                'score': rec['composite_score'],
+                'reason': rec['reason'],
+                'price': rec['price'],
+                'volume': rec['volume'],
+                'sentiment_score': rec.get('sentiment_score'),
+                'technical_score': rec['technical_score']
+            }
+            contenders.append(contender)
+        
+        # Sort by composite score descending (best contenders first)
+        contenders.sort(key=lambda x: x['score'], reverse=True)
+        final_symbols = [c['symbol'] for c in contenders]
+        trace.exit("score_and_sort", final_symbols)
         
         # Publish contenders to Redis for API consumption
         try:
-            # Transform recommendations into contenders format for Redis
-            contenders = []
-            for rec in recommendations:
-                contender = {
-                    'symbol': rec['symbol'],
-                    'score': rec['composite_score'],
-                    'reason': rec['reason'],
-                    'price': rec['price'],
-                    'volume': rec['volume'],
-                    'sentiment_score': rec.get('sentiment_score'),
-                    'technical_score': rec['technical_score']
-                }
-                contenders.append(contender)
-            
-            # Sort by composite score descending (best contenders first)
-            contenders.sort(key=lambda x: x['score'], reverse=True)
-            
             # Publish to Redis with 10-minute TTL
             publish_discovery_contenders(contenders, ttl=600)
             
-            logger.info(f"Published {len(contenders)} contenders to Redis")
+            # Publish explain payload to Redis
+            from lib.redis_client import get_redis_client
+            redis_client = get_redis_client()
+            explain_payload = {
+                "ts": datetime.utcnow().isoformat() + "Z",
+                "trace": trace.to_dict(),
+                "count": len(contenders)
+            }
+            redis_client.set("amc:discovery:explain.latest", json.dumps(explain_payload), ex=600)
+            
+            logger.info(f"Published {len(contenders)} contenders and trace to Redis")
             
         except Exception as e:
             logger.error(f"Failed to publish contenders to Redis: {e}")
@@ -309,6 +380,119 @@ class DiscoveryPipeline:
         
         logger.info(f"Discovery pipeline completed: {result}")
         return result
+
+async def select_candidates(relaxed: bool = False, limit: int | None = None, with_trace: bool = False) -> tuple[list[dict], dict]:
+    """
+    Dry-run entrypoint that executes the same discovery pipeline without writing anything.
+    
+    Args:
+        relaxed: Apply more lenient filters (not implemented in current pipeline)
+        limit: Maximum number of candidates to return
+        with_trace: Include trace information in return
+    
+    Returns:
+        tuple: (candidates, trace_dict)
+    """
+    trace = StageTrace()
+    pipeline = DiscoveryPipeline()
+    
+    try:
+        # Run the full pipeline with tracing but without Redis/DB writes
+        # We'll extract the contenders directly from the pipeline
+        start_time = datetime.now()
+        market_status = get_market_status()
+        
+        # Read universe
+        symbols = pipeline.read_universe()
+        if not symbols:
+            return [], trace.to_dict() if with_trace else {}
+        
+        trace.enter("universe", symbols)
+        trace.exit("universe", symbols)
+        
+        # Fetch price data
+        price_data = pipeline.fetch_polygon_prices(symbols)
+        price_symbols = list(price_data.keys())
+        failed_price_symbols = []
+        for symbol in symbols:
+            if symbol not in price_data:
+                failed_price_symbols.append({'symbol': symbol, 'reason': 'no_price_data'})
+        
+        trace.enter("price_fetch", symbols)
+        trace.exit("price_fetch", price_symbols, failed_price_symbols)
+        
+        # Generate recommendations with tracing
+        trace.enter("compute_features", price_symbols)
+        recommendations = []
+        symbols_with_sentiment = 0
+        compute_failures = []
+        
+        for symbol in price_symbols:
+            data = price_data[symbol]
+            
+            try:
+                sentiment = pipeline.compute_sentiment_score(symbol, data)
+                technical = pipeline.compute_technical_score(symbol, data)
+                scores = pipeline.compose_scores(symbol, sentiment, technical)
+                
+                if sentiment is not None:
+                    symbols_with_sentiment += 1
+                
+                recommendation = {
+                    'symbol': symbol,
+                    'price': data['price'],
+                    'volume': data['volume'],
+                    **scores
+                }
+                recommendations.append(recommendation)
+                
+            except Exception as e:
+                compute_failures.append({'symbol': symbol, 'reason': f'compute_error: {str(e)}'})
+        
+        successful_symbols = [rec['symbol'] for rec in recommendations]
+        trace.exit("compute_features", successful_symbols, compute_failures)
+        
+        # Apply sentiment filter
+        trace.enter("sentiment_filter", successful_symbols)
+        if market_status['is_open'] and symbols_with_sentiment == 0:
+            trace.exit("sentiment_filter", [], [{'reason': 'insufficient_live_sentiment', 'count': len(recommendations)}])
+            return [], trace.to_dict() if with_trace else {}
+        else:
+            trace.exit("sentiment_filter", successful_symbols)
+        
+        # Score and sort
+        trace.enter("score_and_sort", successful_symbols)
+        contenders = []
+        for rec in recommendations:
+            contender = {
+                'symbol': rec['symbol'],
+                'score': rec['composite_score'],
+                'reason': rec['reason'],
+                'price': rec['price'],
+                'volume': rec['volume'],
+                'sentiment_score': rec.get('sentiment_score'),
+                'technical_score': rec['technical_score']
+            }
+            contenders.append(contender)
+        
+        contenders.sort(key=lambda x: x['score'], reverse=True)
+        final_symbols = [c['symbol'] for c in contenders]
+        trace.exit("score_and_sort", final_symbols)
+        
+        # Apply limit if specified
+        if limit and len(contenders) > limit:
+            trace.enter("take_top", final_symbols)
+            limited_contenders = contenders[:limit]
+            limited_symbols = [c['symbol'] for c in limited_contenders]
+            rejected_symbols = [{'symbol': c['symbol'], 'reason': f'beyond_limit_{limit}'} for c in contenders[limit:]]
+            trace.exit("take_top", limited_symbols, rejected_symbols)
+            contenders = limited_contenders
+        
+        return contenders, trace.to_dict() if with_trace else {}
+        
+    except Exception as e:
+        logger.error(f"Error in select_candidates: {e}")
+        return [], trace.to_dict() if with_trace else {}
 
 def main():
     """Main entry point with Redis locking"""
@@ -338,5 +522,35 @@ def main():
         logger.error(f"Fatal error in discovery pipeline: {e}")
         sys.exit(1)
 
+async def async_main():
+    """Async version of main for CLI usage"""
+    pipeline = DiscoveryPipeline()
+    result = pipeline.run()
+    
+    if result['success']:
+        if result.get('reason') == 'insufficient live sentiment':
+            logger.info("Exiting cleanly: insufficient live sentiment during off-hours")
+            sys.exit(0)
+        else:
+            logger.info(f"Discovery completed successfully: {result['recommendations_count']} recommendations")
+            sys.exit(0)
+    else:
+        logger.error(f"Discovery failed: {result.get('error', 'Unknown error')}")
+        sys.exit(1)
+
 if __name__ == "__main__":
-    main()
+    import argparse
+    import asyncio
+    
+    p = argparse.ArgumentParser(description="AMC Discovery Pipeline")
+    p.add_argument("--dry-run", action="store_true", help="Run without writing to database or Redis")
+    p.add_argument("--relaxed", action="store_true", help="Apply more lenient filters")
+    p.add_argument("--limit", type=int, default=10, help="Maximum number of candidates to return")
+    p.add_argument("--trace", action="store_true", help="Include trace information in output")
+    args = p.parse_args()
+    
+    if args.dry_run:
+        items, trace = asyncio.run(select_candidates(relaxed=args.relaxed, limit=args.limit, with_trace=args.trace))
+        print(json.dumps({"items": items, "trace": trace if args.trace else None}, indent=2))
+    else:
+        main()
