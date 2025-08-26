@@ -1,312 +1,118 @@
-import { useState, useEffect } from "react";
-import { API_BASE } from '../config';
+import React, { useMemo, useState } from "react";
+import { API_BASE } from "../config";
+import { postJSON } from "../lib/api";
 
-interface TradeModalProps {
-  candidate?: any;
-  symbol?: string;
-  action?: 'BUY' | 'SELL';
-  qty?: number;
+type Props = {
+  symbol: string;
   onClose: () => void;
-}
+  price?: number | null;
+  thesisRich?: {
+    entry_zone?: [number, number];
+    stop_loss?: number;
+    tp1?: number;
+    tp2?: number;
+    swing?: string;
+    trade_note?: string;
+  } | null;
+};
 
-export default function TradeModal({ candidate, symbol, action = 'BUY', qty, onClose }: TradeModalProps) {
-  const tradeSymbol = candidate?.symbol || symbol || '';
-  
-  const [amount, setAmount] = useState(100);
-  const [shares, setShares] = useState<string>(qty?.toString() || "");
-  const [orderType, setOrderType] = useState<"market"|"limit">("market");
-  const [limitPrice, setLimitPrice] = useState<string>("");
-  const [useBracket, setUseBracket] = useState(false);
-  const [usePercent, setUsePercent] = useState(true);
-  const [tpPct, setTpPct] = useState<string>("");
-  const [slPct, setSlPct] = useState<string>("");
-  const [tpAbs, setTpAbs] = useState<string>("");
-  const [slAbs, setSlAbs] = useState<string>("");
-  const [msg, setMsg] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  
-  // Trade defaults from API
-  const [lastPrice, setLastPrice] = useState<number>(0);
-  const [priceCap, setPriceCap] = useState<number>(100);
-  const [defaultTpPct, setDefaultTpPct] = useState<number>(0);
-  const [defaultSlPct, setDefaultSlPct] = useState<number>(0);
-  const [defaultTpAbs, setDefaultTpAbs] = useState<number>(0);
-  const [defaultSlAbs, setDefaultSlAbs] = useState<number>(0);
+export default function TradeModal({ symbol, onClose, price, thesisRich }: Props) {
+  const [mode, setMode] = useState<"notional"|"shares">("notional");
+  const [amount, setAmount] = useState<number>(100);
+  const [shares, setShares] = useState<number>(1);
+  const [useBracket, setUseBracket] = useState<boolean>(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [resp, setResp] = useState<any>(null);
+  const [error, setError] = useState<string>("");
 
-  // Fetch trade defaults on mount
-  useEffect(() => {
-    if (!tradeSymbol) return;
-    
-    const fetchDefaults = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/trades/defaults/${tradeSymbol}`);
-        if (response.ok) {
-          const defaults = await response.json();
-          setLastPrice(defaults.last_price || 0);
-          setPriceCap(defaults.price_cap || 100);
-          
-          if (defaults.bracket) {
-            setUseBracket(true);
-            if (defaults.take_profit_pct) {
-              setDefaultTpPct(defaults.take_profit_pct);
-              setTpPct((defaults.take_profit_pct * 100).toString());
-            }
-            if (defaults.stop_loss_pct) {
-              setDefaultSlPct(defaults.stop_loss_pct);
-              setSlPct((defaults.stop_loss_pct * 100).toString());
-            }
-            if (defaults.take_profit_price) {
-              setDefaultTpAbs(defaults.take_profit_price);
-              setTpAbs(defaults.take_profit_price.toString());
-            }
-            if (defaults.stop_loss_price) {
-              setDefaultSlAbs(defaults.stop_loss_price);
-              setSlAbs(defaults.stop_loss_price.toString());
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch trade defaults:', error);
-      }
+  const defaults = useMemo(() => {
+    return {
+      stop: thesisRich?.stop_loss ?? undefined,
+      tp: thesisRich?.tp1 ?? undefined,
     };
-    
-    fetchDefaults();
-  }, [tradeSymbol]);
-
-  // Validation logic
-  const notionalAmount = Number(amount) || 0;
-  const shareCount = Number(shares) || 0;
-  const sharesValue = shareCount * lastPrice;
-  
-  const isNotionalExceeded = notionalAmount > priceCap;
-  const isSharesExceeded = sharesValue > priceCap;
-  const isDisabled = isNotionalExceeded || isSharesExceeded || loading;
-
-  const validationMessage = isNotionalExceeded 
-    ? `Max spend is $${priceCap}`
-    : isSharesExceeded 
-    ? `Max spend is $${priceCap} (${shareCount} shares × $${lastPrice.toFixed(2)} = $${sharesValue.toFixed(2)})`
-    : null;
+  }, [thesisRich]);
 
   async function submit() {
-    setLoading(true); 
-    setMsg(null);
-    
+    setSubmitting(true);
+    setError("");
+    setResp(null);
     try {
       const body: any = {
-        symbol: tradeSymbol.toUpperCase(),
-        action: action,
+        symbol: symbol.toUpperCase(),
+        action: "BUY",
         mode: "live",
-        order_type: orderType,
+        order_type: "market",
         time_in_force: "day",
       };
-      
-      if (shares && Number(shares) > 0) {
-        body.qty = Number(shares);
-      } else {
-        body.notional_usd = Number(amount);
-      }
-      
-      if (orderType === "limit" && limitPrice) {
-        body.price = Number(limitPrice);
-      }
-      
-      if (useBracket) {
+      if (mode === "notional") body.notional_usd = amount;
+      else body.qty = shares;
+      if (useBracket && (defaults.stop || defaults.tp)) {
         body.bracket = true;
-        if (usePercent) {
-          if (tpPct) body.take_profit_pct = Number(tpPct) / 100.0;
-          if (slPct) body.stop_loss_pct = Number(slPct) / 100.0;
-        } else {
-          if (tpAbs) body.take_profit_price = Number(tpAbs);
-          if (slAbs) body.stop_loss_price = Number(slAbs);
-        }
+        if (defaults.tp) body.take_profit_price = defaults.tp;
+        if (defaults.stop) body.stop_loss_price = defaults.stop;
       }
-      
-      const response = await fetch(`${API_BASE}/trades/execute`, {
-        method: "POST", 
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      
-      const json = await response.json();
-      
-      if (!response.ok) {
-        // Handle price cap exceeded error
-        if (json.error === "price_cap_exceeded") {
-          setMsg(`Price cap exceeded. Max: $${json.cap || priceCap}, Current price: $${json.price || lastPrice}`);
-        } else {
-          throw json;
-        }
-      } else {
-        // Success
-        const orderId = json?.execution_result?.alpaca_order_id || json?.order_id || json?.id;
-        const baseMsg = json?.execution_result?.alpaca_order_id ? "Live order submitted" : "Order accepted";
-        setMsg(orderId ? `${baseMsg} (Order ID: ${orderId})` : baseMsg);
-        
-        // Trigger a holdings refresh
-        window.dispatchEvent(new CustomEvent('holdingsRefresh'));
-      }
-    } catch (e: any) {
-      const err = e?.error || e?.detail || e;
-      setMsg(typeof err === "string" ? err : JSON.stringify(err));
-    } finally { 
-      setLoading(false); 
+      const r = await postJSON<any>(`${API_BASE}/trades/execute`, body);
+      setResp(r);
+    } catch (e:any) {
+      setError(e?.message || String(e));
+    } finally {
+      setSubmitting(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-slate-800 p-6 rounded-xl max-w-md w-full mx-4 space-y-4">
-        <div className="text-lg font-semibold text-white">
-          {action} {tradeSymbol.toUpperCase()}
-          {lastPrice > 0 && <span className="text-sm font-normal text-gray-300 ml-2">@ ${lastPrice.toFixed(2)}</span>}
+    <div style={overlay}>
+      <div style={card}>
+        <div style={rowBetween}>
+          <h3 style={{margin:0}}>Buy {symbol.toUpperCase()}</h3>
+          <button onClick={onClose} style={xbtn}>×</button>
         </div>
-        
-        <div className="space-y-2">
-          <label className="block text-sm text-gray-300">Amount</label>
-          <div className="flex flex-wrap gap-2 items-center">
-            <input 
-              className="px-3 py-2 rounded border bg-slate-700 text-white w-32" 
-              type="number" 
-              min="1"
-              value={amount} 
-              onChange={(e) => setAmount(Number(e.target.value || 0))} 
-              placeholder="$ Notional"
-            />
-            <span className="text-gray-400">or</span>
-            <input 
-              className="px-3 py-2 rounded border bg-slate-700 text-white w-24" 
-              type="number" 
-              min="1"
-              value={shares} 
-              onChange={(e) => setShares(e.target.value)} 
-              placeholder="# shares"
-            />
-          </div>
-          {validationMessage && (
-            <div className="text-red-400 text-sm">{validationMessage}</div>
-          )}
+        <div style={{fontSize:13, opacity:.7, marginBottom:8}}>
+          {thesisRich?.swing || "No thesis available yet."}
         </div>
-        
-        <div className="space-y-2">
-          <label className="block text-sm text-gray-300">Order Type</label>
-          <div className="flex gap-2 items-center">
-            <select 
-              className="px-3 py-2 rounded border bg-slate-700 text-white" 
-              value={orderType} 
-              onChange={(e) => setOrderType(e.target.value as any)}
-            >
-              <option value="market">Market</option>
-              <option value="limit">Limit</option>
-            </select>
-            {orderType === "limit" && (
-              <input 
-                className="px-3 py-2 rounded border bg-slate-700 text-white w-28" 
-                type="number" 
-                min="0" 
-                step="0.01"
-                value={limitPrice} 
-                onChange={(e) => setLimitPrice(e.target.value)} 
-                placeholder="Limit price"
-              />
-            )}
-          </div>
+
+        <div style={{display:"flex", gap:12, marginTop:4, marginBottom:8}}>
+          <button onClick={()=>setMode("notional")} style={modeBtn(mode==="notional")}>Notional</button>
+          <button onClick={()=>setMode("shares")} style={modeBtn(mode==="shares")}>Shares</button>
         </div>
-        
-        <label className="flex items-center gap-2 text-white">
-          <input 
-            type="checkbox" 
-            checked={useBracket} 
-            onChange={(e) => setUseBracket(e.target.checked)} 
-          />
-          Add take-profit / stop-loss
+
+        {mode==="notional" ? (
+          <label style={label}>
+            Amount (USD)
+            <input type="number" min={1} value={amount} onChange={e=>setAmount(Number(e.target.value))} style={input} />
+          </label>
+        ) : (
+          <label style={label}>
+            Shares
+            <input type="number" min={1} value={shares} onChange={e=>setShares(Number(e.target.value))} style={input} />
+          </label>
+        )}
+
+        <label style={{...label, flexDirection:"row", alignItems:"center", gap:8}}>
+          <input type="checkbox" checked={useBracket} onChange={e=>setUseBracket(e.target.checked)} />
+          Use bracket with suggested stop/TP
+          <span style={{fontSize:12, opacity:.7}}>
+            {defaults.stop ? `Stop ${defaults.stop}` : ""}{defaults.stop && defaults.tp ? " • " : ""}{defaults.tp ? `TP1 ${defaults.tp}` : ""}
+          </span>
         </label>
-        
-        {useBracket && (
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <button 
-                className={`px-3 py-1 rounded text-sm ${usePercent ? 'bg-blue-600 text-white' : 'bg-slate-600 text-gray-300'}`}
-                onClick={() => setUsePercent(true)}
-              >
-                Percent
-              </button>
-              <button 
-                className={`px-3 py-1 rounded text-sm ${!usePercent ? 'bg-blue-600 text-white' : 'bg-slate-600 text-gray-300'}`}
-                onClick={() => setUsePercent(false)}
-              >
-                Absolute
-              </button>
-            </div>
-            
-            {usePercent ? (
-              <div className="grid grid-cols-2 gap-2">
-                <input 
-                  className="px-3 py-2 rounded border bg-slate-700 text-white" 
-                  type="number" 
-                  min="0" 
-                  step="0.1"
-                  value={tpPct} 
-                  onChange={(e) => setTpPct(e.target.value)} 
-                  placeholder="TP % (e.g. 5)"
-                />
-                <input 
-                  className="px-3 py-2 rounded border bg-slate-700 text-white" 
-                  type="number" 
-                  min="0" 
-                  step="0.1"
-                  value={slPct} 
-                  onChange={(e) => setSlPct(e.target.value)} 
-                  placeholder="SL % (e.g. 3)"
-                />
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <input 
-                  className="px-3 py-2 rounded border bg-slate-700 text-white" 
-                  type="number" 
-                  min="0" 
-                  step="0.01"
-                  value={tpAbs} 
-                  onChange={(e) => setTpAbs(e.target.value)} 
-                  placeholder="TP price"
-                />
-                <input 
-                  className="px-3 py-2 rounded border bg-slate-700 text-white" 
-                  type="number" 
-                  min="0" 
-                  step="0.01"
-                  value={slAbs} 
-                  onChange={(e) => setSlAbs(e.target.value)} 
-                  placeholder="SL price"
-                />
-              </div>
-            )}
-          </div>
-        )}
-        
-        <div className="flex gap-2 pt-2">
-          <button 
-            onClick={submit} 
-            disabled={isDisabled}
-            className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed flex-1"
-          >
-            {loading ? "Submitting..." : `Submit ${action} order`}
-          </button>
-          <button 
-            onClick={onClose} 
-            className="px-4 py-2 rounded border border-gray-500 text-white hover:bg-slate-700"
-          >
-            Close
-          </button>
-        </div>
-        
-        {msg && (
-          <div className="text-sm break-all text-gray-300 bg-slate-700 p-2 rounded">
-            {msg}
-          </div>
-        )}
+
+        <button disabled={submitting} onClick={submit} style={buybtn}>
+          {submitting ? "Submitting..." : "Buy"}
+        </button>
+
+        {error ? <div style={{color:"#b00", marginTop:8, whiteSpace:"pre-wrap"}}>{error}</div> : null}
+        {resp ? <pre style={pre}>{JSON.stringify(resp, null, 2)}</pre> : null}
       </div>
     </div>
   );
 }
+
+const overlay: React.CSSProperties = { position:"fixed", inset:0, background:"rgba(0,0,0,.45)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 };
+const card: React.CSSProperties = { width:560, maxWidth:"95vw", background:"#111", color:"#eee", borderRadius:12, padding:16, boxShadow:"0 10px 30px rgba(0,0,0,.5)", fontFamily:"ui-sans-serif, system-ui" };
+const rowBetween: React.CSSProperties = { display:"flex", justifyContent:"space-between", alignItems:"center" };
+const xbtn: React.CSSProperties = { background:"transparent", border:"none", color:"#aaa", fontSize:24, cursor:"pointer" };
+const label: React.CSSProperties = { display:"flex", flexDirection:"column", gap:6, margin:"8px 0" };
+const input: React.CSSProperties = { padding:"8px 10px", borderRadius:8, border:"1px solid #333", background:"#0d0d0d", color:"#eee", outline:"none" };
+const buybtn: React.CSSProperties = { marginTop:8, padding:"10px 14px", borderRadius:10, background:"#16a34a", color:"#fff", border:"none", cursor:"pointer", fontWeight:600 };
+const pre: React.CSSProperties = { marginTop:10, background:"#0a0a0a", padding:10, borderRadius:8, maxHeight:280, overflow:"auto", border:"1px solid #222" };
+const modeBtn = (active:boolean) => ({ padding:"6px 10px", borderRadius:999, border:"1px solid "+(active?"#999":"#333"), background: active? "#1a1a1a" : "#0e0e0e", color:"#eee", cursor:"pointer" });

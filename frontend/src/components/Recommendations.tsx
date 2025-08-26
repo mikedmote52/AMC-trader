@@ -1,70 +1,56 @@
-import React, { useState } from 'react';
-import { API_BASE } from '../config';
-import { usePolling } from '../hooks/usePolling';
-import RecommendationCard from './RecommendationCard';
-import TradeModal from './TradeModal';
+import React, { useEffect, useState } from "react";
+import { API_BASE } from "../config";
+import { getJSON } from "../lib/api";
+import RecommendationTile from "./RecommendationTile";
 
-export function Recommendations() {
-  const [selectedCandidate, setSelectedCandidate] = useState<any>(null);
-  const [showTradeModal, setShowTradeModal] = useState(false);
-  
-  const { data, error, isLoading } = usePolling<any>(`${API_BASE}/discovery/contenders`, 15000);
-  
-  // Handle both array and {items: [...]} response formats
-  const items = Array.isArray(data) ? data : (data?.items || []);
-  
-  // Sort by score descending
-  const sortedItems = [...items].sort((a, b) => (b.score || 0) - (a.score || 0));
+type Candidate = {
+  symbol: string;
+  price?: number | null;
+  score?: number | null;
+  confidence?: number | null;
+  thesis?: string | null;
+  thesis_rich?: any | null;
+  atr_pct?: number | null;
+  dollar_vol?: number | null;
+  rel_vol_30m?: number | null;
+  reason?: string | null;
+};
 
-  const handleOpenTradeModal = (candidate: any) => {
-    setSelectedCandidate(candidate);
-    setShowTradeModal(true);
-  };
+export default function Recommendations() {
+  const [items, setItems] = useState<Candidate[]>([]);
+  const [err, setErr] = useState<string>("");
+  const [loading, setLoading] = useState(true);
 
-  const handleCloseTradeModal = () => {
-    setShowTradeModal(false);
-    setSelectedCandidate(null);
-  };
+  useEffect(() => {
+    let alive = true;
+    async function run() {
+      try {
+        setLoading(true);
+        setErr("");
+        const data = await getJSON<any>(`${API_BASE}/discovery/contenders`);
+        const list: Candidate[] = Array.isArray(data) ? data : [];
+        list.sort((a,b) => (b.score ?? b.confidence ?? 0) - (a.score ?? a.confidence ?? 0));
+        if (alive) setItems(list);
+      } catch (e:any) {
+        if (alive) setErr(e?.message || String(e));
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+    run();
+    const id = setInterval(run, 30_000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
 
-  if (isLoading && !items.length) {
-    return (
-      <div className="recommendations">
-        <h2>Recommendations</h2>
-        <div className="loading">Loading recommendations...</div>
-      </div>
-    );
-  }
+  if (loading) return <div style={{padding:12}}>Loading recommendations…</div>;
+  if (err) return <div style={{padding:12, color:"#c00"}}>Error: {err}</div>;
+  if (!items.length) return <div style={{padding:12}}>No recommendations yet. The discovery job may still be running.</div>;
 
   return (
-    <div className="recommendations">
-      <h2>Recommendations</h2>
-      
-      {error && (
-        <div className="error-banner">
-          ❌ Failed to fetch recommendations: {error.message}
-        </div>
-      )}
-      
-      {sortedItems.length > 0 ? (
-        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {sortedItems.map((item: any) => (
-            <RecommendationCard 
-              key={item.symbol} 
-              item={item} 
-              onOpenTradeModal={handleOpenTradeModal}
-            />
-          ))}
-        </div>
-      ) : !error && (
-        <div className="opacity-70 italic">No recommendations available</div>
-      )}
-
-      {showTradeModal && selectedCandidate && (
-        <TradeModal
-          candidate={selectedCandidate}
-          onClose={handleCloseTradeModal}
-        />
-      )}
+    <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(320px, 1fr))", gap:12}}>
+      {items.map((it) => (
+        <RecommendationTile key={it.symbol} item={it} />
+      ))}
     </div>
   );
 }

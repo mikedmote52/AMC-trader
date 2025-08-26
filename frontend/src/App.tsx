@@ -1,36 +1,14 @@
-import { Holdings } from './components/Holdings'
-import { Recommendations } from './components/Recommendations'
-import { RiskBar } from './components/RiskBar'
-import BuyNow from './components/BuyNow'
-import './App.css'
+import React from "react";
+import Recommendations from "./components/Recommendations";
+import Holdings from "./components/Holdings";
 
-function App() {
+export default function App() {
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>Trading Dashboard</h1>
-      </header>
-      
-      <main className="app-main">
-        <div className="mb-4">
-          <BuyNow />
-        </div>
-        <div className="dashboard-grid">
-          <div className="risk-section">
-            <RiskBar />
-          </div>
-          
-          <div className="holdings-section">
-            <Holdings />
-          </div>
-          
-          <div className="recommendations-section">
-            <Recommendations />
-          </div>
-        </div>
-      </main>
+    <div style={{padding:16, maxWidth:1400, margin:"0 auto", fontFamily:"ui-sans-serif, system-ui", color:"#e7e7e7"}}>
+      <h2 style={{margin:"6px 0 14px"}}>Squeeze Candidates</h2>
+      <Recommendations />
+      <h2 style={{margin:"22px 0 14px"}}>Your Holdings</h2>
+      <Holdings />
     </div>
-  )
+  );
 }
-
-export default App
