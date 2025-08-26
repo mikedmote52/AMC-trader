@@ -20,6 +20,50 @@ type Rec = {
 
 const API_BASE = (typeof window !== "undefined" && (window as any).API_BASE) || import.meta.env.VITE_API_BASE || "";
 
+function QuickBuy() {
+  const [symbol, setSymbol] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function submit() {
+    if (!symbol.trim()) return;
+    setLoading(true); setMsg(null);
+    try {
+      const r = await fetch(`${import.meta.env.VITE_API_URL}/trades/execute`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ symbol: symbol.trim().toUpperCase(), action: "BUY", qty: 1, mode: "auto" })
+      });
+      const body = await r.json();
+      if (!r.ok) throw body;
+      setMsg(body.mode === "live" ? "Live order submitted" : "Shadow order recorded");
+    } catch (e:any) {
+      setMsg(`Rejected: ${e?.error ?? "unknown_error"}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <input
+        value={symbol}
+        onChange={(e) => setSymbol(e.target.value)}
+        placeholder="Symbol e.g. AAPL"
+        className="px-3 py-2 rounded border bg-white/10"
+      />
+      <button
+        onClick={submit}
+        disabled={loading}
+        className="px-3 py-2 rounded bg-black text-white disabled:opacity-50"
+      >
+        {loading ? "Submitting..." : "Buy $100 (1 share)"}
+      </button>
+      {msg && <span className="text-sm">{msg}</span>}
+    </div>
+  );
+}
+
 export function BuyNowRow({ rec }: { rec: Rec }) {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -86,18 +130,17 @@ export default function BuyNow() {
   }, []);
 
   const buys = useMemo(() => { 
-    const minScore = 0.6, maxRisk = 0.5; 
     return recs.filter(r => { 
-      const action = (r.action || r.decision || r.recommendation || "").toString().toUpperCase(); 
-      const score = Number(r.score ?? r.confidence ?? r.signal ?? 0); 
-      const risk = Number(r.risk ?? r.risk_score ?? 0); 
-      return action.includes("BUY") && score >= minScore && (isNaN(risk) || risk <= maxRisk);
-    }).sort((a, b) => (Number(b.score ?? b.confidence ?? b.signal ?? 0)) - (Number(a.score ?? a.confidence ?? a.signal ?? 0))).slice(0, 5); 
+      // before: rec.action === "BUY" && rec.score >= 0.6 && rec.risk <= 0.5
+      const qualifies = (r.action ?? r.decision ?? "BUY") === "BUY";
+      return qualifies;
+    }).sort((a, b) => (Number(b.score ?? b.confidence ?? b.signal ?? 0)) - (Number(a.score ?? a.confidence ?? a.signal ?? 0))).slice(0, 10); 
   }, [recs]);
 
   return (
     <div className="rounded-2xl shadow p-4 bg-white/80 dark:bg-zinc-900/60 border border-black/10">
       <div className="text-xl font-semibold mb-2">Buy Now</div>
+      <QuickBuy />
       {error && <div className="text-red-600 text-sm mb-2">Error: {error}</div>}
       {buys.length === 0 ? (
         <div className="text-sm opacity-70">No qualifying buys right now. This updates every ~15s.</div>
