@@ -207,3 +207,4 @@ For production deployment, run as cron job:
 ```
 
 The job will automatically handle off-hours with clean exits.<!-- API redeploy trigger Mon Aug 25 18:20:26 PDT 2025 -->
+<!-- Debug deploy trigger Mon Aug 25 18:40:00 PDT 2025 -->
