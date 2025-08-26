@@ -1,38 +1,48 @@
+import React, { useCallback } from 'react';
+import { API_BASE } from '../config';
 import { usePolling } from '../hooks/usePolling';
-import { API_ENDPOINTS } from '../config/api';
-import type { Recommendation } from '../types/api';
-import './Recommendations.css';
 
 export function Recommendations() {
-  const { data: recommendations, error, isLoading } = usePolling<Recommendation[]>(API_ENDPOINTS.recommendations);
+  const { data, error, isLoading } = usePolling<any>(`${API_BASE}/discovery/contenders`);
+  
+  // Handle both array and {items: [...]} response formats
+  const items = Array.isArray(data) ? data : (data?.items || []);
 
-  const getActionColor = (action: Recommendation['action']) => {
-    switch (action) {
-      case 'BUY_MORE': return 'green';
-      case 'SELL': return 'red';
-      case 'HOLD': return 'yellow';
-      default: return 'gray';
+  const handleBuy = useCallback(async (symbol: string) => {
+    try {
+      await fetch(`${API_BASE}/trades/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol,
+          action: 'BUY',
+          mode: 'live',
+          order_type: 'market',
+          time_in_force: 'day',
+          notional_usd: 100
+        })
+      });
+    } catch (error) {
+      console.error('Buy failed:', error);
     }
+  }, []);
+
+  const formatPrice = (x?: number) => {
+    if (x == null) return "—";
+    return Math.abs(x) >= 1 ? x.toFixed(2) : x.toFixed(3);
   };
 
-  const getRiskColor = (risk: Recommendation['risk_level']) => {
-    switch (risk) {
-      case 'LOW': return 'green';
-      case 'MEDIUM': return 'yellow';
-      case 'HIGH': return 'red';
-      default: return 'gray';
-    }
+  const formatPercent = (x?: number) => {
+    if (x == null) return "—";
+    return `${(x * 100).toFixed(1)}%`;
   };
 
-  const formatCurrency = (amount?: number) => {
-    if (amount === undefined) return 'N/A';
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
+  const formatVolume = (vol?: number) => {
+    if (!vol) return "—";
+    return `$${Math.round(vol / 1_000_000)}M`;
   };
 
-  if (isLoading && !recommendations) {
+  if (isLoading && !items.length) {
     return (
       <div className="recommendations">
         <h2>Recommendations</h2>
@@ -51,49 +61,56 @@ export function Recommendations() {
         </div>
       )}
       
-      {recommendations && recommendations.length > 0 ? (
-        <div className="recommendations-grid">
-          {recommendations.map((rec, index) => (
-            <div key={`${rec.symbol}-${index}`} className="recommendation-card">
-              <div className="recommendation-header">
-                <span className="symbol">{rec.symbol}</span>
-                <div className="badges">
-                  <span className={`action-badge ${getActionColor(rec.action)}`}>
-                    {rec.action}
-                  </span>
-                  <span className={`risk-badge ${getRiskColor(rec.risk_level)}`}>
-                    {rec.risk_level}
-                  </span>
+      {items.length > 0 ? (
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {items.map((item: any) => {
+            const conf = Number.isFinite(item?.confidence) ? (item.confidence * 100).toFixed(1) + "%" :
+                        Number.isFinite(item?.score) ? (item.score * 100).toFixed(1) + "%" : "—";
+            
+            return (
+              <div key={item.symbol} className="bg-slate-800 rounded-2xl p-4 shadow-md">
+                <div className="flex items-baseline justify-between mb-2">
+                  <h3 className="text-xl font-semibold">{item.symbol}</h3>
+                  <button 
+                    className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg"
+                    onClick={() => handleBuy(item.symbol)}
+                  >
+                    Buy
+                  </button>
+                </div>
+                
+                <div className="text-sm opacity-80 mb-3">
+                  {item.thesis || "No thesis available"}
+                </div>
+                
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <div>
+                    <span className="opacity-70">Confidence</span>
+                    <div>{conf}</div>
+                  </div>
+                  <div>
+                    <span className="opacity-70">Price</span>
+                    <div>${formatPrice(item.price)}</div>
+                  </div>
+                  <div>
+                    <span className="opacity-70">$ Vol</span>
+                    <div>{formatVolume(item.dollar_vol)}</div>
+                  </div>
+                  <div>
+                    <span className="opacity-70">5d RS</span>
+                    <div>{formatPercent(item.rs_5d)}</div>
+                  </div>
+                  <div>
+                    <span className="opacity-70">ATR%</span>
+                    <div>{formatPercent(item.atr_pct)}</div>
+                  </div>
                 </div>
               </div>
-              
-              <div className="recommendation-metrics">
-                <div className="metric">
-                  <span className="label">Confidence:</span>
-                  <span className="value">{(rec.confidence * 100).toFixed(1)}%</span>
-                </div>
-                {rec.vigl_score && (
-                  <div className="metric">
-                    <span className="label">VIGL Score:</span>
-                    <span className="value">{rec.vigl_score.toFixed(2)}</span>
-                  </div>
-                )}
-                {rec.price_target && (
-                  <div className="metric">
-                    <span className="label">Target:</span>
-                    <span className="value">{formatCurrency(rec.price_target)}</span>
-                  </div>
-                )}
-              </div>
-              
-              <div className="thesis">
-                <p>{rec.thesis}</p>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : !error && (
-        <div className="no-recommendations">No recommendations available</div>
+        <div className="opacity-70 italic">No recommendations available</div>
       )}
     </div>
   );
