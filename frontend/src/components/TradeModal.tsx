@@ -3,7 +3,7 @@ import { API_BASE } from "../config";
 import { postJSON } from "../lib/api";
 
 type Props = {
-  symbol: string;
+  symbol?: string;
   onClose: () => void;
   price?: number | null;
   thesisRich?: {
@@ -14,16 +14,25 @@ type Props = {
     swing?: string;
     trade_note?: string;
   } | null;
+  presetSymbol?: string;
+  presetAction?: "BUY" | "SELL";
+  presetPrice?: number;
+  presetQty?: number;
 };
 
-export default function TradeModal({ symbol, onClose, price, thesisRich }: Props) {
-  const [mode, setMode] = useState<"notional"|"shares">("notional");
+export default function TradeModal({ symbol, onClose, price, thesisRich, presetSymbol, presetAction, presetPrice, presetQty }: Props) {
+  const activeSymbol = presetSymbol || symbol || "";
+  const activeAction = presetAction || "BUY";
+  const activePrice = presetPrice || price;
+  
+  const [mode, setMode] = useState<"notional"|"shares">(presetQty ? "shares" : "notional");
   const [amount, setAmount] = useState<number>(100);
-  const [shares, setShares] = useState<number>(1);
+  const [shares, setShares] = useState<number>(presetQty || 1);
   const [useBracket, setUseBracket] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState(false);
   const [resp, setResp] = useState<any>(null);
   const [error, setError] = useState<string>("");
+  const [priceCap, setPriceCap] = useState<number | null>(null);
 
   const defaults = useMemo(() => {
     return {
@@ -35,11 +44,12 @@ export default function TradeModal({ symbol, onClose, price, thesisRich }: Props
   async function submit() {
     setSubmitting(true);
     setError("");
+    setPriceCap(null);
     setResp(null);
     try {
       const body: any = {
-        symbol: symbol.toUpperCase(),
-        action: "BUY",
+        symbol: activeSymbol.toUpperCase(),
+        action: activeAction,
         mode: "live",
         order_type: "market",
         time_in_force: "day",
@@ -54,7 +64,12 @@ export default function TradeModal({ symbol, onClose, price, thesisRich }: Props
       const r = await postJSON<any>(`${API_BASE}/trades/execute`, body);
       setResp(r);
     } catch (e:any) {
-      setError(e?.message || String(e));
+      if (e?.error === "price_cap_exceeded" && e?.cap) {
+        setPriceCap(e.cap);
+        setError("");
+      } else {
+        setError(e?.message || String(e));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -64,7 +79,7 @@ export default function TradeModal({ symbol, onClose, price, thesisRich }: Props
     <div style={overlay}>
       <div style={card}>
         <div style={rowBetween}>
-          <h3 style={{margin:0}}>Buy {symbol.toUpperCase()}</h3>
+          <h3 style={{margin:0}}>{activeAction} {activeSymbol.toUpperCase()}</h3>
           <button onClick={onClose} style={xbtn}>×</button>
         </div>
         <div style={{fontSize:13, opacity:.7, marginBottom:8}}>
@@ -97,9 +112,14 @@ export default function TradeModal({ symbol, onClose, price, thesisRich }: Props
         </label>
 
         <button disabled={submitting} onClick={submit} style={buybtn}>
-          {submitting ? "Submitting..." : "Buy"}
+          {submitting ? "Submitting..." : activeAction}
         </button>
 
+        {priceCap && (
+          <div style={{color:"#f59e0b", marginTop:8, padding:8, background:"#451a03", borderRadius:6, border:"1px solid #92400e"}}>
+            Max spend is ${priceCap}
+          </div>
+        )}
         {error ? <div style={{color:"#b00", marginTop:8, whiteSpace:"pre-wrap"}}>{error}</div> : null}
         {resp ? <pre style={pre}>{JSON.stringify(resp, null, 2)}</pre> : null}
       </div>
