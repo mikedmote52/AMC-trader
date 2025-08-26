@@ -1,6 +1,7 @@
 import { Holdings } from './components/Holdings'
 import { Recommendations } from './components/Recommendations'
 import { RiskBar } from './components/RiskBar'
+import BuyNow from './components/BuyNow'
 import './App.css'
 
 function App() {
@@ -11,6 +12,9 @@ function App() {
       </header>
       
       <main className="app-main">
+        <div className="mb-4">
+          <BuyNow />
+        </div>
         <div className="dashboard-grid">
           <div className="risk-section">
             <RiskBar />
