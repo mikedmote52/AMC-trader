@@ -1,9 +1,22 @@
 from fastapi import APIRouter, Query
 from typing import List, Dict
 import json
+import importlib
 from backend.src.shared.redis_client import get_redis_client
 
 router = APIRouter()
+
+def _load_selector():
+    """Load select_candidates function from available jobs modules"""
+    for mod in ("src.jobs.discovery", "src.jobs.discover"):
+        try:
+            m = importlib.import_module(mod)
+            f = getattr(m, "select_candidates", None)
+            if callable(f):
+                return f, mod
+        except Exception:
+            continue
+    return None, None
 
 @router.get("/contenders")
 async def get_contenders() -> List[Dict]:
@@ -66,13 +79,15 @@ async def discovery_explain():
 
 @router.get("/test")
 async def discovery_test(relaxed: bool = Query(True), limit: int = Query(10)):
+    f, mod = _load_selector()
+    if not f:
+        return {"items": [], "trace": {}, "error": "select_candidates not found in src.jobs.discovery or src.jobs.discover"}
     try:
-        try:
-            from backend.src.jobs.discover import select_candidates
-            items, trace = await select_candidates(relaxed=relaxed, limit=limit, with_trace=True)
-            return {"items": items, "trace": trace, "relaxed": relaxed, "limit": limit}
-        except ImportError:
-            # Fallback if select_candidates doesn't exist yet
-            return {"items": [], "trace": {"error": "select_candidates function not implemented yet"}, "relaxed": relaxed, "limit": limit}
+        res = await f(relaxed=relaxed, limit=limit, with_trace=True)  # type: ignore
+        if isinstance(res, tuple) and len(res) == 2:
+            items, trace = res
+        else:
+            items, trace = res, {}
+        return {"items": items, "trace": trace, "module": mod, "relaxed": relaxed, "limit": limit}
     except Exception as e:
-        return {"items": [], "trace": {}, "error": str(e), "relaxed": relaxed, "limit": limit}
+        return {"items": [], "trace": {}, "module": mod, "error": str(e)}
