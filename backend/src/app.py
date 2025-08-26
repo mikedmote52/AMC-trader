@@ -1,4 +1,5 @@
 import structlog
+import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import HTTPException as StarletteHTTPException
@@ -13,15 +14,15 @@ structlog.configure(
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
         structlog.processors.JSONRenderer()
     ],
-    context_class=dict,
-    logger_factory=structlog.stdlib.LoggerFactory(),
     wrapper_class=structlog.stdlib.BoundLogger,
+    logger_factory=structlog.stdlib.LoggerFactory(),
     cache_logger_on_first_use=True,
 )
-
-logger = structlog.get_logger()
 
 # Create FastAPI app
 app = FastAPI(
@@ -30,13 +31,26 @@ app = FastAPI(
     version="1.0.0"
 )
 
+@app.get("/_whoami")
+def whoami():
+    return {
+        "commit": os.getenv("RENDER_GIT_COMMIT","unknown"),
+        "build": os.getenv("RENDER_SERVICE_BUILD_ID","unknown"),
+        "handler_tag": "trace_v1"
+    }
+
 @app.exception_handler(StarletteHTTPException)
 async def http_exc_handler(request: Request, exc: StarletteHTTPException):
-    # Preserve status and include detail in a consistent shape
     return JSONResponse(
         status_code=exc.status_code,
-        content={"success": False, "error": (exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)})},
+        content={"success": False, "error": exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}, "handler_tag": "trace_v1"},
     )
+
+@app.middleware("http")
+async def add_trace_header(request: Request, call_next):
+    resp = await call_next(request)
+    resp.headers["x-amc-trades-handler"] = "trace_v1"
+    return resp
 
 # CORS middleware - allow frontend origins
 app.add_middleware(
@@ -47,27 +61,87 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(trades_router)
-app.include_router(polygon_debug)
+# Database health and metrics
+from contextlib import asynccontextmanager
+import asyncpg
+from prometheus_client import CollectorRegistry, Counter, make_asgi_app
+import redis.asyncio as redis
+
+DISCOVERY_TRIGGERED = Counter("amc_discovery_triggered_total", "manual discovery trigger calls")
+DISCOVERY_ERRORS = Counter("amc_discovery_errors_total", "manual discovery trigger errors")
+
+registry = CollectorRegistry()
+metrics_app = make_asgi_app(registry=registry)
+app.mount("/metrics", metrics_app)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # On startup - you could initialize DB pools here
+    yield
+    # On shutdown
+
+app.lifespan = lifespan
 
 @app.get("/")
-async def root():
-    """Root endpoint"""
-    return {
-        "message": "AMC Paper Trading API",
-        "version": "1.0.0",
-        "status": "running"
-    }
+def root():
+    return {"status": "AMC Trading API v1.0.0", "docs": "/docs"}
 
-if __name__ == "__main__":
-    import uvicorn
-    
-    logger.info("Starting AMC Paper Trading API")
-    
-    uvicorn.run(
-        "backend.src.app:app",
-        host="0.0.0.0",
-        port=8001,  # Use different port from main API
-        reload=True
-    )
+@app.get("/health")
+@app.get("/healthz")
+async def health():
+    """Health check endpoint"""
+    try:
+        components = {}
+        
+        # Check environment
+        required_vars = [
+            "DATABASE_URL", "REDIS_URL", "POLYGON_API_KEY", 
+            "ALPACA_API_KEY", "ALPACA_API_SECRET", "ALPACA_BASE_URL"
+        ]
+        missing = [var for var in required_vars if not os.getenv(var)]
+        components["env"] = {"ok": len(missing) == 0, "missing": missing}
+        
+        # Check database
+        try:
+            async with asyncpg.create_pool(os.getenv("DATABASE_URL"), min_size=1, max_size=1) as pool:
+                async with pool.acquire() as conn:
+                    await conn.fetchval("SELECT 1")
+            components["database"] = {"ok": True}
+        except Exception:
+            components["database"] = {"ok": False}
+        
+        # Check Redis
+        try:
+            r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
+            await r.ping()
+            await r.close()
+            components["redis"] = {"ok": True}
+        except Exception:
+            components["redis"] = {"ok": False}
+        
+        # Check external APIs (simple connectivity)
+        components["polygon"] = {"ok": bool(os.getenv("POLYGON_API_KEY"))}
+        components["alpaca"] = {"ok": bool(os.getenv("ALPACA_API_KEY")) and bool(os.getenv("ALPACA_API_SECRET"))}
+        
+        # Overall health
+        all_ok = all(comp.get("ok", False) for comp in components.values())
+        status_code = 200 if all_ok else 503
+        
+        from fastapi import Response
+        return Response(
+            content='{"status":"' + ("healthy" if all_ok else "degraded") + '","components":' + str(components).replace("'", '"').replace("True", "true").replace("False", "false") + '}',
+            status_code=status_code,
+            media_type="application/json"
+        )
+        
+    except Exception:
+        from fastapi import Response
+        return Response(
+            content='{"status":"error","components":{}}',
+            status_code=503,
+            media_type="application/json"
+        )
+
+# Include routers
+app.include_router(trades_router)
+app.include_router(polygon_debug, prefix="/debug")
