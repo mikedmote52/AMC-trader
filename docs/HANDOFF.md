@@ -67,4 +67,6 @@ MAX_PORTFOLIO_ALLOCATION_PCT=<e.g., 15>
 * v0.3.1: Buy Now shipped; guardrails enforced server-side; QA checks added; CI smoke required on merges.
 * v0.4 shadow: one full market day of green runs with guardrails; add SLO monitors for `/health`, `/recommendations` freshness, and cron success.
 * v0.5 live-ready: dry-run playbook executed; flip `LIVE_TRADING=1` with `KILL_SWITCH=1`, validate 400; then set `KILL_SWITCH=0` for limited live trades; monitor and roll back on any breach.
-* v0.6+: strategy iteration, risk tuning, richer metrics and alerting.<!-- Deploy trigger Mon Aug 25 18:00:34 PDT 2025 -->
+* v0.6+: strategy iteration, risk tuning, richer metrics and alerting.
+
+<!-- Deploy trigger Mon Aug 25 18:00:34 PDT 2025 -->
