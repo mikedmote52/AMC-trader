@@ -206,4 +206,4 @@ For production deployment, run as cron job:
 */5 9-16 * * 1-5 cd /path/to/AMC-discovery/backend/src/jobs && python discover.py
 ```
 
-The job will automatically handle off-hours with clean exits.
+The job will automatically handle off-hours with clean exits.<!-- API redeploy trigger Mon Aug 25 18:20:26 PDT 2025 -->
