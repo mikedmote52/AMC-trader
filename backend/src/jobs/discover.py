@@ -1060,7 +1060,9 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         items = []
         return (items, trace.to_dict()) if with_trace else items
 
-    # classify stage: strict fund/ADR removal + real factor scoring
+    # classify stage: strict fund/ADR removal - DROPS non-equities
+    symbol_classifications = {}  # Store classifications for later use
+    
     if EXCLUDE_FUNDS or EXCLUDE_ADRS or EXCLUDE_FUNDS_STRICT:
         trace.enter("classify", kept_syms)
         classify_kept = []
@@ -1070,14 +1072,25 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
             for sym in kept_syms:
                 try:
                     cla = await _classify_symbol(sym, client)
+                    symbol_classifications[sym] = cla
                     
-                    # Apply exclusion filters
-                    if (EXCLUDE_ADRS and cla=="adr") or (EXCLUDE_FUNDS and cla=="fund"):
-                        classify_rejected.append({"symbol": sym, "reason": cla})
-                        continue
-                        
-                    if EXCLUDE_FUNDS_STRICT and cla!="equity":
-                        classify_rejected.append({"symbol": sym, "reason": f"strict-{cla}"})
+                    # Apply exclusion filters based on classification
+                    reject_reason = None
+                    
+                    # Check fund types for exclusion
+                    if EXCLUDE_FUNDS and cla in {"fund", "etf", "etn", "index", "trust", "bond"}:
+                        reject_reason = f"fund-{cla}"
+                    
+                    # Check ADR exclusion
+                    elif EXCLUDE_ADRS and cla.startswith("adr"):
+                        reject_reason = f"adr-{cla}"
+                    
+                    # Check strict mode (only equity allowed)
+                    elif EXCLUDE_FUNDS_STRICT and cla != "equity":
+                        reject_reason = f"strict-{cla}"
+                    
+                    if reject_reason:
+                        classify_rejected.append({"symbol": sym, "reason": reject_reason, "class": cla})
                         continue
                     
                     # Passed all filters
@@ -1085,7 +1098,8 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                     
                 except Exception as e:
                     logger.warning(f"Classification failed for {sym}: {e}")
-                    # On error, default to keep (conservative)
+                    # On error, default to keep (conservative) and mark as unknown
+                    symbol_classifications[sym] = "unknown"
                     classify_kept.append(sym)
         
         kept_syms = classify_kept
@@ -1094,6 +1108,15 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         if not kept_syms:
             items = []
             return (items, trace.to_dict()) if with_trace else items
+    
+    else:
+        # Even if no exclusion, still classify for API audit
+        async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
+            for sym in kept_syms:
+                try:
+                    symbol_classifications[sym] = await _classify_symbol(sym, client)
+                except Exception:
+                    symbol_classifications[sym] = "unknown"
 
     # fetch per-symbol daily bars for compression only on survivors
     async def fetch_bars(sym):
@@ -1217,6 +1240,7 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                     "compression_pctl": compression_pctl,  # keep, but do NOT use as score
                     "score": round(total, 1),  # <-- the rank key from composite scoring
                     "confidence": round(total/100.0, 4),
+                    "class": symbol_classifications.get(sym, "unknown"),  # add "class" for API double-check
                     "factors": factors,  # volume/short/catalyst/sent/options/tech/sector
                     "gates": current_policy_dict(),  # price/rel_vol/atr/etc used for audit
                     "thesis": build_thesis(sym, factors, {"price": price, "dollar_vol": dollar_vol}),
