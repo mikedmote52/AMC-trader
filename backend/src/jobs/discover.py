@@ -47,6 +47,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+async def _daily_bars(client, sym, limit=120):
+    d = await _poly_get(client, f"/v2/aggs/ticker/{sym}/range/1/day/1970-01-01/2099-01-01",
+                        params={"adjusted":"true","limit":limit})
+    return d.get("results") or []
+
+def _atr_pct(rows, period=14):
+    if len(rows) < period+1: return None
+    trs=[]
+    for i in range(1,len(rows)):
+        h=rows[i]["h"]; l=rows[i]["l"]; pc=rows[i-1]["c"]
+        tr = max(h-l, abs(h-pc), abs(l-pc))
+        trs.append(tr)
+    atr = sum(trs[-period:])/period
+    last_close = rows[-1]["c"] or 1e-9
+    return float(atr/last_close)
+
+def _return(rows, n):
+    if len(rows) < n+1: return None
+    c0=rows[-(n+1)]["c"]; c1=rows[-1]["c"]
+    if not c0: return None
+    return float((c1-c0)/c0)
+
 @dataclass
 class StageTrace:
     stages: List[str] = field(default_factory=list)
@@ -612,6 +634,51 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
             "reason": "compression",
         })
     trace.exit("score_and_take", [o["symbol"] for o in out])
+
+    # enrich candidates with real metrics (compression %, liquidity, RS, ATR%) and thesis
+    async def _enrich(sym):
+        try:
+            async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
+                # Get recent price/volume data
+                g = await _poly_get(client, f"/v2/aggs/grouped/locale/us/market/stocks/{date}", params={"adjusted":"true"})
+                rows = g.get("results") or []
+                price_row = next((r for r in rows if r.get("T") == sym), None)
+                
+                if not price_row:
+                    return {"price": 0.0, "dollar_vol": 0.0, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "thesis": f"{sym} data unavailable."}
+                
+                price = float(price_row.get("c") or 0.0)
+                volume = float(price_row.get("v") or 0.0)
+                dollar_vol = price * volume
+                
+                # Get historical bars for metrics
+                rows = await _daily_bars(client, sym, limit=LOOKBACK_DAYS+25)
+                if not rows:
+                    return {"price": price, "dollar_vol": dollar_vol, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "thesis": f"{sym} no historical data."}
+                
+                atrp = _atr_pct(rows) or 0.0
+                r5 = _return(rows, 5) or 0.0
+                
+                # Get compression_pct from existing out data
+                compression_pct = next((t["compression_pct"] for t in tight if t["symbol"] == sym), 0.0)
+                
+                thesis = f"{sym} is in the tightest {round((1.0 - compression_pct)*100,1)}% of its {LOOKBACK_DAYS}d volatility band, 5d RS {r5*100:+.1f}%, ATR% {atrp*100:.1f}, liquidity ${int(dollar_vol)/1_000_000}M."
+                
+                return {
+                    "price": price,
+                    "dollar_vol": dollar_vol, 
+                    "compression_pct": compression_pct,
+                    "atr_pct": atrp, 
+                    "rs_5d": r5, 
+                    "thesis": thesis
+                }
+        except Exception as e:
+            logger.warning(f"Enrichment failed for {sym}: {e}")
+            return {"price": 0.0, "dollar_vol": 0.0, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "thesis": f"{sym} enrichment failed."}
+
+    enriched = await asyncio.gather(*[_enrich(o["symbol"]) for o in out])
+    for o, extra in zip(out, enriched):
+        o.update(extra)
 
     return (out, trace.to_dict()) if with_trace else out
 
