@@ -1,5 +1,8 @@
 import structlog
-from fastapi import FastAPI
+import os
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from backend.src.routes.trades import router as trades_router
 from backend.src.routes.debug_polygon import router as polygon_debug
@@ -27,6 +30,27 @@ app = FastAPI(
     description="Paper trading execution API with risk guardrails",
     version="1.0.0"
 )
+
+@app.get("/_whoami")
+def whoami():
+    return {
+        "commit": os.getenv("RENDER_GIT_COMMIT","unknown"),
+        "build": os.getenv("RENDER_SERVICE_BUILD_ID","unknown"),
+        "handler_tag": "trace_v1"
+    }
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exc_handler(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "error": exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}, "handler_tag": "trace_v1"},
+    )
+
+@app.middleware("http")
+async def add_trace_header(request: Request, call_next):
+    resp = await call_next(request)
+    resp.headers["x-amc-trades-handler"] = "trace_v1"
+    return resp
 
 # CORS middleware - allow frontend origins
 app.add_middleware(
