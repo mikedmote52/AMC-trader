@@ -1,3 +1,7 @@
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import os
+
 try:
     import structlog  # optional
     log = structlog.get_logger("amc")
@@ -6,10 +10,7 @@ except Exception:
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger("amc")
 
-import os
 from datetime import datetime, timezone
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from backend.src.routes.trades import router as trades_router
@@ -19,6 +20,7 @@ from backend.src.routes.debug_polygon import router as polygon_debug
 APP_TAG    = "trace_v3"
 APP_COMMIT = os.getenv("RENDER_GIT_COMMIT", "unknown")
 APP_BUILD  = os.getenv("RENDER_SERVICE_BUILD_ID", "unknown")
+TRADES_HANDLER = os.getenv("AMC_TRADES_HANDLER", "default")
 
 # Configure structured logging if available
 try:
@@ -42,20 +44,24 @@ except NameError:
     pass
 
 # Create FastAPI app
-app = FastAPI(
-    title="AMC Paper Trading API",
-    description="Paper trading execution API with risk guardrails",
-    version="1.0.0"
-)
+app = FastAPI(title="AMC Trader API")
 
 @app.get("/_whoami")
-def whoami():
+async def whoami():
     return {
-        "tag": APP_TAG,
-        "commit": APP_COMMIT,
-        "build": APP_BUILD,
-        "ts": datetime.now(timezone.utc).isoformat()
+        "env": os.getenv("ENVIRONMENT", "unknown"),
+        "service": os.getenv("RENDER_SERVICE_NAME", "amc-trader"),
+        "handler": TRADES_HANDLER,
     }
+
+class TradeError(Exception):
+    def __init__(self, code: str, detail: str = ""):
+        self.code = code
+        self.detail = detail
+
+@app.exception_handler(TradeError)
+async def trade_error_handler(request: Request, exc: TradeError):
+    return JSONResponse(status_code=400, content={"success": False, "error": exc.code, "detail": exc.detail})
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exc_handler(request: Request, exc: StarletteHTTPException):
@@ -69,10 +75,10 @@ async def http_exc_handler(request: Request, exc: StarletteHTTPException):
     )
 
 @app.middleware("http")
-async def add_trace_header(request: Request, call_next):
+async def add_trace_headers(request: Request, call_next):
     resp = await call_next(request)
-    resp.headers["x-amc-trades-handler"] = APP_TAG
-    resp.headers["x-amc-commit"] = APP_COMMIT
+    resp.headers["x-amc-trades-handler"] = TRADES_HANDLER
+    resp.headers["x-amc-env"] = os.getenv("RENDER_SERVICE_NAME", os.getenv("ENVIRONMENT", "unknown"))
     return resp
 
 # CORS middleware - allow frontend origins
