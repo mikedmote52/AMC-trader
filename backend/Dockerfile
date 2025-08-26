@@ -31,22 +31,22 @@ PY
 # 2) Copy backend code
 COPY backend /app/backend
 
-# ---- import proofs (warn-only) ----
 RUN python - <<'PY'
 import importlib
-mods = ("src.app","app.main","src.jobs.discover","src.jobs.discovery")
-ok, fail = [], []
+mods = (
+    "backend.src.app","app.main","backend.src.jobs.discover","backend.src.jobs.discovery",
+    "src.app","src.jobs.discover","src.jobs.discovery"
+)
+ok, warn = [], []
 for m in mods:
     try:
-        importlib.import_module(m)
-        ok.append(m)
+        importlib.import_module(m); ok.append(m)
     except Exception as e:
-        fail.append((m, repr(e)))
+        warn.append((m, repr(e)))
 print("PROOF_OK:", ",".join(ok))
-for m,e in fail:
+for m,e in warn:
     print("PROOF_WARN:", m, e)
 PY
-# -----------------------------------
 
 EXPOSE 8000
 CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000"]
