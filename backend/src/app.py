@@ -54,6 +54,10 @@ async def whoami():
         "handler": TRADES_HANDLER,
     }
 
+@app.get("/_routes")
+def _routes():
+    return sorted([r.path for r in app.routes])
+
 class TradeError(Exception):
     def __init__(self, code: str, detail: str = ""):
         self.code = code
@@ -184,6 +188,12 @@ async def health():
 # Include routers
 app.include_router(trades_router)
 app.include_router(polygon_debug, prefix="/debug")
+
+# Include discovery and portfolio routers
+from backend.src.routes import discovery as discovery_routes
+from backend.src.routes import portfolio as portfolio_routes
+app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery"])
+app.include_router(portfolio_routes.router, prefix="/portfolio", tags=["portfolio"])
 
 # Compatibility routes for old frontend paths
 from starlette.responses import RedirectResponse
