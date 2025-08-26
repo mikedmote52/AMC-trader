@@ -58,10 +58,17 @@ class TradeResp(BaseModel):
 })
 async def execute(req: TradeReq):
     try:
-        # env + mode decision
+        # --- deterministic mode decision ---
         live = int(os.getenv("LIVE_TRADING","0"))
         kill = int(os.getenv("KILL_SWITCH","1"))
-        _EFFECTIVE = "shadow" if not (live==1 and kill==0) else ("shadow" if req.mode=="shadow" else "live")
+        req_mode = (req.mode or "auto").lower()
+
+        # If trading is enabled and killswitch is off, go live unless the client explicitly asks for shadow.
+        if live == 1 and kill == 0:
+            effective_mode = "shadow" if req_mode == "shadow" else "live"
+        else:
+            effective_mode = "shadow"
+        # -----------------------------------
 
         # derive qty (allow notional)
         qty = req.qty
@@ -94,7 +101,7 @@ async def execute(req: TradeReq):
             })
 
         # shadow path
-        if _EFFECTIVE != "live":
+        if effective_mode != "live":
             trade_submissions.labels(mode="shadow", result="accepted").inc()
             return TradeResp(
                 success=True, 
