@@ -208,6 +208,12 @@ async def compat_recommendations():
 async def compat_holdings():
     return RedirectResponse(url="/portfolio/holdings", status_code=307)
 
+@app.get("/api/contenders")
+async def api_contenders():
+    # Non-breaking alias route - returns same data as /discovery/contenders  
+    from backend.src.routes.discovery import get_contenders
+    return await get_contenders()
+
 # Optional buy-now alias if the UI ever posts here:
 from fastapi import Body
 @app.post("/api/buy")
