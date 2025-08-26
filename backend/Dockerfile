@@ -31,13 +31,18 @@ PY
 # 2) Copy backend code
 COPY backend /app/backend
 
-# 3) Import-proof AFTER deps + code (module path src.app)
+# 3) Import-proof AFTER deps + code (both src.app and app.main entrypoints)
 RUN python - <<'PY'
 import importlib, os
 print("IMPORT_PROOF_USING_PYTHONPATH", os.getenv("PYTHONPATH"))
+# Test original src.app entrypoint
 m = importlib.import_module("src.app")
 assert hasattr(m, "app"), "src.app:app not found"
 print("IMPORT_OK")
+# Test new app.main compatibility entrypoint
+app_main = importlib.import_module("app.main")
+assert hasattr(app_main, "app"), "app.main:app not found"
+print("IMPORT_OK_ALIAS")
 PY
 
 EXPOSE 8000
