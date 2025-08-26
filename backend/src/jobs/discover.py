@@ -31,14 +31,40 @@ import requests
 
 # Environment variables for live discovery
 POLY_KEY = os.getenv("POLYGON_API_KEY")
-PRICE_CAP = float(os.getenv("AMC_PRICE_CAP", "100"))             # keep ≤ 100 by default
-MIN_DOLLAR_VOL = float(os.getenv("AMC_MIN_DOLLAR_VOL", "20000000"))  # $20M
+AMC_PRICE_CAP = float(os.getenv("AMC_PRICE_CAP", "100"))
+AMC_MIN_DOLLAR_VOL = float(os.getenv("AMC_MIN_DOLLAR_VOL", "20000000"))
 LOOKBACK_DAYS = int(os.getenv("AMC_COMPRESSION_LOOKBACK", "60"))
 COMPRESSION_PCTL_MAX = float(os.getenv("AMC_COMPRESSION_PCTL_MAX", "0.15"))  # tightest 15%
 MAX_CANDIDATES = int(os.getenv("AMC_MAX_CANDIDATES", "15"))
 UNIVERSE_FALLBACK = [s.strip().upper() for s in os.getenv("AMC_DISCOVERY_UNIVERSE","AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,AMD,AVGO,PLTR,COIN,CRM,ORCL,ABNB,SNOW,UBER,NFLX,SHOP,INTC,MRVL,SMCI").split(",") if s.strip()]
 EXCLUDE_FUNDS = os.getenv("AMC_EXCLUDE_FUNDS", "true").lower() in ("1", "true", "yes")
 EXCLUDE_ADRS = os.getenv("AMC_EXCLUDE_ADRS", "true").lower() in ("1", "true", "yes")
+
+# weights (renormalize to available factors)
+W_VOLUME   = float(os.getenv("AMC_W_VOLUME",   "0.25"))
+W_SHORT    = float(os.getenv("AMC_W_SHORT",    "0.20"))
+W_CATALYST = float(os.getenv("AMC_W_CATALYST", "0.20"))
+W_SENT     = float(os.getenv("AMC_W_SENT",     "0.15"))
+W_OPTIONS  = float(os.getenv("AMC_W_OPTIONS",  "0.10"))
+W_TECH     = float(os.getenv("AMC_W_TECH",     "0.10"))
+
+# thresholds
+REL_VOL_MIN  = float(os.getenv("AMC_REL_VOL_MIN",  "3"))
+ATR_PCT_MIN  = float(os.getenv("AMC_ATR_PCT_MIN",  "0.04"))
+FLOAT_MAX    = float(os.getenv("AMC_FLOAT_MAX",    "50000000"))
+BIG_FLOAT_MIN= float(os.getenv("AMC_BIG_FLOAT_MIN","150000000"))
+SI_MIN       = float(os.getenv("AMC_SI_MIN",       "0.20"))
+BORROW_MIN   = float(os.getenv("AMC_BORROW_MIN",   "0.20"))
+UTIL_MIN     = float(os.getenv("AMC_UTIL_MIN",     "0.85"))
+IV_PCTL_MIN  = float(os.getenv("AMC_IV_PCTL_MIN",  "0.80"))
+PCR_MIN      = float(os.getenv("AMC_PCR_MIN",      "2.0"))
+
+INTRADAY     = bool(int(os.getenv("AMC_INTRADAY", "0")))  # 1 to enable minute features
+
+# ATR-based targets and brackets
+R_MULT         = float(os.getenv("AMC_R_MULT", "2.0"))        # target = entry + R_MULT * risk
+ATR_STOP_MULT  = float(os.getenv("AMC_ATR_STOP_MULT", "1.5")) # stop = entry - ATR_STOP_MULT * ATR_abs
+MIN_STOP_PCT   = float(os.getenv("AMC_MIN_STOP_PCT", "0.02")) # 2% floor
 
 # Configure logging
 logging.basicConfig(
@@ -68,6 +94,144 @@ def _return(rows, n):
     c0=rows[-(n+1)]["c"]; c1=rows[-1]["c"]
     if not c0: return None
     return float((c1-c0)/c0)
+
+# Cache for intraday data
+_minute_cache = {}
+
+async def _minute_bars_today(client, sym):
+    """Fetch today's minute bars for VWAP and relative volume"""
+    if sym in _minute_cache:
+        return _minute_cache[sym]
+    
+    try:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        data = await _poly_get(client, f"/v2/aggs/ticker/{sym}/range/1/minute/{today}/{today}", 
+                               params={"adjusted":"true","limit":"2000"}, timeout=15)
+        results = data.get("results") or []
+        _minute_cache[sym] = results
+        return results
+    except Exception:
+        _minute_cache[sym] = []
+        return []
+
+def _compute_vwap_relvol(minute_bars):
+    """Compute VWAP and 30m relative volume from minute bars"""
+    if not minute_bars or len(minute_bars) < 30:
+        return None, None
+    
+    # VWAP calculation
+    total_pv = sum(bar.get("c", 0) * bar.get("v", 0) for bar in minute_bars)
+    total_vol = sum(bar.get("v", 0) for bar in minute_bars)
+    vwap = total_pv / total_vol if total_vol > 0 else 0
+    
+    # Current price vs VWAP
+    current_price = minute_bars[-1].get("c", 0) if minute_bars else 0
+    above_vwap = current_price > vwap if vwap > 0 else False
+    
+    # 30-minute relative volume (approximate)
+    last_30_bars = minute_bars[-30:] if len(minute_bars) >= 30 else minute_bars
+    vol_30m = sum(bar.get("v", 0) for bar in last_30_bars)
+    
+    # For simplicity, assume average 30m volume is daily_volume / 13 (6.5 hour trading day / 0.5hr)
+    # This is approximate - in production you'd use historical 30m averages
+    avg_daily_vol = total_vol * (390 / len(minute_bars)) if minute_bars else 1
+    avg_30m_vol = avg_daily_vol / 13 if avg_daily_vol > 0 else 1
+    rel_vol_30m = vol_30m / avg_30m_vol if avg_30m_vol > 0 else 1.0
+    
+    return above_vwap, rel_vol_30m
+
+async def _get_float_approx(client, sym):
+    """Get approximate float from Polygon reference API"""
+    try:
+        data = await _poly_get(client, f"/v3/reference/tickers/{sym}", timeout=10)
+        results = data.get("results", {})
+        shares = results.get("shares_outstanding") or results.get("share_class_shares_outstanding")
+        return float(shares) if shares else None
+    except Exception:
+        return None
+
+async def _get_news_catalyst_score(client, sym):
+    """Score news catalyst from last 5 days"""
+    try:
+        from_date = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%d")
+        data = await _poly_get(client, f"/v2/reference/news", 
+                               params={"ticker": sym, "published_utc.gte": from_date, "limit": "50"}, timeout=10)
+        
+        results = data.get("results") or []
+        if not results:
+            return "none", 0.0
+        
+        # Check for high-impact catalyst keywords
+        high_impact_keywords = ["earnings beat", "fda approval", "m&a", "merger", "acquisition", "contract", "partnership"]
+        catalyst_tag = "none"
+        catalyst_score = 0.5  # Base score for having any news
+        
+        for article in results:
+            title = (article.get("title") or "").lower()
+            keywords = (article.get("keywords") or [])
+            
+            # Check title and keywords for catalysts
+            all_text = title + " " + " ".join(str(k).lower() for k in keywords)
+            for keyword in high_impact_keywords:
+                if keyword in all_text:
+                    catalyst_tag = keyword.replace(" ", "_")
+                    catalyst_score = 1.0
+                    break
+            
+            if catalyst_score == 1.0:
+                break
+        
+        return catalyst_tag, catalyst_score
+    except Exception:
+        return "none", 0.0
+
+async def _get_options_flow(client, sym):
+    """Get options flow metrics from Polygon (if available)"""
+    try:
+        # This would use Polygon options API - simplified version
+        # In production, you'd fetch actual options data
+        data = await _poly_get(client, f"/v3/reference/options/contracts", 
+                               params={"underlying_ticker": sym, "limit": "10"}, timeout=10)
+        
+        # Placeholder - would calculate actual metrics from options data
+        # For now, return None to indicate unavailable
+        return {"pcr": None, "iv_pctl": None, "call_oi_up": None}
+    except Exception:
+        return {"pcr": None, "iv_pctl": None, "call_oi_up": None}
+
+def _compute_technical_indicators(rows):
+    """Compute EMA cross, RSI zone, green streak from daily bars"""
+    if len(rows) < 21:
+        return False, False, 0
+    
+    # Simple EMA calculation
+    closes = [r.get("c", 0) for r in rows[-21:]]
+    if not all(closes):
+        return False, False, 0
+    
+    # EMA 9 and 20 (simplified)
+    ema9 = sum(closes[-9:]) / 9 if len(closes) >= 9 else closes[-1]
+    ema20 = sum(closes[-20:]) / 20 if len(closes) >= 20 else closes[-1]
+    ema_cross = ema9 > ema20
+    
+    # RSI zone (simplified - just check if not oversold)
+    recent_closes = closes[-14:] if len(closes) >= 14 else closes
+    gains = [max(0, recent_closes[i] - recent_closes[i-1]) for i in range(1, len(recent_closes))]
+    losses = [max(0, recent_closes[i-1] - recent_closes[i]) for i in range(1, len(recent_closes))]
+    avg_gain = sum(gains) / len(gains) if gains else 0
+    avg_loss = sum(losses) / len(losses) if losses else 1e-9
+    rsi = 100 - (100 / (1 + avg_gain / avg_loss)) if avg_loss > 0 else 50
+    rsi_zone_ok = 30 < rsi < 80  # Not oversold or overbought
+    
+    # Green streak (consecutive up days)
+    green_streak = 0
+    for i in range(len(rows)-1, 0, -1):
+        if rows[i].get("c", 0) > rows[i-1].get("c", 0):
+            green_streak += 1
+        else:
+            break
+    
+    return ema_cross, rsi_zone_ok, green_streak
 
 @dataclass
 class StageTrace:
@@ -128,6 +292,182 @@ def _bandwidth_percentile(closes, highs, lows, window=20, lookback=60):
     last = bw[-1]
     rank = sum(1 for x in series if x <= last) / len(series)
     return rank  # 0 is tightest, 1 is loosest
+
+async def compute_factors(sym, redis_client):
+    """Compute all factors for squeeze detection"""
+    factors = {}
+    
+    timeout = httpx.Timeout(25.0, connect=6.0)
+    limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
+    
+    async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
+        try:
+            # Get daily bars for technical analysis
+            daily_rows = await _daily_bars(client, sym, limit=LOOKBACK_DAYS+25)
+            
+            # Basic price/volume data
+            if daily_rows:
+                current_price = daily_rows[-1].get("c", 0)
+                factors["atr_pct"] = _atr_pct(daily_rows) or 0.0
+                factors["rs_5d"] = _return(daily_rows, 5) or 0.0
+                ema_cross, rsi_zone_ok, green_streak = _compute_technical_indicators(daily_rows)
+                factors["ema_cross"] = ema_cross
+                factors["rsi_zone_ok"] = rsi_zone_ok  
+                factors["green_streak"] = green_streak
+            else:
+                factors.update({"atr_pct": 0.0, "rs_5d": 0.0, "ema_cross": False, "rsi_zone_ok": False, "green_streak": 0})
+            
+            # Intraday data (if enabled)
+            if INTRADAY and daily_rows:
+                minute_bars = await _minute_bars_today(client, sym)
+                above_vwap, rel_vol_30m = _compute_vwap_relvol(minute_bars)
+                factors["above_vwap"] = above_vwap if above_vwap is not None else False
+                factors["rel_vol_30m"] = rel_vol_30m if rel_vol_30m is not None else 1.0
+            else:
+                factors["above_vwap"] = False
+                factors["rel_vol_30m"] = 1.0  # Default to normal volume
+                
+            # Float data
+            factors["float"] = await _get_float_approx(client, sym)
+            
+            # Catalyst scoring
+            catalyst_tag, catalyst_score = await _get_news_catalyst_score(client, sym)
+            factors["catalyst_tag"] = catalyst_tag
+            factors["catalyst_score"] = catalyst_score
+            
+            # Options flow (if available)
+            options_data = await _get_options_flow(client, sym)
+            factors["pcr"] = options_data.get("pcr")
+            factors["iv_pctl"] = options_data.get("iv_pctl") 
+            factors["call_oi_up"] = options_data.get("call_oi_up")
+            
+        except Exception as e:
+            logger.warning(f"Error fetching market data for {sym}: {e}")
+            # Set defaults for failed fetches
+            factors.update({
+                "atr_pct": 0.0, "rs_5d": 0.0, "above_vwap": False, "rel_vol_30m": 1.0,
+                "ema_cross": False, "rsi_zone_ok": False, "green_streak": 0,
+                "float": None, "catalyst_tag": "none", "catalyst_score": 0.0,
+                "pcr": None, "iv_pctl": None, "call_oi_up": None
+            })
+    
+    # Redis plugin data (sentiment and shorts)
+    try:
+        if redis_client:
+            # Sentiment data
+            sent_data = redis_client.get(f"amc:externals:sentiment:{sym}")
+            if sent_data:
+                sent_json = json.loads(sent_data)
+                factors["sent_score"] = sent_json.get("score", 0.0)
+                factors["trending"] = sent_json.get("tweet_spike", False)
+            else:
+                factors["sent_score"] = None
+                factors["trending"] = None
+                
+            # Short data
+            short_data = redis_client.get(f"amc:externals:shorts:{sym}")
+            if short_data:
+                short_json = json.loads(short_data)
+                factors["si"] = short_json.get("si")
+                factors["borrow"] = short_json.get("borrow")
+                factors["util"] = short_json.get("util")
+            else:
+                factors["si"] = None
+                factors["borrow"] = None
+                factors["util"] = None
+        else:
+            factors.update({"sent_score": None, "trending": None, "si": None, "borrow": None, "util": None})
+    except Exception as e:
+        logger.warning(f"Error fetching Redis data for {sym}: {e}")
+        factors.update({"sent_score": None, "trending": None, "si": None, "borrow": None, "util": None})
+    
+    # Compute factor scores (0-1 scale)
+    factor_scores = {}
+    
+    # Volume score: combines relative volume, ATR, VWAP reclaim, green streak
+    volume_components = []
+    if factors["rel_vol_30m"] >= REL_VOL_MIN:
+        volume_components.append(min(factors["rel_vol_30m"] / 10.0, 1.0))  # Cap at 10x volume
+    if factors["atr_pct"] >= ATR_PCT_MIN:
+        volume_components.append(min(factors["atr_pct"] / 0.1, 1.0))  # Cap at 10% ATR
+    if factors["above_vwap"]:
+        volume_components.append(0.3)
+    if factors["green_streak"] >= 3:
+        volume_components.append(0.4)
+    factor_scores["volume"] = sum(volume_components) / 4.0 if volume_components else None
+    
+    # Short score: float size and short metrics
+    if factors["float"] is not None:
+        if factors["float"] <= FLOAT_MAX:
+            factor_scores["short"] = 1.0  # Small float = automatic high score
+        elif (factors["float"] > BIG_FLOAT_MIN and 
+              factors.get("si") is not None and factors.get("borrow") is not None and factors.get("util") is not None):
+            # Big float but high short metrics
+            si_score = 1.0 if factors["si"] >= SI_MIN else factors["si"] / SI_MIN
+            borrow_score = 1.0 if factors["borrow"] >= BORROW_MIN else factors["borrow"] / BORROW_MIN  
+            util_score = 1.0 if factors["util"] >= UTIL_MIN else factors["util"] / UTIL_MIN
+            factor_scores["short"] = (si_score + borrow_score + util_score) / 3.0
+        else:
+            factor_scores["short"] = 0.1  # Large float, no short data
+    else:
+        factor_scores["short"] = None
+        
+    # Catalyst score
+    factor_scores["catalyst"] = factors["catalyst_score"] if factors["catalyst_score"] > 0 else None
+    
+    # Sentiment score  
+    if factors["sent_score"] is not None:
+        sent_base = factors["sent_score"]
+        trending_boost = 0.2 if factors["trending"] else 0.0
+        factor_scores["sent"] = min(sent_base + trending_boost, 1.0)
+    else:
+        factor_scores["sent"] = None
+        
+    # Options score
+    options_components = []
+    if factors["pcr"] is not None and factors["pcr"] >= PCR_MIN:
+        options_components.append(min(factors["pcr"] / 5.0, 1.0))
+    if factors["iv_pctl"] is not None and factors["iv_pctl"] >= IV_PCTL_MIN:
+        options_components.append(factors["iv_pctl"])
+    if factors["call_oi_up"] is not None and factors["call_oi_up"]:
+        options_components.append(0.5)
+    factor_scores["options"] = sum(options_components) / 3.0 if options_components else None
+    
+    # Technical score
+    tech_components = []
+    if factors["ema_cross"]:
+        tech_components.append(0.4)
+    if factors["rsi_zone_ok"]:
+        tech_components.append(0.3)
+    if factors["above_vwap"]:
+        tech_components.append(0.3)
+    factor_scores["tech"] = sum(tech_components) if tech_components else None
+    
+    # Combine raw features and factor scores
+    result = {**factors, **factor_scores}
+    return result
+
+def score_from_factors(f):
+    """Calculate weighted score from available factors"""
+    weights = {"volume": W_VOLUME, "short": W_SHORT, "catalyst": W_CATALYST, 
+               "sent": W_SENT, "options": W_OPTIONS, "tech": W_TECH}
+    avail = {k: w for k, w in weights.items() if f.get(k) is not None}
+    Z = sum(avail.values()) or 1.0
+    total = 100.0 * sum(f[k] * avail[k] for k in avail) / Z
+    return round(total, 1), avail
+
+def build_thesis(sym, f):
+    """Build human-readable thesis string"""
+    float_m = int((f.get('float') or 0) / 1e6)
+    si_pct = int((f.get('si') or 0) * 100)
+    iv_pct = int((f.get('iv_pctl') or 0) * 100)
+    
+    return (f"{sym}: rel vol {f.get('rel_vol_30m', 1.0):.1f}×, "
+            f"ATR {f.get('atr_pct', 0)*100:.1f}%, "
+            f"{'VWAP reclaim' if f.get('above_vwap') else 'under VWAP'}, "
+            f"float {float_m}M, SI {si_pct}%, "
+            f"catalyst {f.get('catalyst_tag', 'none')}, "
+            f"PCR {f.get('pcr', 'n/a')}, IV%ile {iv_pct}.")
 
 # In-process cache for symbol classifications
 _symbol_cache = {}
@@ -527,8 +867,8 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
             g = await _poly_get(client, f"/v2/aggs/grouped/locale/us/market/stocks/{date}", params={"adjusted":"true"})
         rows = g.get("results") or []
         # cheap gates first
-        pcap = PRICE_CAP * (1.2 if relaxed else 1.0)  # allow slight slack in relaxed mode
-        dvmin = MIN_DOLLAR_VOL * (0.5 if relaxed else 1.0)
+        pcap = AMC_PRICE_CAP * (1.2 if relaxed else 1.0)  # allow slight slack in relaxed mode
+        dvmin = AMC_MIN_DOLLAR_VOL * (0.5 if relaxed else 1.0)
         for r in rows:
             sym = r.get("T")
             c = float(r.get("c") or 0.0)
@@ -635,52 +975,140 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         })
     trace.exit("score_and_take", [o["symbol"] for o in out])
 
-    # enrich candidates with real metrics (compression %, liquidity, RS, ATR%) and thesis
-    async def _enrich(sym):
-        try:
-            async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
-                # Get recent price/volume data
-                g = await _poly_get(client, f"/v2/aggs/grouped/locale/us/market/stocks/{date}", params={"adjusted":"true"})
-                rows = g.get("results") or []
-                price_row = next((r for r in rows if r.get("T") == sym), None)
+    # squeeze-hunting pipeline with factor scoring
+    trace.enter("squeeze_analysis", [o["symbol"] for o in out])
+    
+    # Get Redis client for plugin data
+    redis_client = None
+    try:
+        redis_client = get_redis_client()
+    except Exception:
+        logger.warning("Redis not available for plugin data")
+    
+    # Compute factors for all candidates with semaphore for concurrency control
+    semaphore = asyncio.Semaphore(10)  # Limit concurrent requests
+    
+    async def _analyze_squeeze_candidate(sym):
+        async with semaphore:
+            try:
+                # Get current price/volume for gates and targets
+                async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
+                    g = await _poly_get(client, f"/v2/aggs/grouped/locale/us/market/stocks/{date}", params={"adjusted":"true"})
+                    rows = g.get("results") or []
+                    price_row = next((r for r in rows if r.get("T") == sym), None)
+                    
+                    if not price_row:
+                        return None  # Skip if no price data
+                        
+                    price = float(price_row.get("c") or 0.0)
+                    volume = float(price_row.get("v") or 0.0)
+                    dollar_vol = price * volume
                 
-                if not price_row:
-                    return {"price": 0.0, "dollar_vol": 0.0, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "thesis": f"{sym} data unavailable."}
+                # Compute all factors
+                factors = await compute_factors(sym, redis_client)
                 
-                price = float(price_row.get("c") or 0.0)
-                volume = float(price_row.get("v") or 0.0)
-                dollar_vol = price * volume
+                # Hard gates
+                if factors["rel_vol_30m"] < REL_VOL_MIN:
+                    return {"symbol": sym, "reason": "rel_vol_low", "gate_failed": True}
+                if factors["atr_pct"] < ATR_PCT_MIN:
+                    return {"symbol": sym, "reason": "atr_low", "gate_failed": True}  
+                if price > AMC_PRICE_CAP:
+                    return {"symbol": sym, "reason": "price_high", "gate_failed": True}
                 
-                # Get historical bars for metrics
-                rows = await _daily_bars(client, sym, limit=LOOKBACK_DAYS+25)
-                if not rows:
-                    return {"price": price, "dollar_vol": dollar_vol, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "thesis": f"{sym} no historical data."}
+                # Float gate
+                float_val = factors.get("float")
+                if float_val is not None:
+                    if not (float_val <= FLOAT_MAX or 
+                           (float_val > BIG_FLOAT_MIN and 
+                            factors.get("si", 0) >= SI_MIN and 
+                            factors.get("borrow", 0) >= BORROW_MIN and 
+                            factors.get("util", 0) >= UTIL_MIN)):
+                        return {"symbol": sym, "reason": "float_gate", "gate_failed": True}
                 
-                atrp = _atr_pct(rows) or 0.0
-                r5 = _return(rows, 5) or 0.0
+                # Score the candidate
+                score, avail_factors = score_from_factors(factors)
                 
-                # Get compression_pct from existing out data
+                if score < 70:  # Score gate
+                    return {"symbol": sym, "reason": "score_low", "gate_failed": True}
+                
+                # Build thesis
+                thesis = build_thesis(sym, factors)
+                
+                # Compute ATR-based targets
+                atr_abs = factors["atr_pct"] * price
+                risk_abs = max(ATR_STOP_MULT * atr_abs, MIN_STOP_PCT * price)
+                stop_price = round(price - risk_abs, 2)
+                take_profit_price = round(price + R_MULT * risk_abs, 2)
+                stop_loss_pct = round((risk_abs / price) * 100, 1)
+                take_profit_pct = round((R_MULT * risk_abs / price) * 100, 1)
+                r_multiple = R_MULT
+                
+                # Get compression_pct from tight cohort
                 compression_pct = next((t["compression_pct"] for t in tight if t["symbol"] == sym), 0.0)
                 
-                thesis = f"{sym} is in the tightest {round((1.0 - compression_pct)*100,1)}% of its {LOOKBACK_DAYS}d volatility band, 5d RS {r5*100:+.1f}%, ATR% {atrp*100:.1f}, liquidity ${int(dollar_vol)/1_000_000}M."
-                
                 return {
+                    "symbol": sym,
                     "price": price,
-                    "dollar_vol": dollar_vol, 
+                    "dollar_vol": dollar_vol,
                     "compression_pct": compression_pct,
-                    "atr_pct": atrp, 
-                    "rs_5d": r5, 
-                    "thesis": thesis
+                    "score": score,
+                    "thesis": thesis,
+                    "tradeable": score >= 75,
+                    # Raw features
+                    "rs_5d": factors.get("rs_5d", 0.0),
+                    "atr_pct": factors.get("atr_pct", 0.0),
+                    "rel_vol_30m": factors.get("rel_vol_30m", 1.0),
+                    "above_vwap": factors.get("above_vwap", False),
+                    "ema_cross": factors.get("ema_cross", False),
+                    "rsi_zone_ok": factors.get("rsi_zone_ok", False),
+                    "float": factors.get("float"),
+                    "si": factors.get("si"),
+                    "borrow": factors.get("borrow"),
+                    "util": factors.get("util"),
+                    "catalyst_tag": factors.get("catalyst_tag"),
+                    "catalyst_score": factors.get("catalyst_score"),
+                    "pcr": factors.get("pcr"),
+                    "iv_pctl": factors.get("iv_pctl"),
+                    "call_oi_up": factors.get("call_oi_up"),
+                    "sent_score": factors.get("sent_score"),
+                    "trending": factors.get("trending"),
+                    # ATR targets
+                    "stop_price": stop_price,
+                    "take_profit_price": take_profit_price,
+                    "stop_loss_pct": stop_loss_pct,
+                    "take_profit_pct": take_profit_pct,
+                    "r_multiple": r_multiple,
+                    "gate_failed": False
                 }
-        except Exception as e:
-            logger.warning(f"Enrichment failed for {sym}: {e}")
-            return {"price": 0.0, "dollar_vol": 0.0, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "thesis": f"{sym} enrichment failed."}
+                
+            except Exception as e:
+                logger.warning(f"Squeeze analysis failed for {sym}: {e}")
+                return {"symbol": sym, "reason": "analysis_failed", "gate_failed": True}
+    
+    # Analyze all candidates
+    squeeze_results = await asyncio.gather(*[_analyze_squeeze_candidate(o["symbol"]) for o in out])
+    
+    # Filter out gate failures and None results
+    passed_candidates = []
+    gate_failures = []
+    
+    for result in squeeze_results:
+        if result is None:
+            continue
+        elif result.get("gate_failed"):
+            gate_failures.append({"symbol": result["symbol"], "reason": result["reason"]})
+        else:
+            passed_candidates.append(result)
+    
+    trace.exit("squeeze_analysis", [c["symbol"] for c in passed_candidates], gate_failures)
+    
+    # Sort by score descending and limit
+    passed_candidates.sort(key=lambda x: x["score"], reverse=True)
+    final_candidates = passed_candidates[:MAX_CANDIDATES]
+    
+    trace.exit("final_selection", [c["symbol"] for c in final_candidates])
 
-    enriched = await asyncio.gather(*[_enrich(o["symbol"]) for o in out])
-    for o, extra in zip(out, enriched):
-        o.update(extra)
-
-    return (out, trace.to_dict()) if with_trace else out
+    return (final_candidates, trace.to_dict()) if with_trace else final_candidates
 
 def main():
     """Main entry point with Redis locking using live selector"""
