@@ -37,8 +37,12 @@ LOOKBACK_DAYS = int(os.getenv("AMC_COMPRESSION_LOOKBACK", "60"))
 COMPRESSION_PCTL_MAX = float(os.getenv("AMC_COMPRESSION_PCTL_MAX", "0.15"))  # tightest 15%
 MAX_CANDIDATES = int(os.getenv("AMC_MAX_CANDIDATES", "15"))
 UNIVERSE_FALLBACK = [s.strip().upper() for s in os.getenv("AMC_DISCOVERY_UNIVERSE","AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,AMD,AVGO,PLTR,COIN,CRM,ORCL,ABNB,SNOW,UBER,NFLX,SHOP,INTC,MRVL,SMCI").split(",") if s.strip()]
-EXCLUDE_FUNDS = os.getenv("AMC_EXCLUDE_FUNDS", "true").lower() in ("1", "true", "yes")
-EXCLUDE_ADRS = os.getenv("AMC_EXCLUDE_ADRS", "true").lower() in ("1", "true", "yes")
+
+# Strict classification (drop any non-equity when enabled)
+EXCLUDE_FUNDS        = os.getenv("AMC_EXCLUDE_FUNDS","true").lower()=="true"
+EXCLUDE_ADRS         = os.getenv("AMC_EXCLUDE_ADRS","true").lower()=="true"
+EXCLUDE_FUNDS_STRICT = os.getenv("AMC_EXCLUDE_FUNDS_STRICT","1") in ("1","true","yes")
+FUND_TYPES = {"ETF","ETN","FUND","INDEX","MUTUALFUND","TRUST","CEFT","BOND","ETFWRAP"}
 
 # weights (renormalize to available factors)
 W_VOLUME   = float(os.getenv("AMC_W_VOLUME",   "0.25"))
@@ -385,63 +389,72 @@ def _bandwidth_percentile(closes, highs, lows, window=20, lookback=60):
     rank = sum(1 for x in series if x <= last) / len(series)
     return rank  # 0 is tightest, 1 is loosest
 
-async def compute_factors(sym, redis_client):
+async def compute_factors(sym, redis_client, client=None):
     """Compute all factors for squeeze detection"""
     factors = {}
     
     timeout = httpx.Timeout(25.0, connect=6.0)
     limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
     
-    async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
-        try:
-            # Get daily bars for technical analysis
-            daily_rows = await _daily_bars(client, sym, limit=LOOKBACK_DAYS+25)
+    # Use passed client or create new one  
+    use_existing_client = client is not None
+    
+    if not use_existing_client:
+        client = httpx.AsyncClient(timeout=timeout, limits=limits)
+    
+    try:
+        # Get daily bars for technical analysis
+        daily_rows = await _daily_bars(client, sym, limit=LOOKBACK_DAYS+25)
+        
+        # Basic price/volume data
+        if daily_rows:
+            current_price = daily_rows[-1].get("c", 0)
+            factors["atr_pct"] = _atr_pct(daily_rows) or 0.0
+            factors["rs_5d"] = _return(daily_rows, 5) or 0.0
+            ema_cross, rsi_zone_ok, green_streak = _compute_technical_indicators(daily_rows)
+            factors["ema_cross"] = ema_cross
+            factors["rsi_zone_ok"] = rsi_zone_ok  
+            factors["green_streak"] = green_streak
+        else:
+            factors.update({"atr_pct": 0.0, "rs_5d": 0.0, "ema_cross": False, "rsi_zone_ok": False, "green_streak": 0})
+        
+        # Intraday data (if enabled)
+        if INTRADAY and daily_rows:
+            minute_bars = await _minute_bars_today(client, sym)
+            above_vwap, rel_vol_30m = _compute_vwap_relvol(minute_bars)
+            factors["above_vwap"] = above_vwap if above_vwap is not None else False
+            factors["rel_vol_30m"] = rel_vol_30m if rel_vol_30m is not None else 1.0
+        else:
+            factors["above_vwap"] = False
+            factors["rel_vol_30m"] = 1.0  # Default to normal volume
             
-            # Basic price/volume data
-            if daily_rows:
-                current_price = daily_rows[-1].get("c", 0)
-                factors["atr_pct"] = _atr_pct(daily_rows) or 0.0
-                factors["rs_5d"] = _return(daily_rows, 5) or 0.0
-                ema_cross, rsi_zone_ok, green_streak = _compute_technical_indicators(daily_rows)
-                factors["ema_cross"] = ema_cross
-                factors["rsi_zone_ok"] = rsi_zone_ok  
-                factors["green_streak"] = green_streak
-            else:
-                factors.update({"atr_pct": 0.0, "rs_5d": 0.0, "ema_cross": False, "rsi_zone_ok": False, "green_streak": 0})
-            
-            # Intraday data (if enabled)
-            if INTRADAY and daily_rows:
-                minute_bars = await _minute_bars_today(client, sym)
-                above_vwap, rel_vol_30m = _compute_vwap_relvol(minute_bars)
-                factors["above_vwap"] = above_vwap if above_vwap is not None else False
-                factors["rel_vol_30m"] = rel_vol_30m if rel_vol_30m is not None else 1.0
-            else:
-                factors["above_vwap"] = False
-                factors["rel_vol_30m"] = 1.0  # Default to normal volume
-                
-            # Float data
-            factors["float"] = await _get_float_approx(client, sym)
-            
-            # Catalyst scoring
-            catalyst_tag, catalyst_score = await _get_news_catalyst_score(client, sym)
-            factors["catalyst_tag"] = catalyst_tag
-            factors["catalyst_score"] = catalyst_score
-            
-            # Options flow (if available)
-            options_data = await _get_options_flow(client, sym)
-            factors["pcr"] = options_data.get("pcr")
-            factors["iv_pctl"] = options_data.get("iv_pctl") 
-            factors["call_oi_up"] = options_data.get("call_oi_up")
-            
-        except Exception as e:
-            logger.warning(f"Error fetching market data for {sym}: {e}")
-            # Set defaults for failed fetches
-            factors.update({
-                "atr_pct": 0.0, "rs_5d": 0.0, "above_vwap": False, "rel_vol_30m": 1.0,
-                "ema_cross": False, "rsi_zone_ok": False, "green_streak": 0,
-                "float": None, "catalyst_tag": "none", "catalyst_score": 0.0,
-                "pcr": None, "iv_pctl": None, "call_oi_up": None
-            })
+        # Float data
+        factors["float"] = await _get_float_approx(client, sym)
+        
+        # Catalyst scoring
+        catalyst_tag, catalyst_score = await _get_news_catalyst_score(client, sym)
+        factors["catalyst_tag"] = catalyst_tag
+        factors["catalyst_score"] = catalyst_score
+        
+        # Options flow (if available)
+        options_data = await _get_options_flow(client, sym)
+        factors["pcr"] = options_data.get("pcr")
+        factors["iv_pctl"] = options_data.get("iv_pctl") 
+        factors["call_oi_up"] = options_data.get("call_oi_up")
+        
+    except Exception as e:
+        logger.warning(f"Error fetching market data for {sym}: {e}")
+        # Set defaults for failed fetches
+        factors.update({
+            "atr_pct": 0.0, "rs_5d": 0.0, "above_vwap": False, "rel_vol_30m": 1.0,
+            "ema_cross": False, "rsi_zone_ok": False, "green_streak": 0,
+            "float": None, "catalyst_tag": "none", "catalyst_score": 0.0,
+            "pcr": None, "iv_pctl": None, "call_oi_up": None
+        })
+    finally:
+        # Close client if we created it
+        if not use_existing_client:
+            await client.aclose()
     
     # Redis plugin data (sentiment and shorts)
     try:
@@ -579,14 +592,18 @@ def score_from_factors(f):
     total = 100.0 * sum(f[k] * avail[k] for k in avail) / Z
     return round(total, 1), avail
 
-def build_thesis(sym, f):
-    """Build human-readable thesis string"""
+def build_thesis(sym, f, item=None):
+    """Build human-readable thesis string with comprehensive audit data"""
     float_m = int((f.get('float') or 0) / 1e6)
     si_pct = int((f.get('si') or 0) * 100)
     iv_pct = int((f.get('iv_pctl') or 0) * 100)
     
-    # Build base thesis
-    thesis = (f"{sym}: rel vol {f.get('rel_vol_30m', 1.0):.1f}×, "
+    # Get additional data from item if provided
+    price = item.get('price', 0) if item else 0
+    dollar_vol = item.get('dollar_vol', 0) if item else 0
+    
+    # Build comprehensive thesis with audit data
+    thesis = (f"{sym}: ${price:.2f}, rel vol {f.get('rel_vol_30m', 1.0):.1f}×, "
               f"ATR {f.get('atr_pct', 0)*100:.1f}%, "
               f"{'VWAP reclaim' if f.get('above_vwap') else 'under VWAP'}, "
               f"float {float_m}M, SI {si_pct}%, "
@@ -630,50 +647,44 @@ def thesis_string_from(factors):
 # In-process cache for symbol classifications
 _symbol_cache = {}
 
-async def _classify_symbol(client, symbol):
-    """Classify symbol using Polygon v3 reference metadata with cache"""
-    if symbol in _symbol_cache:
-        return _symbol_cache[symbol]
-    
+async def _classify_symbol(sym: str, client: httpx.AsyncClient) -> str:
+    """Robust symbol classification using Polygon v3 API with caching"""
+    if sym in _symbol_cache:
+        return _symbol_cache[sym]
+        
     try:
-        # Use Polygon v3 reference API
-        data = await _poly_get(client, f"/v3/reference/tickers/{symbol}", timeout=10)
+        r = await client.get(f"https://api.polygon.io/v3/reference/tickers/{sym}",
+                             params={"apiKey": POLY_KEY})
+        if r.status_code != 200:
+            _symbol_cache[sym] = "unknown"
+            return "unknown"
+            
+        j = (r.json() or {}).get("results") or {}
+        ttype = (j.get("type") or "").upper()
+        name  = (j.get("name") or "").upper()
         
-        # Extract classification info
-        ticker_info = data.get("results", {})
-        ticker_type = ticker_info.get("type", "").upper()
-        name = ticker_info.get("name", "").upper()
-        
-        # Classify as fund/ETF
-        is_fund = (
-            ticker_type in ["ETF", "ETN", "FUND"] or
-            any(term in name for term in ["ETF", "ETN", "FUND", "INDEX", "TRUST"])
-        )
-        
-        # Classify as ADR (American Depositary Receipt)
-        is_adr = (
-            ticker_type == "ADRC" or  # ADR Common
-            "ADR" in name or
-            ticker_info.get("currency_name", "") != "usd"
-        )
-        
-        result = {
-            "is_fund": is_fund,
-            "is_adr": is_adr,
-            "type": ticker_type,
-            "name": name
-        }
-        
-        # Cache result
-        _symbol_cache[symbol] = result
-        return result
+        # Classify funds/ETFs
+        if ttype in FUND_TYPES or "ETF" in name or "INDEX" in name:
+            _symbol_cache[sym] = "fund"
+            return "fund"
+            
+        # Classify ADRs
+        if ttype in {"ADRC","ADRR","ADRU"} or "ADR" in name:
+            _symbol_cache[sym] = "adr"
+            return "adr"
+            
+        # Classify equities
+        if ttype in {"CS","COMMON_STOCK"} or "INC" in name:
+            _symbol_cache[sym] = "equity"
+            return "equity"
+            
+        _symbol_cache[sym] = "other"
+        return "other"
         
     except Exception as e:
-        logger.warning(f"Classification failed for {symbol}: {e}")
-        # Default to allow (conservative)
-        result = {"is_fund": False, "is_adr": False, "type": "UNKNOWN", "name": ""}
-        _symbol_cache[symbol] = result
-        return result
+        logger.warning(f"Classification failed for {sym}: {e}")
+        _symbol_cache[sym] = "unknown"
+        return "unknown"
 
 class DiscoveryPipeline:
     def __init__(self):
@@ -1049,28 +1060,26 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         items = []
         return (items, trace.to_dict()) if with_trace else items
 
-    # classify stage: enforce fund/ADR exclusion just after universe/liquidity
-    if EXCLUDE_FUNDS or EXCLUDE_ADRS:
+    # classify stage: strict fund/ADR removal + real factor scoring
+    if EXCLUDE_FUNDS or EXCLUDE_ADRS or EXCLUDE_FUNDS_STRICT:
         trace.enter("classify", kept_syms)
         classify_kept = []
         classify_rejected = []
         
         async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
-            # Process symbols individually to enforce exclusion properly
             for sym in kept_syms:
                 try:
-                    meta = await _classify_symbol(client, sym)  # cached polygon ref
+                    cla = await _classify_symbol(sym, client)
                     
-                    # Check fund exclusion
-                    if EXCLUDE_FUNDS and meta.get("is_fund", False):
-                        classify_rejected.append({"symbol": sym, "reason": "fund/etf"})
+                    # Apply exclusion filters
+                    if (EXCLUDE_ADRS and cla=="adr") or (EXCLUDE_FUNDS and cla=="fund"):
+                        classify_rejected.append({"symbol": sym, "reason": cla})
                         continue
                         
-                    # Check ADR exclusion  
-                    if EXCLUDE_ADRS and meta.get("is_adr", False):
-                        classify_rejected.append({"symbol": sym, "reason": "adr"})
+                    if EXCLUDE_FUNDS_STRICT and cla!="equity":
+                        classify_rejected.append({"symbol": sym, "reason": f"strict-{cla}"})
                         continue
-                        
+                    
                     # Passed all filters
                     classify_kept.append(sym)
                     
@@ -1199,35 +1208,49 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 # Get compression_pctl from original candidate
                 compression_pctl = next((o.get("compression_pctl", 0.0) for o in out if o["symbol"] == sym), 0.0)
                 
-                return {
+                # Build comprehensive audit item
+                item = {
                     "symbol": sym,
                     "price": price,
+                    "last_price": price,  # alias for audit
                     "dollar_vol": dollar_vol,
                     "compression_pctl": compression_pctl,  # keep, but do NOT use as score
                     "score": round(total, 1),  # <-- the rank key from composite scoring
                     "confidence": round(total/100.0, 4),
-                    "factors": factors,  # volume/short/catalyst/sent/options/tech
+                    "factors": factors,  # volume/short/catalyst/sent/options/tech/sector
                     "gates": current_policy_dict(),  # price/rel_vol/atr/etc used for audit
-                    "thesis": thesis,
+                    "thesis": build_thesis(sym, factors, {"price": price, "dollar_vol": dollar_vol}),
                     "tradeable": total >= 75,
-                    # Raw features for backwards compatibility
+                    
+                    # Full audit payload with all requested fields
+                    "rel_vol_30m": factors.get("rel_vol_30m", None),
+                    "atr_abs": atr_abs,
+                    "atr_pct": factors.get("atr_pct", None),
+                    "ema9": None,  # Not computed in current implementation
+                    "ema20": None,  # Not computed in current implementation  
+                    "rsi": None,  # Not computed separately in current implementation
+                    "vwap_reclaim": factors.get("above_vwap", None),
+                    "float": factors.get("float", None),
+                    "si": factors.get("si", None),
+                    "borrow": factors.get("borrow", None),
+                    "util": factors.get("util", None),
+                    "iv_pctl": factors.get("iv_pctl", None),
+                    "pcr": factors.get("pcr", None),
+                    "call_oi_up": factors.get("call_oi_up", None),
+                    "sector": factors.get("sector_classification", None),
+                    "sector_etf": factors.get("sector_etf", None),
+                    "sector_score": factors.get("sector", None),
+                    
+                    # Backwards compatibility fields
                     "rs_5d": factors.get("rs_5d", 0.0),
-                    "atr_pct": factors.get("atr_pct", 0.0),
-                    "rel_vol_30m": factors.get("rel_vol_30m", 1.0),
                     "above_vwap": factors.get("above_vwap", False),
                     "ema_cross": factors.get("ema_cross", False),
                     "rsi_zone_ok": factors.get("rsi_zone_ok", False),
-                    "float": factors.get("float"),
-                    "si": factors.get("si"),
-                    "borrow": factors.get("borrow"),
-                    "util": factors.get("util"),
                     "catalyst_tag": factors.get("catalyst_tag"),
                     "catalyst_score": factors.get("catalyst_score"),
-                    "pcr": factors.get("pcr"),
-                    "iv_pctl": factors.get("iv_pctl"),
-                    "call_oi_up": factors.get("call_oi_up"),
                     "sent_score": factors.get("sent_score"),
                     "trending": factors.get("trending"),
+                    
                     # ATR targets
                     "stop_price": stop_price,
                     "take_profit_price": take_profit_price,
@@ -1236,6 +1259,8 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                     "r_multiple": r_multiple,
                     "gate_failed": False
                 }
+                
+                return item
                 
             except Exception as e:
                 logger.warning(f"Squeeze analysis failed for {sym}: {e}")
