@@ -10,7 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Marker to verify correct Dockerfile is used
-RUN echo "DOCKERFILE_MARKER: BACKEND_V4" && python -V
+RUN echo "DOCKERFILE_MARKER: BACKEND_V5_RENDER_FIX" && python -V
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential curl ca-certificates && \
@@ -18,8 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 1) Install deps FIRST and SHOW fastapi info
 COPY backend/requirements.txt /tmp/requirements.txt
-RUN python -m pip install --upgrade pip setuptools wheel && \
+RUN echo "REQUIREMENTS_CONTENT:" && cat /tmp/requirements.txt && \
+    python -m pip install --upgrade pip setuptools wheel && \
     pip install -r /tmp/requirements.txt && \
+    echo "PIP_LIST_AFTER_INSTALL:" && pip list | grep -i fastapi && \
     python - <<'PY'
 import fastapi, pkgutil
 print("FASTAPI_PRESENT:", fastapi.__version__)
