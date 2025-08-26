@@ -66,7 +66,9 @@ export default function BuyNow() {
       const r = await fetch(`${API_BASE}/discovery/contenders`); 
       if (!r.ok) throw new Error(`HTTP ${r.status}`); 
       const data = await r.json(); 
-      setRecs(Array.isArray(data) ? data : []); 
+      // Handle both direct array and object with items
+      const items = Array.isArray(data) ? data : (data?.items || []);
+      setRecs(items); 
       setError(null);
     } catch (e: any) { 
       setError(e?.message || "Failed to load");

@@ -1,9 +1,20 @@
 import { usePolling } from '../hooks/usePolling';
 import { API_ENDPOINTS } from '../config/api';
+import { useEffect } from 'react';
 import './Holdings.css';
 
 export function Holdings() {
-  const { data: holdingsResponse, error, isLoading } = usePolling<any>(API_ENDPOINTS.holdings);
+  const { data: holdingsResponse, error, isLoading, refresh } = usePolling<any>(API_ENDPOINTS.holdings);
+  
+  // Listen for holdings refresh events from trade executions
+  useEffect(() => {
+    const handleRefresh = () => {
+      refresh();
+    };
+    
+    window.addEventListener('holdingsRefresh', handleRefresh);
+    return () => window.removeEventListener('holdingsRefresh', handleRefresh);
+  }, [refresh]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -16,8 +27,8 @@ export function Holdings() {
     return `${percent >= 0 ? '+' : ''}${(percent * 100).toFixed(2)}%`;
   };
 
-  // Extract positions from API response: { success: true, data: { positions: [...] } }
-  const holdings = holdingsResponse?.data?.positions || [];
+  // Extract positions from API response: handle various response structures
+  const holdings = holdingsResponse?.data?.positions || holdingsResponse?.positions || holdingsResponse || [];
 
   if (isLoading && !holdingsResponse) {
     return (
@@ -40,28 +51,39 @@ export function Holdings() {
       
       {Array.isArray(holdings) && holdings.length > 0 ? (
         <div className="holdings-grid">
-          {holdings.map((holding) => (
-            <div key={holding.symbol} className="holding-card">
-              <div className="holding-header">
-                <span className="symbol">{holding.symbol}</span>
-                <span className="qty">{holding.quantity} shares</span>
-              </div>
-              
-              <div className="holding-details">
-                <div className="price-info">
-                  <span className="current-price">{formatCurrency(holding.current_price)}</span>
-                  <span className="avg-price">Avg: {formatCurrency(holding.avg_entry_price)}</span>
+          {holdings.map((holding) => {
+            // Use canonical keys with fallbacks to _raw fields
+            const symbol = holding.symbol || holding._raw?.symbol || "—";
+            const quantity = holding.quantity || holding.qty || holding._raw?.qty || 0;
+            const avgPrice = holding.avg_price || holding.avg_entry_price || holding._raw?.avg_entry_price || 0;
+            const currentPrice = holding.current_price || holding.price || holding._raw?.current_price || 0;
+            const marketValue = holding.market_value || holding._raw?.market_value || 0;
+            const unrealizedPL = holding.unrealized_pl || holding._raw?.unrealized_pl || 0;
+            const unrealizedPLPC = holding.unrealized_plpc || holding._raw?.unrealized_plpc || 0;
+            
+            return (
+              <div key={symbol} className="holding-card">
+                <div className="holding-header">
+                  <span className="symbol">{symbol}</span>
+                  <span className="qty">{quantity} shares</span>
                 </div>
                 
-                <div className="value-info">
-                  <span className="market-value">{formatCurrency(holding.market_value)}</span>
-                  <span className={`unrealized-pl ${holding.unrealized_pl >= 0 ? 'positive' : 'negative'}`}>
-                    {formatCurrency(holding.unrealized_pl)} ({formatPercent(holding.unrealized_plpc)})
-                  </span>
+                <div className="holding-details">
+                  <div className="price-info">
+                    <span className="current-price">{formatCurrency(currentPrice)}</span>
+                    <span className="avg-price">Avg: {formatCurrency(avgPrice)}</span>
+                  </div>
+                  
+                  <div className="value-info">
+                    <span className="market-value">{formatCurrency(marketValue)}</span>
+                    <span className={`unrealized-pl ${unrealizedPL >= 0 ? 'positive' : 'negative'}`}>
+                      {formatCurrency(unrealizedPL)} ({formatPercent(unrealizedPLPC)})
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : !error && (
         <div className="no-holdings">No holdings found</div>

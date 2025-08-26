@@ -5,6 +5,7 @@ interface UsePollingResult<T> {
   data: T | null;
   error: ApiError | null;
   isLoading: boolean;
+  refresh: () => void;
 }
 
 export function usePolling<T>(
@@ -53,5 +54,5 @@ export function usePolling<T>(
     };
   }, [url, interval]);
 
-  return { data, error, isLoading };
+  return { data, error, isLoading, refresh: fetchData };
 }
