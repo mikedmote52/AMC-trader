@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException
-import os, math
+from fastapi import APIRouter, HTTPException, Request
+import httpx, os, math
 from backend.src.services.portfolio import get_portfolio_equity_usd, get_current_holdings_usd
 from backend.src.services.broker_alpaca import broker_singleton
 from prometheus_client import Counter
@@ -7,6 +7,33 @@ from prometheus_client import Counter
 router = APIRouter()
 guardrail_blocks = Counter("amc_guardrail_blocks_total","Blocked trade requests",["reason"])
 trade_submissions = Counter("amc_trade_submissions_total","Submitted trades",["mode","result"])
+
+@router.get("/debug/broker/account")
+async def debug_broker_account():
+    async with httpx.AsyncClient(
+        base_url=os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets"),
+        headers={
+            "APCA-API-KEY-ID": os.getenv("ALPACA_API_KEY",""),
+            "APCA-API-SECRET-KEY": os.getenv("ALPACA_API_SECRET",""),
+        },
+        timeout=10.0
+    ) as c:
+        r = await c.get("/v2/account")
+        return {"status": r.status_code, "body": r.json() if r.headers.get("content-type","").startswith("application/json") else r.text}
+
+@router.get("/debug/broker/asset/{symbol}")
+async def debug_broker_asset(symbol: str):
+    s = symbol.upper()
+    async with httpx.AsyncClient(
+        base_url=os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets"),
+        headers={
+            "APCA-API-KEY-ID": os.getenv("ALPACA_API_KEY",""),
+            "APCA-API-SECRET-KEY": os.getenv("ALPACA_API_SECRET",""),
+        },
+        timeout=10.0
+    ) as c:
+        r = await c.get(f"/v2/assets/{s}")
+        return {"status": r.status_code, "body": r.json() if r.headers.get("content-type","").startswith("application/json") else r.text}
 
 def env_i(name, default): 
     try: return int(os.getenv(name, str(default)))
