@@ -40,7 +40,14 @@ export function TradeModal({ symbol, onClose }: { symbol: string; onClose: () =>
       });
       const json = await r.json();
       if (!r.ok) throw json;
-      setMsg(json?.execution_result?.alpaca_order_id ? "Live order submitted" : "Order accepted");
+      
+      // Extract order_id from response and display it
+      const orderId = json?.execution_result?.alpaca_order_id || json?.order_id || json?.id;
+      const baseMsg = json?.execution_result?.alpaca_order_id ? "Live order submitted" : "Order accepted";
+      setMsg(orderId ? `${baseMsg} (Order ID: ${orderId})` : baseMsg);
+      
+      // Trigger a holdings refresh by dispatching a custom event
+      window.dispatchEvent(new CustomEvent('holdingsRefresh'));
     } catch (e:any) {
       const err = e?.error || e?.detail || e;
       setMsg(typeof err === "string" ? err : JSON.stringify(err));
