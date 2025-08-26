@@ -7,14 +7,14 @@ from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 
 router = APIRouter()
 
-@router.get('/metrics')
+# Prometheus counters
+DISCOVERY_TRIGGERED = Counter("amc_discovery_triggered_total","manual discovery trigger calls")
+DISCOVERY_ERRORS    = Counter("amc_discovery_errors_total","manual discovery trigger errors")
+
+@router.get("/metrics")
 def metrics():
     data = generate_latest()
     return Response(content=data, media_type=CONTENT_TYPE_LATEST)
-
-
-DISCOVERY_TRIGGERED = Counter('amc_discovery_triggered_total','manual discovery trigger calls')
-DISCOVERY_ERRORS = Counter('amc_discovery_errors_total','manual discovery trigger errors')
 
 CRITICAL_ENVS = [
     "DATABASE_URL",
@@ -33,10 +33,8 @@ def _env_components() -> Dict[str, Any]:
 @router.get("/health")
 @router.get("/healthz")
 def health(resp: Response) -> Dict[str, Any]:
-    # Base components from environment presence. This guarantees 503 on missing envs.
     components: Dict[str, Any] = {
         "env": _env_components(),
-        # If you have deeper checks, you can extend these booleans later.
         "database": {"ok": bool(os.getenv("DATABASE_URL"))},
         "redis": {"ok": bool(os.getenv("REDIS_URL"))},
         "polygon": {"ok": bool(os.getenv("POLYGON_API_KEY"))},
@@ -61,19 +59,16 @@ def discovery_run(background: BackgroundTasks) -> Dict[str, Any]:
     project_root = Path(__file__).resolve().parents[2]  # points to backend/
     cmd = [sys.executable, "-m", "src.jobs.discover"]
 
-    def _spawn():
+    def _spawn() -> None:
         try:
             subprocess.Popen(cmd, cwd=str(project_root))
         except Exception:
             DISCOVERY_ERRORS.inc()
-            # Swallow errors; the endpoint reports "started": False in the response below
-            pass
 
     started = True
     try:
         background.add_task(_spawn)
     except Exception:
-            DISCOVERY_ERRORS.inc()
         started = False
 
     return {"status": "queued", "started": started, "cmd": "python -m src.jobs.discover"}

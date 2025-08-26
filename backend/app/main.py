@@ -106,3 +106,15 @@ if __name__ == "__main__":
         port=8000,
         reload=settings.environment == "development"
     )
+
+
+from starlette.responses import JSONResponse
+import os
+@app.middleware('http')
+async def live_killswitch(request, call_next):
+    if request.url.path.startswith('/trades/execute'):
+        live = os.getenv('LIVE_TRADING','0')=='1'
+        kill = os.getenv('KILL_SWITCH','1')=='1'
+        if live and kill:
+            return JSONResponse(status_code=400, content={'error':'killswitch_engaged','message':'Trades disabled by KILL_SWITCH'})
+    return await call_next(request)

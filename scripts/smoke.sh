@@ -181,3 +181,7 @@ else
 fi
 
 exit $EXIT_CODE
+echo "[killswitch] expecting 400 when LIVE_TRADING=1 and KILL_SWITCH=1"
+resp=$(curl -s -o /tmp/trade.out -w "%{http_code}" -X POST "$BASE_URL/trades/execute" -H 'content-type: application/json' -d '{"symbol":"AAPL","side":"buy","qty":1}')
+if [ "$resp" -ne 400 ]; then echo "expected 400, got $resp"; fi
+cat /tmp/trade.out
