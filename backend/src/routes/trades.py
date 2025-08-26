@@ -101,7 +101,7 @@ async def execute(req: TradeReq):
             })
 
         # shadow path
-        if _EFFECTIVE != "live":
+        if effective_mode != "live":
             trade_submissions.labels(mode="shadow", result="accepted").inc()
             return TradeResp(
                 success=True, 
