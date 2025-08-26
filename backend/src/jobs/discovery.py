@@ -1,1 +1,1 @@
-from .discover import select_candidates, main  # shim for old name
+from .discover import select_candidates, main  # shim
