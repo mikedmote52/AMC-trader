@@ -14,3 +14,4 @@ structlog==23.2.0
 polygon-api-client==1.13.2
 pytz==2023.3
 requests==2.31.0
+structlog>=23.0.0
