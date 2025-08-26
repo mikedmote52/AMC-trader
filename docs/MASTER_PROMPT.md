@@ -324,3 +324,5 @@ curl http://localhost:3000/health
 - GitHub Issues: Feature requests and bugs
 - PR Reviews: Integration alignment checks
 - Slack: #amc-trader-dev (urgent issues)
+
+Current release: v0.3-shadow. This repo treats docs/HANDOFF.md as the operational source of truth. Any PR changing endpoints, response shapes, or required env must update docs/HANDOFF.md and QA scripts in the same PR.
