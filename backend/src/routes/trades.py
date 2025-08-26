@@ -288,95 +288,67 @@ example_bracket = {
 }
 execute.__dict__["__docs_examples__"]= [example_market, example_limit, example_notional, example_bracket]  # Fast hack to carry examples
 
-@router.get("/defaults/{symbol}")
-async def get_trade_defaults(symbol: str):
-    """Get trade defaults for a symbol with contender data or ATR fallback"""
-    symbol = symbol.upper()
-    
-    # Get latest price
-    price = 0.0
+# Helper functions for polygon data
+async def polygon_last_price(symbol: str) -> float:
+    """Get latest price from polygon"""
     try:
         m = await poly_singleton.agg_last_minute(symbol)
-        price = float(m.get("price") or 0.0)
+        return float(m.get("price") or 0.0)
     except Exception:
         try:
             p = await poly_singleton.prev_day(symbol)
-            price = float(p.get("price") or 0.0)
+            return float(p.get("price") or 0.0)
         except Exception:
-            pass
-    
-    defaults = {
-        "symbol": symbol,
-        "order_type": "market",
-        "time_in_force": "day",
-        "mode": "live",
-        "bracket": True,
-        "stop_loss_pct": None,
-        "take_profit_pct": None,
-        "stop_price": None,
-        "take_profit_price": None,
-        "r_multiple": None,
-        "last_price": price,
-        "price_cap": PRICE_CAP
-    }
-    
-    # Try to get defaults from contenders first
+            return 0.0
+
+async def polygon_atr_pct(symbol: str) -> Optional[float]:
+    """Calculate ATR percentage from polygon bars"""
     try:
-        redis_client = get_redis_client()
-        contenders_data = redis_client.get("amc:discovery:contenders.latest")
-        if contenders_data:
-            contenders = json.loads(contenders_data)
-            for contender in contenders:
-                if isinstance(contender, dict) and contender.get("symbol") == symbol:
-                    if contender.get("stop_loss_pct"):
-                        defaults["stop_loss_pct"] = float(contender["stop_loss_pct"])
-                    if contender.get("take_profit_pct"):
-                        defaults["take_profit_pct"] = float(contender["take_profit_pct"])
-                    if contender.get("stop_price"):
-                        defaults["stop_price"] = float(contender["stop_price"])
-                    if contender.get("take_profit_price"):
-                        defaults["take_profit_price"] = float(contender["take_profit_price"])
-                    if contender.get("r_multiple"):
-                        defaults["r_multiple"] = float(contender["r_multiple"])
-                    return defaults
-    except Exception:
-        pass
-    
-    # Fallback: compute ATR from recent day bars if no contender found
-    try:
-        # Get recent bars for ATR calculation
         bars_data = await poly_singleton.get_bars(symbol, timespan="day", limit=14)
-        if bars_data and len(bars_data) >= 2:
-            # Simple ATR calculation
-            trs = []
-            for i in range(1, len(bars_data)):
-                prev_close = bars_data[i-1].get("c", 0)
-                high = bars_data[i].get("h", 0)
-                low = bars_data[i].get("l", 0)
-                tr = max(
-                    high - low,
-                    abs(high - prev_close) if prev_close else 0,
-                    abs(low - prev_close) if prev_close else 0
-                )
-                trs.append(tr)
-            
-            if trs and price > 0:
-                atr = sum(trs) / len(trs)
-                atr_pct = atr / price
-                
-                # Set conservative defaults based on ATR
-                defaults["stop_loss_pct"] = min(0.05, max(0.02, atr_pct * 1.5))  # 1.5x ATR or 2-5%
-                defaults["take_profit_pct"] = min(0.10, max(0.03, atr_pct * 3.0))  # 3x ATR or 3-10%
-                defaults["r_multiple"] = defaults["take_profit_pct"] / defaults["stop_loss_pct"] if defaults["stop_loss_pct"] else 2.0
+        if not bars_data or len(bars_data) < 2:
+            return None
+        
+        trs = []
+        for i in range(1, len(bars_data)):
+            prev_close = bars_data[i-1].get("c", 0)
+            high = bars_data[i].get("h", 0)
+            low = bars_data[i].get("l", 0)
+            tr = max(
+                high - low,
+                abs(high - prev_close) if prev_close else 0,
+                abs(low - prev_close) if prev_close else 0
+            )
+            trs.append(tr)
+        
+        if trs and bars_data[-1].get("c"):
+            atr = sum(trs) / len(trs)
+            return atr / float(bars_data[-1]["c"])
     except Exception:
         pass
-    
-    # Set safe defaults if enrichment failed
-    if not defaults.get("stop_loss_pct"):
-        defaults["stop_loss_pct"] = 0.03  # 3% stop loss
-    if not defaults.get("take_profit_pct"):
-        defaults["take_profit_pct"] = 0.06  # 6% take profit (2:1 R:R)
-    if not defaults.get("r_multiple"):
-        defaults["r_multiple"] = 2.0
-    
-    return defaults
+    return None
+
+@router.get("/defaults/{symbol}")
+async def trade_defaults(symbol: str):
+    sym = symbol.upper()
+    r = get_redis_client()
+    items = json.loads(r.get("amc:discovery:v2:contenders.latest") or r.get("amc:discovery:contenders.latest") or "[]")
+    c = next((i for i in items if i.get("symbol")==sym), None)
+    if c:
+        return {
+          "symbol": sym, "order_type":"market","time_in_force":"day","mode":"live","bracket": True,
+          "stop_loss_pct": c.get("stop_loss_pct"), "take_profit_pct": c.get("take_profit_pct"),
+          "stop_price": c.get("stop_price"), "take_profit_price": c.get("take_profit_price"),
+          "r_multiple": c.get("r_multiple"), "last_price": c.get("price"),
+          "price_cap": float(os.getenv("AMC_PRICE_CAP","100"))
+        }
+    # fallback: compute ATR based levels quickly
+    # return a safe set if polygon fails
+    last = await polygon_last_price(sym)
+    atrp = await polygon_atr_pct(sym) or 0.04
+    risk = max(last*float(os.getenv("AMC_MIN_STOP_PCT","0.02")), last*atrp*float(os.getenv("AMC_ATR_STOP_MULT","1.5")))
+    return {
+      "symbol": sym, "order_type":"market","time_in_force":"day","mode":"live","bracket": True,
+      "stop_price": round(max(0.01, last-risk),2),
+      "take_profit_price": round(last+float(os.getenv("AMC_R_MULT","2.0"))*risk,2),
+      "last_price": last, "price_cap": float(os.getenv("AMC_PRICE_CAP","100"))
+    }
