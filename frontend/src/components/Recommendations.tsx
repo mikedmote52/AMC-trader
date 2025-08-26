@@ -1,100 +1,27 @@
-import { usePolling } from '../hooks/usePolling';
-import { API_ENDPOINTS } from '../config/api';
-import type { Recommendation } from '../types/api';
-import './Recommendations.css';
+import React, { useEffect, useState, useCallback } from "react";
+import RecommendationCard from "./RecommendationCard";
+import { API_BASE } from "../config";
 
-export function Recommendations() {
-  const { data: recommendations, error, isLoading } = usePolling<Recommendation[]>(API_ENDPOINTS.recommendations);
+export default function Recommendations() {
+  const [items, setItems] = useState<any[]>([]);
+  const fetchData = useCallback(async ()=>{
+    const r = await fetch(`${API_BASE}/discovery/contenders`);
+    const j = await r.json();
+    setItems(Array.isArray(j)? j : []);
+  }, []);
+  useEffect(()=>{ fetchData(); const t=setInterval(fetchData, 15000); return ()=>clearInterval(t);},[fetchData]);
 
-  const getActionColor = (action: Recommendation['action']) => {
-    switch (action) {
-      case 'BUY_MORE': return 'green';
-      case 'SELL': return 'red';
-      case 'HOLD': return 'yellow';
-      default: return 'gray';
-    }
+  const handleBuy = async (sym:string)=>{
+    await fetch(`${API_BASE}/trades/execute`, {method:"POST", headers:{ "content-type":"application/json"},
+      body: JSON.stringify({ symbol: sym, action: "BUY", mode: "live", order_type:"market", time_in_force:"day", notional_usd: 100 })
+    });
   };
 
-  const getRiskColor = (risk: Recommendation['risk_level']) => {
-    switch (risk) {
-      case 'LOW': return 'green';
-      case 'MEDIUM': return 'yellow';
-      case 'HIGH': return 'red';
-      default: return 'gray';
-    }
-  };
-
-  const formatCurrency = (amount?: number) => {
-    if (amount === undefined) return 'N/A';
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
-  };
-
-  if (isLoading && !recommendations) {
-    return (
-      <div className="recommendations">
-        <h2>Recommendations</h2>
-        <div className="loading">Loading recommendations...</div>
-      </div>
-    );
-  }
+  if (!items.length) return <div className="opacity-70 italic">No recommendations available</div>;
 
   return (
-    <div className="recommendations">
-      <h2>Recommendations</h2>
-      
-      {error && (
-        <div className="error-banner">
-          ❌ Failed to fetch recommendations: {error.message}
-        </div>
-      )}
-      
-      {recommendations && recommendations.length > 0 ? (
-        <div className="recommendations-grid">
-          {recommendations.map((rec, index) => (
-            <div key={`${rec.symbol}-${index}`} className="recommendation-card">
-              <div className="recommendation-header">
-                <span className="symbol">{rec.symbol}</span>
-                <div className="badges">
-                  <span className={`action-badge ${getActionColor(rec.action)}`}>
-                    {rec.action}
-                  </span>
-                  <span className={`risk-badge ${getRiskColor(rec.risk_level)}`}>
-                    {rec.risk_level}
-                  </span>
-                </div>
-              </div>
-              
-              <div className="recommendation-metrics">
-                <div className="metric">
-                  <span className="label">Confidence:</span>
-                  <span className="value">{(rec.confidence * 100).toFixed(1)}%</span>
-                </div>
-                {rec.vigl_score && (
-                  <div className="metric">
-                    <span className="label">VIGL Score:</span>
-                    <span className="value">{rec.vigl_score.toFixed(2)}</span>
-                  </div>
-                )}
-                {rec.price_target && (
-                  <div className="metric">
-                    <span className="label">Target:</span>
-                    <span className="value">{formatCurrency(rec.price_target)}</span>
-                  </div>
-                )}
-              </div>
-              
-              <div className="thesis">
-                <p>{rec.thesis}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : !error && (
-        <div className="no-recommendations">No recommendations available</div>
-      )}
+    <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+      {items.map((it)=> <RecommendationCard key={it.symbol} item={it} onBuy={handleBuy} />)}
     </div>
   );
 }

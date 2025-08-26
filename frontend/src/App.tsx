@@ -1,5 +1,5 @@
 import { Holdings } from './components/Holdings'
-import { Recommendations } from './components/Recommendations'
+import Recommendations from './components/Recommendations'
 import { RiskBar } from './components/RiskBar'
 import BuyNow from './components/BuyNow'
 import './App.css'
