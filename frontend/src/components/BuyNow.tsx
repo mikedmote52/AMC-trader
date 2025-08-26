@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TradeModal } from "./TradeModal";
+import { API_BASE } from '../config';
 
 type Rec = { 
   symbol?: string; 
@@ -19,7 +20,6 @@ type Rec = {
   last?: number;
 };
 
-const API_BASE = (typeof window !== "undefined" && (window as any).API_BASE) || import.meta.env.VITE_API_BASE || "";
 
 function QuickBuy() {
   const [symbol, setSymbol] = useState("");
@@ -63,7 +63,7 @@ export default function BuyNow() {
 
   async function load() { 
     try { 
-      const r = await fetch(`${API_BASE}/recommendations`); 
+      const r = await fetch(`${API_BASE}/discovery/contenders`); 
       if (!r.ok) throw new Error(`HTTP ${r.status}`); 
       const data = await r.json(); 
       setRecs(Array.isArray(data) ? data : []); 
