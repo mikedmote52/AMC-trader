@@ -6,6 +6,7 @@
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8000}"
+API="${API:-https://amc-trader.onrender.com}"
 CURL_TIMEOUT=30
 EXIT_CODE=0
 
@@ -172,6 +173,47 @@ else
     error "Shadow trade execution failed"
 fi
 
+# Test 6: Paper Trading Tests
+log "=== Paper Trading Tests ==="
+
+echo "[paper] health"
+code=$(curl -s -o /dev/null -w "%{http_code}" "$API/health")
+if [ "$code" != "200" ]; then
+    error "Paper health check failed - Expected 200, got $code"
+else
+    log "✓ Paper health check passed"
+fi
+
+echo "[paper] shadow path"
+resp=$(curl -s -X POST "$API/trades/execute" -H 'content-type: application/json' -d '{"symbol":"AAPL","qty":1,"price":1,"mode":"shadow"}')
+if echo "$resp" | jq -e '.mode=="shadow"' >/dev/null 2>&1; then
+    log "✓ Shadow trade path validated"
+else
+    error "Shadow trade path validation failed"
+    echo "Response: $resp"
+fi
+
+echo "[paper] killswitch block when LIVE_TRADING=1 + KILL_SWITCH=1"
+# This assumes envs set accordingly in a staging service; skip if not configured.
+resp=$(curl -s -o /tmp/trade.out -w "%{http_code}" -X POST "$API/trades/execute" -H 'content-type: application/json' -d '{"symbol":"AAPL","side":"buy","qty":1}')
+if [ "$resp" -ne 400 ]; then 
+    warn "Expected 400 for killswitch, got $resp (may not be configured)"
+else
+    log "✓ Killswitch protection working"
+fi
+if [ -f /tmp/trade.out ]; then
+    cat /tmp/trade.out
+fi
+
+echo "[paper] position cap block"
+resp=$(curl -s -X POST "$API/trades/execute" -H 'content-type: application/json' -d '{"symbol":"AAPL","qty":1000,"price":1000}')
+if echo "$resp" | jq -e '.error=="max_position_exceeded"' >/dev/null 2>&1; then
+    log "✓ Position cap protection working"
+else
+    warn "Position cap test may not be configured or exceeded threshold not reached"
+    echo "Response: $resp"
+fi
+
 # Final Results
 log "=== Test Results ==="
 if [ $EXIT_CODE -eq 0 ]; then
@@ -181,7 +223,3 @@ else
 fi
 
 exit $EXIT_CODE
-echo "[killswitch] expecting 400 when LIVE_TRADING=1 and KILL_SWITCH=1"
-resp=$(curl -s -o /tmp/trade.out -w "%{http_code}" -X POST "$BASE_URL/trades/execute" -H 'content-type: application/json' -d '{"symbol":"AAPL","side":"buy","qty":1}')
-if [ "$resp" -ne 400 ]; then echo "expected 400, got $resp"; fi
-cat /tmp/trade.out
