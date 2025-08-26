@@ -67,6 +67,8 @@ async def policy():
       "UTIL_MIN": float(os.getenv("AMC_UTIL_MIN","0.85")),
       "IV_PCTL_MIN": float(os.getenv("AMC_IV_PCTL_MIN","0.80")),
       "PCR_MIN": float(os.getenv("AMC_PCR_MIN","2.0")),
+      "ENABLE_SECTOR": int(os.getenv("AMC_ENABLE_SECTOR","0")),
+      "SECTOR_ETFS": os.getenv("AMC_SECTOR_ETFS","XLF,XLK,XLV,XLE,XLI,XLP,XLY,XLU,XLB,XLRE,XLC"),
       "W": {
         "volume": float(os.getenv("AMC_W_VOLUME","0.25")),
         "short":  float(os.getenv("AMC_W_SHORT","0.20")),
@@ -74,6 +76,7 @@ async def policy():
         "sent":   float(os.getenv("AMC_W_SENT","0.15")),
         "options":float(os.getenv("AMC_W_OPTIONS","0.10")),
         "tech":   float(os.getenv("AMC_W_TECH","0.10")),
+        "sector": float(os.getenv("AMC_W_SECTOR","0.05")),
       },
       "INTRADAY": int(os.getenv("AMC_INTRADAY","0")),
       "LOOKBACK_DAYS": int(os.getenv("LOOKBACK_DAYS","60")),
@@ -91,7 +94,8 @@ async def discovery_audit():
         items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
         keep = ["symbol", "price", "dollar_vol", "score", "confidence", "rel_vol_30m", 
                 "atr_pct", "float", "si", "borrow", "util", "pcr", "iv_pctl", 
-                "call_oi_up", "sent_score", "trending", "ema_cross", "rsi_zone_ok", "thesis"]
+                "call_oi_up", "sent_score", "trending", "ema_cross", "rsi_zone_ok", "thesis",
+                "sector", "sector_etf", "sector_score", "sector_rs20", "sector_ret5", "sector_ema"]
         result = []
         for item in items:
             if isinstance(item, dict):
