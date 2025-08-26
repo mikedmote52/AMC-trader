@@ -1,2 +1,1 @@
-# backend/app/main.py
-from src.app import app
+from backend.src.app import app
