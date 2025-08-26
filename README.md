@@ -38,6 +38,45 @@ POLYGON_API_KEY=your_polygon_api_key_here
 UNIVERSE_FILE=data/universe.txt
 ```
 
+### Local Development
+
+#### Setup
+```bash
+# Copy environment template
+cp .env.local.sample .env.local
+
+# Edit .env.local with your Polygon API key
+POLYGON_API_KEY=your_polygon_key_here
+
+# Install dependencies
+make reqs
+
+# Start Redis (in separate terminal)
+make redis
+```
+
+#### Discovery Testing
+```bash
+# Run discovery in trace mode (no Redis writes)
+make discovery-dry
+
+# Run with relaxed filters and custom limit
+RELAXED=true LIMIT=20 make discovery-dry
+
+# Run discovery and publish to local Redis
+make discovery-publish
+```
+
+#### API Testing  
+```bash
+# Start API server (in separate terminal)
+make api
+
+# Test discovery endpoints
+make explain      # Get trace data
+make contenders   # Get latest candidates
+```
+
 ### Running Locally
 
 #### Test Run (Recommended)
