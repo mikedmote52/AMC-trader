@@ -37,6 +37,8 @@ LOOKBACK_DAYS = int(os.getenv("AMC_COMPRESSION_LOOKBACK", "60"))
 COMPRESSION_PCTL_MAX = float(os.getenv("AMC_COMPRESSION_PCTL_MAX", "0.15"))  # tightest 15%
 MAX_CANDIDATES = int(os.getenv("AMC_MAX_CANDIDATES", "15"))
 UNIVERSE_FALLBACK = [s.strip().upper() for s in os.getenv("AMC_DISCOVERY_UNIVERSE","AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,AMD,AVGO,PLTR,COIN,CRM,ORCL,ABNB,SNOW,UBER,NFLX,SHOP,INTC,MRVL,SMCI").split(",") if s.strip()]
+EXCLUDE_FUNDS = os.getenv("AMC_EXCLUDE_FUNDS", "true").lower() in ("1", "true", "yes")
+EXCLUDE_ADRS = os.getenv("AMC_EXCLUDE_ADRS", "true").lower() in ("1", "true", "yes")
 
 # Configure logging
 logging.basicConfig(
@@ -104,6 +106,54 @@ def _bandwidth_percentile(closes, highs, lows, window=20, lookback=60):
     last = bw[-1]
     rank = sum(1 for x in series if x <= last) / len(series)
     return rank  # 0 is tightest, 1 is loosest
+
+# In-process cache for symbol classifications
+_symbol_cache = {}
+
+async def _classify_symbol(client, symbol):
+    """Classify symbol using Polygon v3 reference metadata with cache"""
+    if symbol in _symbol_cache:
+        return _symbol_cache[symbol]
+    
+    try:
+        # Use Polygon v3 reference API
+        data = await _poly_get(client, f"/v3/reference/tickers/{symbol}", timeout=10)
+        
+        # Extract classification info
+        ticker_info = data.get("results", {})
+        ticker_type = ticker_info.get("type", "").upper()
+        name = ticker_info.get("name", "").upper()
+        
+        # Classify as fund/ETF
+        is_fund = (
+            ticker_type in ["ETF", "ETN", "FUND"] or
+            any(term in name for term in ["ETF", "ETN", "FUND", "INDEX", "TRUST"])
+        )
+        
+        # Classify as ADR (American Depositary Receipt)
+        is_adr = (
+            ticker_type == "ADRC" or  # ADR Common
+            "ADR" in name or
+            ticker_info.get("currency_name", "") != "usd"
+        )
+        
+        result = {
+            "is_fund": is_fund,
+            "is_adr": is_adr,
+            "type": ticker_type,
+            "name": name
+        }
+        
+        # Cache result
+        _symbol_cache[symbol] = result
+        return result
+        
+    except Exception as e:
+        logger.warning(f"Classification failed for {symbol}: {e}")
+        # Default to allow (conservative)
+        result = {"is_fund": False, "is_adr": False, "type": "UNKNOWN", "name": ""}
+        _symbol_cache[symbol] = result
+        return result
 
 class DiscoveryPipeline:
     def __init__(self):
@@ -478,6 +528,49 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
     if not kept_syms:
         items = []
         return (items, trace.to_dict()) if with_trace else items
+
+    # classify stage: exclude funds/ADRs if configured
+    if EXCLUDE_FUNDS or EXCLUDE_ADRS:
+        trace.enter("classify", kept_syms)
+        classify_kept = []
+        classify_rejected = []
+        
+        async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
+            # Classify all symbols
+            classifications = await asyncio.gather(*[_classify_symbol(client, sym) for sym in kept_syms], return_exceptions=True)
+            
+            for sym, classification in zip(kept_syms, classifications):
+                if isinstance(classification, Exception):
+                    # On classification error, default to keep (conservative)
+                    classify_kept.append(sym)
+                    continue
+                    
+                should_exclude = (
+                    (EXCLUDE_FUNDS and classification.get("is_fund", False)) or
+                    (EXCLUDE_ADRS and classification.get("is_adr", False))
+                )
+                
+                if should_exclude:
+                    reason = []
+                    if EXCLUDE_FUNDS and classification.get("is_fund", False):
+                        reason.append("fund")
+                    if EXCLUDE_ADRS and classification.get("is_adr", False):
+                        reason.append("adr")
+                    classify_rejected.append({
+                        "symbol": sym, 
+                        "reason": "_".join(reason),
+                        "type": classification.get("type", ""),
+                        "name": classification.get("name", "")[:50]
+                    })
+                else:
+                    classify_kept.append(sym)
+        
+        kept_syms = classify_kept
+        trace.exit("classify", kept_syms, classify_rejected)
+        
+        if not kept_syms:
+            items = []
+            return (items, trace.to_dict()) if with_trace else items
 
     # fetch per-symbol daily bars for compression only on survivors
     async def fetch_bars(sym):
