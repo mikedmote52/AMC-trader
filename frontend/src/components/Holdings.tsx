@@ -1,10 +1,15 @@
+import { useState, useEffect } from 'react';
 import { usePolling } from '../hooks/usePolling';
 import { API_ENDPOINTS } from '../config/api';
-import { useEffect } from 'react';
+import TradeModal from './TradeModal';
 import './Holdings.css';
 
 export function Holdings() {
   const { data: holdingsResponse, error, isLoading, refresh } = usePolling<any>(API_ENDPOINTS.holdings);
+  const [showTradeModal, setShowTradeModal] = useState(false);
+  const [selectedHolding, setSelectedHolding] = useState<any>(null);
+  const [tradeAction, setTradeAction] = useState<'BUY' | 'SELL'>('BUY');
+  const [tradeQty, setTradeQty] = useState<number | undefined>(undefined);
   
   // Listen for holdings refresh events from trade executions
   useEffect(() => {
@@ -25,6 +30,20 @@ export function Holdings() {
 
   const formatPercent = (percent: number) => {
     return `${percent >= 0 ? '+' : ''}${(percent * 100).toFixed(2)}%`;
+  };
+
+  const handleAdjustPosition = (holding: any, action: 'BUY' | 'SELL', qty?: number) => {
+    setSelectedHolding(holding);
+    setTradeAction(action);
+    setTradeQty(qty);
+    setShowTradeModal(true);
+  };
+
+  const handleCloseTradeModal = () => {
+    setShowTradeModal(false);
+    setSelectedHolding(null);
+    setTradeAction('BUY');
+    setTradeQty(undefined);
   };
 
   // Extract positions from API response: handle various response structures
@@ -62,12 +81,18 @@ export function Holdings() {
             const unrealizedPLPct = holding.unrealized_pl_pct || 0;
             const suggestion = holding.suggestion;
             const thesis = holding.thesis;
+            const confidence = holding.confidence;
             
             return (
               <div key={symbol} className="holding-card">
                 <div className="holding-header">
                   <span className="symbol">{symbol}</span>
                   <span className="qty">{quantity} shares</span>
+                  {confidence !== undefined && (
+                    <span className="confidence text-sm text-blue-400">
+                      {(confidence * 100).toFixed(1)}%
+                    </span>
+                  )}
                 </div>
                 
                 <div className="holding-details">
@@ -90,10 +115,33 @@ export function Holdings() {
                   )}
                   
                   {thesis && (
-                    <div className="thesis">
+                    <div className="thesis text-sm opacity-80 mt-2">
                       {thesis}
                     </div>
                   )}
+                  
+                  <div className="actions mt-3">
+                    <div className="flex gap-2">
+                      <button
+                        className="px-3 py-1 text-sm bg-green-600 hover:bg-green-700 text-white rounded"
+                        onClick={() => handleAdjustPosition(holding, 'BUY')}
+                      >
+                        Buy More
+                      </button>
+                      <button
+                        className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 text-white rounded"
+                        onClick={() => handleAdjustPosition(holding, 'SELL', quantity)}
+                      >
+                        Sell All
+                      </button>
+                      <button
+                        className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded"
+                        onClick={() => handleAdjustPosition(holding, 'SELL')}
+                      >
+                        Adjust
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             );
@@ -101,6 +149,15 @@ export function Holdings() {
         </div>
       ) : !error && (
         <div className="no-holdings">No holdings found</div>
+      )}
+
+      {showTradeModal && selectedHolding && (
+        <TradeModal
+          symbol={selectedHolding.symbol}
+          action={tradeAction}
+          qty={tradeQty}
+          onClose={handleCloseTradeModal}
+        />
       )}
     </div>
   );
