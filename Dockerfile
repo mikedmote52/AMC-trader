@@ -1,26 +1,19 @@
-# --- runtime image ---
 FROM python:3.11-slim
 
 WORKDIR /app
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app
 
-# install system deps if you have any (optional)
-# RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# 1) copy and install deps (cacheable)
+COPY requirements.txt ./requirements.txt
+RUN python -m pip install --upgrade pip && \
+    pip install -r requirements.txt
 
-# copy only what we need
+# 2) copy code
 COPY backend ./backend
 COPY data ./data
 COPY scripts ./scripts
-COPY pyproject.toml* requirements*.txt* ./
 
-# install python deps
-RUN python -m pip install --upgrade pip && \
-    ( [ -f requirements.txt ] && pip install -r requirements.txt || true ) && \
-    ( [ -f pyproject.toml ] && pip install . || true )
-
-# PROVE the app module exists at build-time; FAIL if not
+# 3) prove the app module exists at build time
 RUN python - <<'PY'
 import importlib
 m = importlib.import_module("backend.src.app")
