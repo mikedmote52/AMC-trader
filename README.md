@@ -210,3 +210,4 @@ The job will automatically handle off-hours with clean exits.<!-- API redeploy t
 <!-- Debug deploy trigger Mon Aug 25 18:40:00 PDT 2025 -->
 <!-- Polygon v3 deploy trigger Mon Aug 25 18:57:23 PDT 2025 -->
 <!-- Trades contract deploy trigger Mon Aug 25 19:55:39 PDT 2025 -->
+<!-- Trace trades handler v2 deploy trigger Mon Aug 25 20:24:53 PDT 2025 -->
