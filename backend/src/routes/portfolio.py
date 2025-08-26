@@ -5,60 +5,47 @@ from backend.src.shared.redis_client import get_redis_client
 
 router = APIRouter()
 
-def build_holding_with_accurate_math(raw_position: Dict, contenders_dict: Dict) -> Dict:
-    """Build holding with accurate math, thesis, and confidence"""
-    symbol = raw_position.get("symbol", "")
+def build_normalized_holding(pos: Dict, by_sym: Dict) -> Dict:
+    """Build normalized fields using broker position data"""
+    symbol = pos.get("symbol", "")
     
-    # Derive accurate values per user specification
-    qty = float(raw_position.get("qty", raw_position.get("quantity", 0)))
-    avg_entry_price = float(raw_position.get("avg_entry_price", raw_position.get("cost_basis", 0)))
-    last_price = float(raw_position.get("current_price") or raw_position.get("asset_price") or avg_entry_price)
-    
-    # Calculate rounded values
+    # Build normalized fields using broker position data
+    qty = float(pos["qty"])
+    avg_entry_price = float(pos["avg_entry_price"])
+    last_price = float(pos.get("current_price") or pos.get("asset_price") or avg_entry_price)
     market_value = round(last_price * qty, 2)
     unrealized_pl = round((last_price - avg_entry_price) * qty, 2)
     unrealized_pl_pct = round((last_price / avg_entry_price - 1.0) if avg_entry_price else 0.0, 4)
     
-    # Join discovery context
-    contender = contenders_dict.get(symbol, {})
-    thesis = contender.get("thesis")
-    confidence = contender.get("confidence") or contender.get("score")
-    
-    # Generate suggestion based on confidence and performance
-    suggestion = (
-        "increase" if (confidence or 0) >= 0.97 else
-        "reduce" if unrealized_pl_pct < -0.05 else
-        "hold"
-    )
-    
-    return {
+    # Join discovery context from Redis
+    holding = {
         "symbol": symbol,
         "qty": qty,
         "avg_entry_price": avg_entry_price,
         "last_price": last_price,
         "market_value": market_value,
         "unrealized_pl": unrealized_pl,
-        "unrealized_pl_pct": unrealized_pl_pct,
-        "thesis": thesis,
-        "confidence": confidence,
-        "suggestion": suggestion,
-        # Legacy frontend compatibility
-        "quantity": qty,
-        "current_price": last_price
+        "unrealized_pl_pct": unrealized_pl_pct
     }
+    
+    holding["thesis"] = by_sym.get(symbol, {}).get("thesis")
+    holding["confidence"] = by_sym.get(symbol, {}).get("confidence") or by_sym.get(symbol, {}).get("score")
+    holding["suggestion"] = (
+        "increase" if (holding.get("confidence") or 0) >= 0.97
+        else "reduce" if holding["unrealized_pl_pct"] < -0.05
+        else "hold"
+    )
+    
+    return holding
 
 @router.get("/holdings")
 async def get_holdings() -> Dict:
     try:
         positions = []
         
-        # Get contenders data from Redis for thesis and confidence
-        contenders_dict = {}
-        try:
-            contenders = json.loads(get_redis_client().get("amc:discovery:contenders.latest") or "[]")
-            contenders_dict = {c["symbol"]: c for c in contenders if isinstance(c, dict) and "symbol" in c}
-        except Exception:
-            pass
+        # Join discovery context from Redis
+        contenders = json.loads(get_redis_client().get("amc:discovery:contenders.latest") or "[]")
+        by_sym = {c["symbol"]: c for c in contenders if isinstance(c, dict)}
         
         # Try existing portfolio service
         try:
@@ -69,11 +56,8 @@ async def get_holdings() -> Dict:
                 positions.append({
                     "symbol": symbol,
                     "qty": 1,  # Default, may need to be fetched from broker
-                    "market_value": value,
-                    "last_price": value,
                     "avg_entry_price": value,
-                    "unrealized_pl": 0,
-                    "unrealized_pl_pct": 0
+                    "current_price": value,
                 })
         except ImportError:
             pass
@@ -89,21 +73,21 @@ async def get_holdings() -> Dict:
             except (ImportError, AttributeError):
                 pass
         
-        # Build holdings with accurate math and recommendations
-        enriched_positions = []
+        # Build normalized holdings
+        normalized_positions = []
         for pos in positions:
             try:
-                enriched_pos = build_holding_with_accurate_math(pos, contenders_dict)
-                enriched_positions.append(enriched_pos)
+                normalized_pos = build_normalized_holding(pos, by_sym)
+                normalized_positions.append(normalized_pos)
             except Exception:
-                # Fallback to original position if enrichment fails
-                enriched_positions.append(pos)
+                # Skip positions that can't be normalized
+                continue
         
         # Return in format expected by frontend
         return {
             "success": True,
             "data": {
-                "positions": enriched_positions
+                "positions": normalized_positions
             }
         }
             
