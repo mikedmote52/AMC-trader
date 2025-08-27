@@ -108,6 +108,20 @@ export default function Holdings({ onDebugUpdate }: { onDebugUpdate?: (info: any
   }
 
   useEffect(() => {
+    // Test API call manually
+    console.log("🔍 Testing API call manually...");
+    fetch(`${API_BASE}/portfolio/holdings`)
+      .then(r => r.json())
+      .then(data => {
+        console.log("🔥 MANUAL API TEST RESULT:", data);
+        console.log("🔥 Type:", typeof data);
+        console.log("🔥 Keys:", Object.keys(data || {}));
+        console.log("🔥 data.success:", data?.success);
+        console.log("🔥 data.data:", data?.data);
+        console.log("🔥 data.data?.positions:", data?.data?.positions);
+      })
+      .catch(err => console.log("🔥 MANUAL API ERROR:", err));
+
     fetchData();
     const id = setInterval(fetchData, 15_000);
     return () => clearInterval(id);
@@ -120,8 +134,22 @@ export default function Holdings({ onDebugUpdate }: { onDebugUpdate?: (info: any
 
   console.log("Holdings render state:", { holdings, length: holdings.length, err });
   
-  if (err) return <div style={{padding:12, color:"#c00"}}>Error loading holdings: {err}</div>;
-  if (holdings.length === 0) return <div style={{padding:12, color:"#888"}}>No holdings found.</div>;
+  // Add visual debug info on page
+  const debugText = `Holdings: ${holdings.length} items, Status: ${err ? 'ERROR' : 'OK'}`;
+  
+  if (err) return (
+    <div>
+      <div style={{padding:12, color:"#c00"}}>Error loading holdings: {err}</div>
+      <div style={{fontSize:10, color:"#666", padding:8}}>Debug: {debugText}</div>
+    </div>
+  );
+  
+  if (holdings.length === 0) return (
+    <div>
+      <div style={{padding:12, color:"#888"}}>No holdings found.</div>
+      <div style={{fontSize:10, color:"#666", padding:8}}>Debug: {debugText} - Check console for API response</div>
+    </div>
+  );
 
   return (
     <>
