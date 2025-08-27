@@ -1231,6 +1231,14 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 # Get compression_pctl from original candidate
                 compression_pctl = next((o.get("compression_pctl", 0.0) for o in out if o["symbol"] == sym), 0.0)
                 
+                # Build discovery thesis with specific format
+                bandwidth_pct = round(compression_pctl * 100, 1)
+                rs_pct = round(factors.get("rs_5d", 0.0) * 100, 1) 
+                atr_pct = round(factors.get("atr_pct", 0.0) * 100, 1)
+                liquidity_m = dollar_vol / 1_000_000
+                
+                thesis = f"{sym} is in the tightest {bandwidth_pct}% of its 60d volatility band, 5d RS {rs_pct}%, ATR% {atr_pct}, liquidity ${liquidity_m:.2f}M"
+                
                 # Build comprehensive audit item
                 item = {
                     "symbol": sym,
@@ -1243,7 +1251,7 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                     "class": symbol_classifications.get(sym, "unknown"),  # add "class" for API double-check
                     "factors": factors,  # volume/short/catalyst/sent/options/tech/sector
                     "gates": current_policy_dict(),  # price/rel_vol/atr/etc used for audit
-                    "thesis": build_thesis(sym, factors, {"price": price, "dollar_vol": dollar_vol}),
+                    "thesis": thesis,  # Discovery-specific thesis format
                     "tradeable": total >= 75,
                     
                     # Full audit payload with all requested fields
