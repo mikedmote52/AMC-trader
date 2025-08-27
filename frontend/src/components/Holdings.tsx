@@ -24,33 +24,40 @@ export default function Holdings({ onDebugUpdate }: { onDebugUpdate?: (info: any
     holdingsStatus: "loading", holdingsCount: 0, lastUpdated: new Date().toLocaleTimeString()
   });
 
-  function normalizeHoldings(x: any): any[] {
-    console.log("normalizeHoldings input:", x);
+  function normalizeHoldings(resp: any): any[] {
+    console.log("normalizeHoldings input:", resp);
     
-    // Precedence order as specified
-    if (Array.isArray(x)) {
-      console.log("Found direct array:", x);
-      return x;
+    if (Array.isArray(resp)) {
+      console.log("Found direct array:", resp);
+      return resp;
     }
     
-    if (x?.data && Array.isArray(x.data)) {
-      console.log("Found data array:", x.data);
-      return x.data;
+    const d = resp?.data ?? resp;
+    console.log("Extracted data object:", d);
+    
+    if (Array.isArray(d)) {
+      console.log("Found data as array:", d);
+      return d;
     }
     
-    if (x?.items && Array.isArray(x.items)) {
-      console.log("Found items array:", x.items);
-      return x.items;
+    if (Array.isArray(d?.positions)) {
+      console.log("Found d.positions:", d.positions);
+      return d.positions;
     }
     
-    if (x?.positions && Array.isArray(x.positions)) {
-      console.log("Found positions array:", x.positions);
-      return x.positions;
+    if (Array.isArray(resp?.positions)) {
+      console.log("Found resp.positions:", resp.positions);
+      return resp.positions;
     }
     
-    if (x?.data?.positions && Array.isArray(x.data.positions)) {
-      console.log("Found data.positions:", x.data.positions);
-      return x.data.positions;
+    if (Array.isArray(d?.items)) {
+      console.log("Found d.items:", d.items);
+      return d.items;
+    }
+    
+    if (Array.isArray(d?.data)) {
+      console.log("Found d.data:", d.data);
+      return d.data;
     }
     
     console.log("No valid holdings structure found, returning empty array");
@@ -60,23 +67,23 @@ export default function Holdings({ onDebugUpdate }: { onDebugUpdate?: (info: any
   async function fetchData() {
     try {
       setErr("");
-      const holdingsData = await getJSON<any>(`${API_BASE}/portfolio/holdings`);
-      console.log("Raw holdings API response:", holdingsData);
+      const apiResponse = await getJSON<any>(`${API_BASE}/portfolio/holdings`);
+      console.log("Raw holdings API response:", apiResponse);
       
-      const normalized = normalizeHoldings(holdingsData);
-      console.log("Normalized holdings array:", normalized);
+      const rows = normalizeHoldings(apiResponse);
+      console.log("Normalized holdings rows:", rows);
       
-      if (!normalized || normalized.length === 0) {
+      if (rows.length === 0) {
         console.log("Holdings array is empty — nothing to render");
-        console.log("API response structure:", JSON.stringify(holdingsData, null, 2));
+        console.log("API response structure:", JSON.stringify(apiResponse, null, 2));
       } else {
-        console.log(`Found ${normalized.length} holdings to render:`, normalized);
+        console.log(`Found ${rows.length} holdings to render:`, rows);
       }
       
-      setHoldings(normalized);
+      setHoldings(rows);
       const debugUpdate = {
         holdingsStatus: "success", 
-        holdingsCount: normalized.length, 
+        holdingsCount: rows.length, 
         lastUpdated: new Date().toLocaleTimeString()
       };
       setDebugInfo(debugUpdate);
@@ -105,15 +112,16 @@ export default function Holdings({ onDebugUpdate }: { onDebugUpdate?: (info: any
     setShowTradeModal(true);
   };
 
-  console.log("Holdings state:", { holdings, length: holdings.length, err });
+  console.log("Holdings render state:", { holdings, length: holdings.length, err });
   
   if (err) return <div style={{padding:12, color:"#c00"}}>Error loading holdings: {err}</div>;
-  if (!holdings.length) return <div style={{padding:12, color:"#888"}}>No holdings found.</div>;
+  if (holdings.length === 0) return <div style={{padding:12, color:"#888"}}>No holdings found.</div>;
 
   return (
     <>
       <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))", gap:12}}>
-        {holdings.map((holding) => {
+        {holdings.map((holding, index) => {
+          console.log(`Rendering holding ${index}:`, holding);
           const plColor = (holding.unrealized_pl ?? 0) >= 0 ? "#22c55e" : "#ef4444";
           
           return (
