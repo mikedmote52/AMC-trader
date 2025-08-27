@@ -1094,6 +1094,10 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         # cheap gates first
         pcap = AMC_PRICE_CAP * (1.2 if relaxed else 1.0)  # allow slight slack in relaxed mode
         dvmin = AMC_MIN_DOLLAR_VOL * (0.5 if relaxed else 1.0)
+        
+        # Absolute ETF/Fund guardlist - reject immediately at universe stage
+        ABSOLUTE_GUARDLIST = {"DFAS", "BSV", "JETS", "SCHO", "KSA", "IYH", "VNQ", "VXX"}
+        
         for r in rows:
             sym = r.get("T")
             c = float(r.get("c") or 0.0)
@@ -1101,6 +1105,12 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
             dollar_vol = c * v
             if not sym or c <= 0:
                 continue
+                
+            # Absolute guardlist rejection - prevents any further processing
+            if sym.upper() in ABSOLUTE_GUARDLIST:
+                rejected.append({"symbol": sym, "reason": "absolute_guardlist"})
+                continue
+                
             if c > pcap:
                 rejected.append({"symbol": sym, "reason": "price_cap"})
             elif dollar_vol < dvmin:
@@ -1133,21 +1143,21 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                     # Apply exclusion filters based on classification
                     reject_reason = None
                     
-                    # Hardcoded symbol guard (absolute rejection)
-                    if sym.upper() in {"DFAS", "BSV", "JETS", "SCHO", "KSA", "IYH", "VXX", "VNQ"}:
-                        reject_reason = f"hardcoded-guard-{sym}"
+                    # Hardcoded symbol guard (absolute rejection) - EXPANDED GUARDLIST
+                    CLASSIFY_GUARDLIST = {"DFAS", "BSV", "JETS", "SCHO", "KSA", "IYH", "VXX", "VNQ", 
+                                         "BITO", "ARKB", "QDTE", "SGOL", "TBIL", "UGL", "EZU", 
+                                         "ARKB", "XLG", "BITO", "QID", "USMV", "EFAV", "AMLP",
+                                         "DGRO", "PFF", "SVIX", "URTY", "IGLB", "SIVR", "FENY", 
+                                         "EPI", "NVDQ", "SPMD", "FEZ", "SCHR", "USIG", "TFLO",
+                                         "AAPU", "SPBO", "XME", "USAR", "IEFA", "NVDX", "HODL",
+                                         "CONY", "EDV", "DGRW", "IUSV"}
                     
-                    # Check fund/ETF types for exclusion (case-insensitive)
-                    elif EXCLUDE_FUNDS and cla.upper() in {"ETF", "FUND", "INDEX", "BOND", "ETN", "TRUST"}:
-                        reject_reason = f"fund-{cla}"
+                    if sym.upper() in CLASSIFY_GUARDLIST:
+                        reject_reason = f"classify-guard-{sym}"
                     
-                    # Check ADR exclusion (case-insensitive)
-                    elif EXCLUDE_ADRS and (cla.upper() in {"ADR"} or cla.upper().startswith("ADR")):
-                        reject_reason = f"adr-{cla}"
-                    
-                    # Check strict mode (only equity allowed)
-                    elif EXCLUDE_FUNDS_STRICT and cla.upper() != "EQUITY":
-                        reject_reason = f"strict-{cla}"
+                    # AGGRESSIVE: Any non-equity class gets rejected
+                    elif cla.upper() != "EQUITY":
+                        reject_reason = f"non-equity-{cla}"
                     
                     if reject_reason:
                         classify_rejected.append({"symbol": sym, "reason": reject_reason, "class": cla})
@@ -1294,16 +1304,29 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 # Final safety check: ensure no funds slip through
                 sym_class = symbol_classifications.get(sym, "unknown")
                 
-                # Absolute hardcoded rejection
-                if sym.upper() in {"DFAS", "BSV", "JETS", "SCHO", "KSA", "IYH", "VXX", "VNQ"}:
-                    logger.warning(f"Hardcoded ETF/Fund {sym} slipped through - rejecting")
-                    return {"symbol": sym, "reason": f"final-hardcoded-{sym}", "gate_failed": True}
+                # TRIPLE-LAYER FINAL SAFETY CHECK
+                ANALYSIS_GUARDLIST = {"DFAS", "BSV", "JETS", "SCHO", "KSA", "IYH", "VXX", "VNQ", 
+                                     "BITO", "ARKB", "QDTE", "SGOL", "TBIL", "UGL", "EZU", 
+                                     "XLG", "QID", "USMV", "EFAV", "AMLP", "DGRO", "PFF", 
+                                     "SVIX", "URTY", "IGLB", "SIVR", "FENY", "EPI", "NVDQ", 
+                                     "SPMD", "FEZ", "SCHR", "USIG", "TFLO", "AAPU", "SPBO", 
+                                     "XME", "USAR", "IEFA", "NVDX", "HODL", "CONY", "EDV", 
+                                     "DGRW", "IUSV"}
                 
-                # Class-based rejection (case-insensitive)  
-                if (sym.upper() in KNOWN_FUND_SYMBOLS or 
-                    sym_class.upper() in {"ETF", "FUND", "INDEX", "BOND", "ETN", "ADR", "TRUST"}):
-                    logger.warning(f"Fund/ETF/ADR {sym} ({sym_class}) slipped through filters - rejecting")
-                    return {"symbol": sym, "reason": f"late-reject-{sym_class}", "gate_failed": True}
+                # Layer 1: Absolute hardcoded rejection
+                if sym.upper() in ANALYSIS_GUARDLIST:
+                    logger.warning(f"ANALYSIS GUARD: ETF/Fund {sym} rejected")
+                    return {"symbol": sym, "reason": f"analysis-guard-{sym}", "gate_failed": True}
+                
+                # Layer 2: Only EQUITY class allowed
+                if sym_class.upper() != "EQUITY":
+                    logger.warning(f"NON-EQUITY: {sym} ({sym_class}) rejected")
+                    return {"symbol": sym, "reason": f"non-equity-{sym_class}", "gate_failed": True}
+                
+                # Layer 3: Known fund symbols (belt and suspenders)
+                if hasattr(globals(), 'KNOWN_FUND_SYMBOLS') and sym.upper() in KNOWN_FUND_SYMBOLS:
+                    logger.warning(f"KNOWN FUND: {sym} rejected")
+                    return {"symbol": sym, "reason": f"known-fund-{sym}", "gate_failed": True}
                 
                 # Build discovery thesis with specific format
                 bandwidth_pct = round(compression_pctl * 100, 1)
@@ -1393,35 +1416,46 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
     equity_candidates = []
     etf_leaks = []
     
-    GUARDLIST = {"DFAS", "BSV", "JETS", "SCHO", "KSA", "IYH", "VNQ", "VXX"}
-    BANNED_CLASSES = {"ETF", "FUND", "ETN", "INDEX", "BOND", "TRUST", "ADR"}
+    # EXPANDED GUARDLIST - All known problematic ETFs/funds
+    FINAL_GUARDLIST = {"DFAS", "BSV", "JETS", "SCHO", "KSA", "IYH", "VNQ", "VXX", 
+                       "BITO", "ARKB", "QDTE", "SGOL", "TBIL", "UGL", "EZU", 
+                       "XLG", "QID", "USMV", "EFAV", "AMLP", "DGRO", "PFF", 
+                       "SVIX", "URTY", "IGLB", "SIVR", "FENY", "EPI", "NVDQ", 
+                       "SPMD", "FEZ", "SCHR", "USIG", "TFLO", "AAPU", "SPBO", 
+                       "XME", "USAR", "IEFA", "NVDX", "HODL", "CONY", "EDV", 
+                       "DGRW", "IUSV"}
+    
+    # ONLY EQUITY allowed - everything else banned
+    BANNED_CLASSES = {"ETF", "FUND", "ETN", "INDEX", "BOND", "TRUST", "ADR", 
+                      "REIT", "MLP", "UNIT", "WARRANT", "RIGHT", "PREFERRED"}
     
     for candidate in passed_candidates:
         symbol = candidate.get("symbol", "").upper()
         class_name = candidate.get("class", "").upper()
         
         # Absolute guardlist rejection
-        if symbol in GUARDLIST:
-            etf_leaks.append({"symbol": symbol, "reason": "guardlist", "class": class_name})
-            logger.warning(f"GUARDLIST ETF/Fund {symbol} rejected at final stage")
+        if symbol in FINAL_GUARDLIST:
+            etf_leaks.append({"symbol": symbol, "reason": "final_guardlist", "class": class_name})
+            logger.warning(f"FINAL GUARDLIST: ETF/Fund {symbol} rejected at final stage")
             continue
             
-        # Class-based rejection
-        if class_name in BANNED_CLASSES:
-            etf_leaks.append({"symbol": symbol, "reason": f"class-{class_name}", "class": class_name})
-            logger.warning(f"CLASS-based ETF/Fund {symbol} ({class_name}) rejected at final stage")
+        # ONLY EQUITY ALLOWED - reject everything else
+        if class_name != "EQUITY":
+            etf_leaks.append({"symbol": symbol, "reason": f"non-equity-{class_name}", "class": class_name})
+            logger.warning(f"NON-EQUITY: {symbol} ({class_name}) rejected at final stage")
             continue
             
-        # Only equity candidates pass
+        # Only verified equity candidates pass
+        logger.info(f"EQUITY PASSED: {symbol} ({class_name}) score={candidate.get('score', 0)}")
         equity_candidates.append(candidate)
     
     trace.exit("etf_elimination", [c["symbol"] for c in equity_candidates], etf_leaks)
     
     # Sort by score DESC, then ATR_pct DESC, then RS_5d DESC
     equity_candidates.sort(key=lambda x: (
-        -x.get("score", 0),                    # Score descending
-        -x.get("atr_pct", 0),                  # ATR% descending
-        -x.get("rs_5d", 0)                     # RS_5d descending
+        -x.get("score", 0),                              # Score descending  
+        -x.get("factors", {}).get("atr_pct", 0),         # ATR% descending
+        -x.get("factors", {}).get("rs_5d", 0)            # RS_5d descending
     ))
     
     final_candidates = equity_candidates[:MAX_CANDIDATES]
