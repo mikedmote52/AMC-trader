@@ -51,9 +51,18 @@ export default function Holdings() {
     try {
       setErr("");
       const holdingsData = await getJSON<any>(`${API_BASE}/portfolio/holdings`);
+      console.log("Raw holdings API response:", holdingsData);
+      
       const normalized = normalizeHoldings(holdingsData);
-      console.log("Holdings API response:", holdingsData);
-      console.log("Normalized holdings:", normalized);
+      console.log("Normalized holdings array:", normalized);
+      
+      if (!normalized || normalized.length === 0) {
+        console.log("Holdings array is empty — nothing to render");
+        console.log("API response structure:", JSON.stringify(holdingsData, null, 2));
+      } else {
+        console.log(`Found ${normalized.length} holdings to render:`, normalized);
+      }
+      
       setHoldings(normalized);
     } catch (e: any) {
       console.error("Holdings fetch error:", e);
