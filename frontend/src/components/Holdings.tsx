@@ -23,9 +23,12 @@ export default function Holdings() {
 
   function normalizeHoldings(x: any): any[] {
     if (Array.isArray(x)) return x;
-    if (x && Array.isArray(x.data)) return x.data;
-    if (x && Array.isArray(x.items)) return x.items;
-    if (x && Array.isArray(x.positions)) return x.positions;
+    // Handle nested structure: data.positions
+    if (x?.data?.positions && Array.isArray(x.data.positions)) return x.data.positions;
+    // Handle other common patterns
+    if (x?.data && Array.isArray(x.data)) return x.data;
+    if (x?.items && Array.isArray(x.items)) return x.items;
+    if (x?.positions && Array.isArray(x.positions)) return x.positions;
     return [];
   }
 
@@ -33,8 +36,12 @@ export default function Holdings() {
     try {
       setErr("");
       const holdingsData = await getJSON<any>(`${API_BASE}/portfolio/holdings`);
-      setHoldings(normalizeHoldings(holdingsData));
+      const normalized = normalizeHoldings(holdingsData);
+      console.log("Holdings API response:", holdingsData);
+      console.log("Normalized holdings:", normalized);
+      setHoldings(normalized);
     } catch (e: any) {
+      console.error("Holdings fetch error:", e);
       setErr(e?.message || String(e));
     }
   }
@@ -66,12 +73,20 @@ export default function Holdings() {
               </div>
               
               <div style={{fontSize:14, marginBottom:8, lineHeight:1.4}}>
-                <div>Last: ${holding.last_price.toFixed(2)} | Avg: ${holding.avg_entry_price.toFixed(2)}</div>
-                <div>Value: ${holding.market_value.toFixed(2)}</div>
+                <div>Last: ${(holding.last_price ?? 0).toFixed(2)} | Avg: ${(holding.avg_entry_price ?? 0).toFixed(2)}</div>
+                <div>Value: ${(holding.market_value ?? 0).toFixed(2)}</div>
                 <div style={{color: plColor}}>
-                  P&L: ${holding.unrealized_pl.toFixed(2)} ({(holding.unrealized_pl_pct * 100).toFixed(1)}%)
+                  P&L: ${(holding.unrealized_pl ?? 0).toFixed(2)} ({((holding.unrealized_pl_pct ?? 0) * 100).toFixed(1)}%)
                 </div>
               </div>
+              
+              {(holding.thesis || holding.confidence || holding.suggestion) && (
+                <div style={{fontSize:12, color:"#bbb", marginBottom:8, lineHeight:1.3}}>
+                  {holding.suggestion && <div>Action: {holding.suggestion}</div>}
+                  {holding.confidence != null && <div>Confidence: {holding.confidence}</div>}
+                  {holding.thesis && <div>{holding.thesis}</div>}
+                </div>
+              )}
               
               <div style={{display:"flex", gap:8}}>
                 <button 
