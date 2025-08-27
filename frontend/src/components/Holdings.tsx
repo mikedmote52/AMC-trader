@@ -22,13 +22,28 @@ export default function Holdings() {
   const [tradePreset, setTradePreset] = useState<{symbol: string; action: "BUY" | "SELL"} | null>(null);
 
   function normalizeHoldings(x: any): any[] {
+    console.log("normalizeHoldings input:", x);
+    
+    // Handle direct array
     if (Array.isArray(x)) return x;
-    // Handle nested structure: data.positions
-    if (x?.data?.positions && Array.isArray(x.data.positions)) return x.data.positions;
-    // Handle other common patterns
-    if (x?.data && Array.isArray(x.data)) return x.data;
+    
+    // Handle nested structure: { success: true, data: { positions: [...] } }
+    if (x?.data?.positions && Array.isArray(x.data.positions)) {
+      console.log("Found data.positions:", x.data.positions);
+      return x.data.positions;
+    }
+    
+    // Handle flat data structure: { data: [...] }
+    if (x?.data && Array.isArray(x.data)) {
+      console.log("Found data array:", x.data);
+      return x.data;
+    }
+    
+    // Handle other patterns
     if (x?.items && Array.isArray(x.items)) return x.items;
     if (x?.positions && Array.isArray(x.positions)) return x.positions;
+    
+    console.log("No valid holdings structure found, returning empty array");
     return [];
   }
 
@@ -57,6 +72,8 @@ export default function Holdings() {
     setShowTradeModal(true);
   };
 
+  console.log("Holdings state:", { holdings, length: holdings.length, err });
+  
   if (err) return <div style={{padding:12, color:"#c00"}}>Error loading holdings: {err}</div>;
   if (!holdings.length) return <div style={{padding:12, color:"#888"}}>No holdings found.</div>;
 
@@ -64,12 +81,12 @@ export default function Holdings() {
     <>
       <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))", gap:12}}>
         {holdings.map((holding) => {
-          const plColor = holding.unrealized_pl >= 0 ? "#22c55e" : "#ef4444";
+          const plColor = (holding.unrealized_pl ?? 0) >= 0 ? "#22c55e" : "#ef4444";
           
           return (
             <div key={holding.symbol} style={cardStyle}>
               <div style={{fontSize:16, fontWeight:700, marginBottom:8}}>
-                {holding.symbol} • {holding.qty}
+                {holding.symbol} • {holding.qty ?? 0}
               </div>
               
               <div style={{fontSize:14, marginBottom:8, lineHeight:1.4}}>
@@ -80,11 +97,11 @@ export default function Holdings() {
                 </div>
               </div>
               
-              {(holding.thesis || holding.confidence || holding.suggestion) && (
+              {(holding.thesis || holding.confidence != null || holding.suggestion) && (
                 <div style={{fontSize:12, color:"#bbb", marginBottom:8, lineHeight:1.3}}>
-                  {holding.suggestion && <div>Action: {holding.suggestion}</div>}
-                  {holding.confidence != null && <div>Confidence: {holding.confidence}</div>}
-                  {holding.thesis && <div>{holding.thesis}</div>}
+                  {holding.suggestion && <div><strong>Action:</strong> {holding.suggestion}</div>}
+                  {holding.confidence != null && <div><strong>Confidence:</strong> {holding.confidence}</div>}
+                  {holding.thesis && <div><strong>Thesis:</strong> {holding.thesis}</div>}
                 </div>
               )}
               
