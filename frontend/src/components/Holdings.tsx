@@ -15,33 +15,43 @@ type Holding = {
 };
 
 
-export default function Holdings() {
+export default function Holdings({ onDebugUpdate }: { onDebugUpdate?: (info: any) => void }) {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [err, setErr] = useState<string>("");
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradePreset, setTradePreset] = useState<{symbol: string; action: "BUY" | "SELL"} | null>(null);
+  const [debugInfo, setDebugInfo] = useState<{holdingsStatus: string, holdingsCount: number, lastUpdated: string}>({
+    holdingsStatus: "loading", holdingsCount: 0, lastUpdated: new Date().toLocaleTimeString()
+  });
 
   function normalizeHoldings(x: any): any[] {
     console.log("normalizeHoldings input:", x);
     
-    // Handle direct array
-    if (Array.isArray(x)) return x;
-    
-    // Handle nested structure: { success: true, data: { positions: [...] } }
-    if (x?.data?.positions && Array.isArray(x.data.positions)) {
-      console.log("Found data.positions:", x.data.positions);
-      return x.data.positions;
+    // Precedence order as specified
+    if (Array.isArray(x)) {
+      console.log("Found direct array:", x);
+      return x;
     }
     
-    // Handle flat data structure: { data: [...] }
     if (x?.data && Array.isArray(x.data)) {
       console.log("Found data array:", x.data);
       return x.data;
     }
     
-    // Handle other patterns
-    if (x?.items && Array.isArray(x.items)) return x.items;
-    if (x?.positions && Array.isArray(x.positions)) return x.positions;
+    if (x?.items && Array.isArray(x.items)) {
+      console.log("Found items array:", x.items);
+      return x.items;
+    }
+    
+    if (x?.positions && Array.isArray(x.positions)) {
+      console.log("Found positions array:", x.positions);
+      return x.positions;
+    }
+    
+    if (x?.data?.positions && Array.isArray(x.data.positions)) {
+      console.log("Found data.positions:", x.data.positions);
+      return x.data.positions;
+    }
     
     console.log("No valid holdings structure found, returning empty array");
     return [];
@@ -64,9 +74,23 @@ export default function Holdings() {
       }
       
       setHoldings(normalized);
+      const debugUpdate = {
+        holdingsStatus: "success", 
+        holdingsCount: normalized.length, 
+        lastUpdated: new Date().toLocaleTimeString()
+      };
+      setDebugInfo(debugUpdate);
+      onDebugUpdate?.(debugUpdate);
     } catch (e: any) {
       console.error("Holdings fetch error:", e);
       setErr(e?.message || String(e));
+      const debugUpdate = {
+        holdingsStatus: "error", 
+        holdingsCount: 0, 
+        lastUpdated: new Date().toLocaleTimeString()
+      };
+      setDebugInfo(debugUpdate);
+      onDebugUpdate?.(debugUpdate);
     }
   }
 

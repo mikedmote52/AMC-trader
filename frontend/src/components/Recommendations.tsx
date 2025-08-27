@@ -12,7 +12,7 @@ interface Contender {
   factors?: Record<string, any>;
 }
 
-export default function Recommendations() {
+export default function Recommendations({ onDebugUpdate }: { onDebugUpdate?: (info: any) => void }) {
   const [items, setItems] = useState<Contender[]>([]);
   const [err, setErr] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -36,9 +36,25 @@ export default function Recommendations() {
         filteredList.sort((a,b) => b.score - a.score);
         console.log("Final sorted candidates:", filteredList);
         
-        if (alive) setItems(filteredList);
+        if (alive) {
+          setItems(filteredList);
+          onDebugUpdate?.({
+            contendersStatus: "success",
+            contendersRaw: list.length,
+            contendersFiltered: filteredList.length,
+            lastUpdated: new Date().toLocaleTimeString()
+          });
+        }
       } catch (e:any) {
-        if (alive) setErr(e?.message || String(e));
+        if (alive) {
+          setErr(e?.message || String(e));
+          onDebugUpdate?.({
+            contendersStatus: "error",
+            contendersRaw: 0,
+            contendersFiltered: 0,
+            lastUpdated: new Date().toLocaleTimeString()
+          });
+        }
       } finally {
         if (alive) setLoading(false);
       }
