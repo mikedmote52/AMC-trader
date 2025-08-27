@@ -44,6 +44,34 @@ EXCLUDE_ADRS         = os.getenv("AMC_EXCLUDE_ADRS","true").lower()=="true"
 EXCLUDE_FUNDS_STRICT = os.getenv("AMC_EXCLUDE_FUNDS_STRICT","1") in ("1","true","yes")
 FUND_TYPES = {"ETF","ETN","FUND","INDEX","MUTUALFUND","TRUST","CEFT","BOND","ETFWRAP"}
 
+# Known ETF/Fund symbols guard set (common funds that might slip through)
+KNOWN_FUND_SYMBOLS = {
+    # ETFs
+    "SPY", "QQQ", "IWM", "DIA", "VOO", "VTI", "SCHB", "ITOT", "VEA", "IEMG", "VWO", "EFA", "AGG", "BND", 
+    "GLD", "SLV", "USO", "XLE", "XLF", "XLK", "XLI", "XLU", "XLY", "XLP", "XLV", "XLB", "XLRE", "XLC",
+    "ARKK", "ARKQ", "ARKW", "ARKG", "ARKF", "ARKX", "VUG", "VTV", "VIG", "VYM", "SCHD", "DVY", "HDV",
+    "IVV", "IVE", "IVW", "IJH", "IJR", "MDY", "SLY", "VIXY", "UVXY", "SVXY", "VXX", "SQQQ", "TQQQ",
+    "SPXU", "SPXL", "UPRO", "TMF", "TLT", "IEF", "SHY", "HYG", "JNK", "EMB", "LQD", "TIP", "VTIP",
+    "BSV", "BIV", "BLV", "VCSH", "VCIT", "VCLT", "VGSH", "VGIT", "VGLT", "VMBS", "GOVT", "CORP",
+    "EEM", "VEU", "VXUS", "IXUS", "ACWI", "ACWX", "EWJ", "EWZ", "EWY", "EWG", "EWU", "FXI", "INDA",
+    "RSX", "EWC", "EWA", "EWT", "EWH", "EWS", "EWM", "EWP", "EWI", "EWQ", "EWN", "EWL", "ERUS",
+    "JETS", "ICLN", "TAN", "FAN", "PBW", "QCLN", "LIT", "REMX", "PICK", "COPX", "GDX", "GDXJ", "SILJ",
+    "KRE", "XLF", "KBE", "KIE", "IAK", "IYG", "VFH", "FAS", "FAZ", "XBI", "IBB", "LABU", "LABD", "CURE",
+    "XRT", "RTH", "XHB", "ITB", "NAIL", "DRN", "SOXL", "SOXS", "SMH", "SOXX", "PSI", "QTEC", "IGV",
+    "HACK", "CIBR", "FINX", "GNOM", "IDNA", "ROBO", "BOTZ", "CLOU", "SKYY", "HERO", "NERD", "ESPO",
+    "UFO", "MOON", "KOMP", "KRBN", "DRIV", "IDRV", "KARS", "HAIL", "MJ", "YOLO", "THCX", "CNBS", "TOKE",
+    "PEJ", "PBS", "PEY", "PID", "KBWB", "KCE", "KBWD", "KBWY", "KBWR", "IAI", "ITA", "PPA", "XAR",
+    "DFEN", "IEO", "IEZ", "IHI", "IHF", "IYT", "IYC", "IYE", "IYF", "IYH", "IYJ", "IYK", "IYM", "IYR",
+    "IYW", "IYZ", "VAW", "VCR", "VDC", "VDE", "VFH", "VGT", "VHT", "VIS", "VNQ", "VOX", "VPU", "VB",
+    "VO", "VTWO", "VBR", "VBK", "VOE", "VOT", "VTV", "VUG", "VIOG", "VIOO", "VIOV", "VONE", "VTHR",
+    "DFAS", "DFAU", "DFAC", "DFAT", "DFAX", "DFUS", "AVUS", "AVUV", "AVDV", "AVDE", "AVEM",
+    "SCHO", "SCHP", "SCHQ", "SCHM", "SCHA", "SCHF", "SCHE", "SCHC", "SCHG", "SCHV", "SCHX", "SCHZ",
+    "HIMU", "KSA", "KWT", "UAE", "QAT", "EGY", "GAF", "NGE", "AFK", "EZA", "FM", "FLZA",
+}
+
+# Common fund/ETF name patterns
+FUND_NAME_PATTERNS = ["ETF", "FUND", "INDEX", "TRUST", "BOND", "TREASURY", "NOTE", "BILL", "SHARES", "PROSHARES", "ISHARES", "VANGUARD", "SPDR", "INVESCO", "WISDOMTREE", "DIREXION", "VANECK", "GLOBAL X"]
+
 # weights (renormalize to available factors)
 W_VOLUME   = float(os.getenv("AMC_W_VOLUME",   "0.25"))
 W_SHORT    = float(os.getenv("AMC_W_SHORT",    "0.20"))
@@ -648,9 +676,14 @@ def thesis_string_from(factors):
 _symbol_cache = {}
 
 async def _classify_symbol(sym: str, client: httpx.AsyncClient) -> str:
-    """Robust symbol classification using Polygon v3 API with caching"""
+    """Robust symbol classification using Polygon v3 API with guard sets and caching"""
     if sym in _symbol_cache:
         return _symbol_cache[sym]
+    
+    # Check known fund symbols guard set FIRST (fast path)
+    if sym.upper() in KNOWN_FUND_SYMBOLS:
+        _symbol_cache[sym] = "fund"
+        return "fund"
         
     try:
         r = await client.get(f"https://api.polygon.io/v3/reference/tickers/{sym}",
@@ -663,21 +696,32 @@ async def _classify_symbol(sym: str, client: httpx.AsyncClient) -> str:
         ttype = (j.get("type") or "").upper()
         name  = (j.get("name") or "").upper()
         
-        # Classify funds/ETFs
-        if ttype in FUND_TYPES or "ETF" in name or "INDEX" in name:
+        # Enhanced fund/ETF detection with guard patterns
+        is_fund = (
+            ttype in FUND_TYPES or 
+            sym.upper() in KNOWN_FUND_SYMBOLS or
+            any(pattern in name for pattern in FUND_NAME_PATTERNS)
+        )
+        if is_fund:
             _symbol_cache[sym] = "fund"
             return "fund"
             
         # Classify ADRs
-        if ttype in {"ADRC","ADRR","ADRU"} or "ADR" in name:
+        if ttype in {"ADRC","ADRR","ADRU","ADR"} or "ADR" in name or "DEPOSITARY" in name:
             _symbol_cache[sym] = "adr"
             return "adr"
             
-        # Classify equities
-        if ttype in {"CS","COMMON_STOCK"} or "INC" in name:
+        # Classify bonds explicitly
+        if ttype in {"BOND", "NOTE", "BILL"} or any(term in name for term in ["BOND", "TREASURY", "NOTE", "BILL"]):
+            _symbol_cache[sym] = "bond"
+            return "bond"
+            
+        # Classify equities - only if explicitly common stock
+        if ttype in {"CS","COMMON_STOCK","COMMON","STOCK"}:
             _symbol_cache[sym] = "equity"
             return "equity"
             
+        # Default to other for uncertain cases (safer to exclude)
         _symbol_cache[sym] = "other"
         return "other"
         
@@ -1230,6 +1274,12 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 
                 # Get compression_pctl from original candidate
                 compression_pctl = next((o.get("compression_pctl", 0.0) for o in out if o["symbol"] == sym), 0.0)
+                
+                # Final safety check: ensure no funds slip through
+                sym_class = symbol_classifications.get(sym, "unknown")
+                if sym.upper() in KNOWN_FUND_SYMBOLS or sym_class in {"fund", "etf", "etn", "bond", "adr"}:
+                    logger.warning(f"Fund/ETF/ADR {sym} ({sym_class}) slipped through filters - rejecting")
+                    return {"symbol": sym, "reason": f"late-reject-{sym_class}", "gate_failed": True}
                 
                 # Build discovery thesis with specific format
                 bandwidth_pct = round(compression_pctl * 100, 1)
