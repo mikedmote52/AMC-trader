@@ -24,42 +24,34 @@ export default function Holdings({ onDebugUpdate }: { onDebugUpdate?: (info: any
     holdingsStatus: "loading", holdingsCount: 0, lastUpdated: new Date().toLocaleTimeString()
   });
 
-  function normalizeHoldings(resp: any) {
+  function normalizeHoldings(resp:any){
     console.log("normalizeHoldings input:", resp);
-    
     if (Array.isArray(resp)) {
       console.log("Found direct array:", resp);
       return resp;
     }
-    
     const d = resp?.data ?? resp;
     console.log("Extracted data object:", d);
-    
     if (Array.isArray(d)) {
       console.log("Found data as array:", d);
       return d;
     }
-    
     if (Array.isArray(d?.positions)) {
       console.log("Found d.positions:", d.positions);
       return d.positions;
     }
-    
     if (Array.isArray(resp?.positions)) {
       console.log("Found resp.positions:", resp.positions);
       return resp.positions;
     }
-    
     if (Array.isArray(d?.items)) {
       console.log("Found d.items:", d.items);
       return d.items;
     }
-    
     if (Array.isArray(d?.data)) {
       console.log("Found d.data:", d.data);
       return d.data;
     }
-    
     console.log("No valid holdings structure found, returning empty array");
     return [];
   }
@@ -148,6 +140,7 @@ export default function Holdings({ onDebugUpdate }: { onDebugUpdate?: (info: any
     <div>
       <div style={{padding:12, color:"#888"}}>No holdings found.</div>
       <div style={{fontSize:10, color:"#666", padding:8}}>Debug: {debugText} - Check console for API response</div>
+      <div style={{fontSize:10, color:"#999", padding:4}}>holdings array: {JSON.stringify(holdings)}</div>
     </div>
   );
 
