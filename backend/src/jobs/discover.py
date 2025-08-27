@@ -67,6 +67,8 @@ KNOWN_FUND_SYMBOLS = {
     "DFAS", "DFAU", "DFAC", "DFAT", "DFAX", "DFUS", "AVUS", "AVUV", "AVDV", "AVDE", "AVEM",
     "SCHO", "SCHP", "SCHQ", "SCHM", "SCHA", "SCHF", "SCHE", "SCHC", "SCHG", "SCHV", "SCHX", "SCHZ",
     "HIMU", "KSA", "KWT", "UAE", "QAT", "EGY", "GAF", "NGE", "AFK", "EZA", "FM", "FLZA",
+    # Additional hardcoded guard symbols for leakage prevention
+    "IYH", "VXX", "VNQ",
 }
 
 # Common fund/ETF name patterns
@@ -696,25 +698,35 @@ async def _classify_symbol(sym: str, client: httpx.AsyncClient) -> str:
         ttype = (j.get("type") or "").upper()
         name  = (j.get("name") or "").upper()
         
-        # Enhanced fund/ETF detection with guard patterns
-        is_fund = (
-            ttype in FUND_TYPES or 
-            sym.upper() in KNOWN_FUND_SYMBOLS or
-            any(pattern in name for pattern in FUND_NAME_PATTERNS)
-        )
-        if is_fund:
-            _symbol_cache[sym] = "fund"
-            return "fund"
+        # Enhanced fund/ETF detection - return specific class names
+        if ttype == "ETF" or "ETF" in name:
+            _symbol_cache[sym] = "ETF"
+            return "ETF"
+        elif ttype in {"FUND", "MUTUALFUND"} or "FUND" in name:
+            _symbol_cache[sym] = "FUND"
+            return "FUND"
+        elif ttype in {"INDEX"} or "INDEX" in name:
+            _symbol_cache[sym] = "INDEX"
+            return "INDEX"
+        elif ttype in {"TRUST", "CEFT"} or "TRUST" in name:
+            _symbol_cache[sym] = "TRUST" 
+            return "TRUST"
+        elif ttype == "ETN" or "ETN" in name:
+            _symbol_cache[sym] = "ETN"
+            return "ETN"
+        elif sym.upper() in KNOWN_FUND_SYMBOLS or any(pattern in name for pattern in FUND_NAME_PATTERNS):
+            _symbol_cache[sym] = "ETF"  # Default funds to ETF classification
+            return "ETF"
             
         # Classify ADRs
         if ttype in {"ADRC","ADRR","ADRU","ADR"} or "ADR" in name or "DEPOSITARY" in name:
-            _symbol_cache[sym] = "adr"
-            return "adr"
+            _symbol_cache[sym] = "ADR"
+            return "ADR"
             
         # Classify bonds explicitly
         if ttype in {"BOND", "NOTE", "BILL"} or any(term in name for term in ["BOND", "TREASURY", "NOTE", "BILL"]):
-            _symbol_cache[sym] = "bond"
-            return "bond"
+            _symbol_cache[sym] = "BOND"
+            return "BOND"
             
         # Classify equities - only if explicitly common stock
         if ttype in {"CS","COMMON_STOCK","COMMON","STOCK"}:
@@ -1121,16 +1133,20 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                     # Apply exclusion filters based on classification
                     reject_reason = None
                     
-                    # Check fund types for exclusion
-                    if EXCLUDE_FUNDS and cla in {"fund", "etf", "etn", "index", "trust", "bond"}:
+                    # Hardcoded symbol guard (absolute rejection)
+                    if sym.upper() in {"DFAS", "BSV", "JETS", "SCHO", "KSA", "IYH", "VXX", "VNQ"}:
+                        reject_reason = f"hardcoded-guard-{sym}"
+                    
+                    # Check fund/ETF types for exclusion (case-insensitive)
+                    elif EXCLUDE_FUNDS and cla.upper() in {"ETF", "FUND", "INDEX", "BOND", "ETN", "TRUST"}:
                         reject_reason = f"fund-{cla}"
                     
-                    # Check ADR exclusion
-                    elif EXCLUDE_ADRS and cla.startswith("adr"):
+                    # Check ADR exclusion (case-insensitive)
+                    elif EXCLUDE_ADRS and (cla.upper() in {"ADR"} or cla.upper().startswith("ADR")):
                         reject_reason = f"adr-{cla}"
                     
                     # Check strict mode (only equity allowed)
-                    elif EXCLUDE_FUNDS_STRICT and cla != "equity":
+                    elif EXCLUDE_FUNDS_STRICT and cla.upper() != "EQUITY":
                         reject_reason = f"strict-{cla}"
                     
                     if reject_reason:
@@ -1277,7 +1293,15 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 
                 # Final safety check: ensure no funds slip through
                 sym_class = symbol_classifications.get(sym, "unknown")
-                if sym.upper() in KNOWN_FUND_SYMBOLS or sym_class in {"fund", "etf", "etn", "bond", "adr"}:
+                
+                # Absolute hardcoded rejection
+                if sym.upper() in {"DFAS", "BSV", "JETS", "SCHO", "KSA", "IYH", "VXX", "VNQ"}:
+                    logger.warning(f"Hardcoded ETF/Fund {sym} slipped through - rejecting")
+                    return {"symbol": sym, "reason": f"final-hardcoded-{sym}", "gate_failed": True}
+                
+                # Class-based rejection (case-insensitive)  
+                if (sym.upper() in KNOWN_FUND_SYMBOLS or 
+                    sym_class.upper() in {"ETF", "FUND", "INDEX", "BOND", "ETN", "ADR", "TRUST"}):
                     logger.warning(f"Fund/ETF/ADR {sym} ({sym_class}) slipped through filters - rejecting")
                     return {"symbol": sym, "reason": f"late-reject-{sym_class}", "gate_failed": True}
                 
