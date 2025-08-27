@@ -24,7 +24,7 @@ export default function Holdings({ onDebugUpdate }: { onDebugUpdate?: (info: any
     holdingsStatus: "loading", holdingsCount: 0, lastUpdated: new Date().toLocaleTimeString()
   });
 
-  function normalizeHoldings(resp: any): any[] {
+  function normalizeHoldings(resp: any) {
     console.log("normalizeHoldings input:", resp);
     
     if (Array.isArray(resp)) {
@@ -68,16 +68,22 @@ export default function Holdings({ onDebugUpdate }: { onDebugUpdate?: (info: any
     try {
       setErr("");
       const apiResponse = await getJSON<any>(`${API_BASE}/portfolio/holdings`);
+      console.log("=== HOLDINGS DEBUG ===");
       console.log("Raw holdings API response:", apiResponse);
+      console.log("apiResponse.success:", apiResponse?.success);
+      console.log("apiResponse.data:", apiResponse?.data);
+      console.log("apiResponse.data.positions:", apiResponse?.data?.positions);
+      console.log("Is apiResponse.data.positions an array?", Array.isArray(apiResponse?.data?.positions));
       
       const rows = normalizeHoldings(apiResponse);
       console.log("Normalized holdings rows:", rows);
+      console.log("rows.length:", rows.length);
       
       if (rows.length === 0) {
-        console.log("Holdings array is empty — nothing to render");
-        console.log("API response structure:", JSON.stringify(apiResponse, null, 2));
+        console.log("❌ Holdings array is empty — nothing to render");
+        console.log("Full API response structure:", JSON.stringify(apiResponse, null, 2));
       } else {
-        console.log(`Found ${rows.length} holdings to render:`, rows);
+        console.log(`✅ Found ${rows.length} holdings to render:`, rows);
       }
       
       setHoldings(rows);
