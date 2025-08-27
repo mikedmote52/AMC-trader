@@ -1389,9 +1389,42 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
     
     trace.exit("squeeze_analysis", [c["symbol"] for c in passed_candidates], gate_failures)
     
-    # Sort by score descending and limit
-    passed_candidates.sort(key=lambda x: x["score"], reverse=True)
-    final_candidates = passed_candidates[:MAX_CANDIDATES]
+    # FINAL ETF/FUND ELIMINATION - Drop any candidate with ETF/fund class or in guardlist
+    equity_candidates = []
+    etf_leaks = []
+    
+    GUARDLIST = {"DFAS", "BSV", "JETS", "SCHO", "KSA", "IYH", "VNQ", "VXX"}
+    BANNED_CLASSES = {"ETF", "FUND", "ETN", "INDEX", "BOND", "TRUST", "ADR"}
+    
+    for candidate in passed_candidates:
+        symbol = candidate.get("symbol", "").upper()
+        class_name = candidate.get("class", "").upper()
+        
+        # Absolute guardlist rejection
+        if symbol in GUARDLIST:
+            etf_leaks.append({"symbol": symbol, "reason": "guardlist", "class": class_name})
+            logger.warning(f"GUARDLIST ETF/Fund {symbol} rejected at final stage")
+            continue
+            
+        # Class-based rejection
+        if class_name in BANNED_CLASSES:
+            etf_leaks.append({"symbol": symbol, "reason": f"class-{class_name}", "class": class_name})
+            logger.warning(f"CLASS-based ETF/Fund {symbol} ({class_name}) rejected at final stage")
+            continue
+            
+        # Only equity candidates pass
+        equity_candidates.append(candidate)
+    
+    trace.exit("etf_elimination", [c["symbol"] for c in equity_candidates], etf_leaks)
+    
+    # Sort by score DESC, then ATR_pct DESC, then RS_5d DESC
+    equity_candidates.sort(key=lambda x: (
+        -x.get("score", 0),                    # Score descending
+        -x.get("atr_pct", 0),                  # ATR% descending
+        -x.get("rs_5d", 0)                     # RS_5d descending
+    ))
+    
+    final_candidates = equity_candidates[:MAX_CANDIDATES]
     
     trace.exit("final_selection", [c["symbol"] for c in final_candidates])
 
