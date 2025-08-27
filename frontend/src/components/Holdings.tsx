@@ -21,11 +21,19 @@ export default function Holdings() {
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradePreset, setTradePreset] = useState<{symbol: string; action: "BUY" | "SELL"} | null>(null);
 
+  function normalizeHoldings(x: any): any[] {
+    if (Array.isArray(x)) return x;
+    if (x && Array.isArray(x.data)) return x.data;
+    if (x && Array.isArray(x.items)) return x.items;
+    if (x && Array.isArray(x.positions)) return x.positions;
+    return [];
+  }
+
   async function fetchData() {
     try {
       setErr("");
       const holdingsData = await getJSON<any>(`${API_BASE}/portfolio/holdings`);
-      setHoldings(Array.isArray(holdingsData) ? holdingsData : []);
+      setHoldings(normalizeHoldings(holdingsData));
     } catch (e: any) {
       setErr(e?.message || String(e));
     }
