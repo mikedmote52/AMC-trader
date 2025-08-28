@@ -35,10 +35,18 @@ PRICE_CAP = float(os.getenv("AMC_PRICE_CAP", "100"))             # keep ≤ 100 
 MIN_DOLLAR_VOL = float(os.getenv("AMC_MIN_DOLLAR_VOL", "20000000"))  # $20M
 LOOKBACK_DAYS = int(os.getenv("AMC_COMPRESSION_LOOKBACK", "60"))
 COMPRESSION_PCTL_MAX = float(os.getenv("AMC_COMPRESSION_PCTL_MAX", "0.15"))  # tightest 15%
-MAX_CANDIDATES = int(os.getenv("AMC_MAX_CANDIDATES", "15"))
+MAX_CANDIDATES = int(os.getenv("AMC_MAX_CANDIDATES", "7"))
 UNIVERSE_FALLBACK = [s.strip().upper() for s in os.getenv("AMC_DISCOVERY_UNIVERSE","AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,AMD,AVGO,PLTR,COIN,CRM,ORCL,ABNB,SNOW,UBER,NFLX,SHOP,INTC,MRVL,SMCI").split(",") if s.strip()]
 EXCLUDE_FUNDS = os.getenv("AMC_EXCLUDE_FUNDS", "true").lower() in ("1", "true", "yes")
 EXCLUDE_ADRS = os.getenv("AMC_EXCLUDE_ADRS", "true").lower() in ("1", "true", "yes")
+
+# VIGL Pattern Detection Parameters
+VIGL_PRICE_MIN = float(os.getenv("AMC_VIGL_PRICE_MIN", "0.50"))      # $0.50 minimum
+VIGL_PRICE_MAX = float(os.getenv("AMC_VIGL_PRICE_MAX", "10.00"))     # $10.00 maximum for explosive potential
+VIGL_VOLUME_MIN = float(os.getenv("AMC_VIGL_VOLUME_MIN", "3.0"))     # 3x minimum volume spike
+VIGL_VOLUME_TARGET = float(os.getenv("AMC_VIGL_VOLUME_TARGET", "20.9"))  # Target 20.9x for VIGL pattern
+VIGL_MOMENTUM_MIN = float(os.getenv("AMC_VIGL_MOMENTUM_MIN", "0.05"))  # 5% minimum momentum
+WOLF_RISK_THRESHOLD = float(os.getenv("AMC_WOLF_RISK_THRESHOLD", "0.6"))  # WOLF pattern avoidance
 
 # Configure logging
 logging.basicConfig(
@@ -68,6 +76,81 @@ def _return(rows, n):
     c0=rows[-(n+1)]["c"]; c1=rows[-1]["c"]
     if not c0: return None
     return float((c1-c0)/c0)
+
+def _volume_spike_ratio(bars):
+    """Calculate volume spike ratio vs 30-day average"""
+    if len(bars) < 31: return 0.0
+    current_volume = bars[-1].get("v", 0)
+    avg_volumes = [float(bar.get("v", 0)) for bar in bars[-31:-1]]  # Last 30 days
+    avg_volume = sum(avg_volumes) / len(avg_volumes) if avg_volumes else 1
+    return current_volume / avg_volume if avg_volume > 0 else 0.0
+
+def _calculate_vigl_score(price, volume_spike, momentum, atr_pct):
+    """Calculate VIGL pattern similarity score (0-1)"""
+    # Price score: optimal range $2.94-$4.66, but accept $0.50-$10.00 with penalty
+    if 2.94 <= price <= 4.66:
+        price_score = 1.0
+    elif 0.50 <= price <= 10.00:
+        # Distance penalty from optimal range
+        if price < 2.94:
+            price_score = 0.5 + 0.5 * (price - 0.50) / (2.94 - 0.50)
+        else:  # price > 4.66
+            price_score = 0.5 + 0.5 * (10.00 - price) / (10.00 - 4.66)
+    else:
+        price_score = 0.0
+    
+    # Volume spike score: target 20.9x, minimum 3x
+    if volume_spike >= VIGL_VOLUME_TARGET:
+        volume_score = 1.0
+    elif volume_spike >= VIGL_VOLUME_MIN:
+        volume_score = 0.3 + 0.7 * (volume_spike - VIGL_VOLUME_MIN) / (VIGL_VOLUME_TARGET - VIGL_VOLUME_MIN)
+    else:
+        volume_score = 0.0
+    
+    # Momentum score: positive momentum preferred
+    momentum_score = max(0, min(1, 0.5 + momentum * 2))  # -50% to +50% maps to 0-1
+    
+    # Volatility (ATR) score: higher volatility = more explosive potential
+    volatility_score = min(atr_pct / 0.15, 1.0)  # 15% ATR = max score
+    
+    # Weighted VIGL similarity: volume spike is most important
+    vigl_score = (
+        volume_score * 0.4 +      # Volume spike is critical
+        price_score * 0.3 +       # Price range matters
+        momentum_score * 0.2 +    # Momentum important
+        volatility_score * 0.1    # Volatility adds confirmation
+    )
+    
+    return min(vigl_score, 1.0)
+
+def _calculate_wolf_risk_score(price, volume_spike, momentum, atr_pct, rs_5d):
+    """Calculate WOLF pattern risk score (0-1, higher = more risky)"""
+    risk_factors = []
+    
+    # Very low price risk (penny stock manipulation)
+    if price < 0.50:
+        risk_factors.append(0.8)
+    elif price < 1.00:
+        risk_factors.append(0.4)
+    
+    # Extreme volume spike without substance
+    if volume_spike > 50 and abs(momentum) < 0.02:  # >50x volume but <2% price move
+        risk_factors.append(0.7)
+    
+    # Negative momentum with high volatility (falling knife)
+    if momentum < -0.10 and atr_pct > 0.20:  # -10% momentum, >20% ATR
+        risk_factors.append(0.6)
+    
+    # Recent poor performance (5-day returns)
+    if rs_5d < -0.15:  # -15% over 5 days
+        risk_factors.append(0.5)
+    
+    # Extreme volatility without direction
+    if atr_pct > 0.25 and abs(momentum) < 0.05:  # >25% ATR but <5% momentum
+        risk_factors.append(0.4)
+    
+    # Return max risk factor, or low risk if no red flags
+    return max(risk_factors) if risk_factors else 0.2
 
 @dataclass
 class StageTrace:
@@ -625,17 +708,17 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
     tight.sort(key=lambda x: x["compression_pct"])
     trace.exit("compression_filter", [t["symbol"] for t in tight])
 
-    # simple score: tighter is better. extend later with short interest, catalysts.
-    out = []
-    for t in tight[: (limit or MAX_CANDIDATES)]:
-        out.append({
+    # Initial candidates based on compression
+    initial_out = []
+    for t in tight[: (limit or MAX_CANDIDATES) * 3]:  # Get 3x candidates for filtering
+        initial_out.append({
             "symbol": t["symbol"],
             "score": round(1.0 - t["compression_pct"], 4),
             "reason": "compression",
         })
-    trace.exit("score_and_take", [o["symbol"] for o in out])
+    trace.exit("compression_candidates", [o["symbol"] for o in initial_out])
 
-    # enrich candidates with real metrics (compression %, liquidity, RS, ATR%) and thesis
+    # enrich candidates with real metrics (compression %, liquidity, RS, ATR%) and VIGL analysis
     async def _enrich(sym):
         try:
             async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
@@ -645,7 +728,7 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 price_row = next((r for r in rows if r.get("T") == sym), None)
                 
                 if not price_row:
-                    return {"price": 0.0, "dollar_vol": 0.0, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "thesis": f"{sym} data unavailable."}
+                    return {"price": 0.0, "dollar_vol": 0.0, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "vigl_score": 0.0, "wolf_risk": 0.0, "volume_spike": 0.0, "factors": {}, "thesis": f"{sym} data unavailable."}
                 
                 price = float(price_row.get("c") or 0.0)
                 volume = float(price_row.get("v") or 0.0)
@@ -654,33 +737,204 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 # Get historical bars for metrics
                 rows = await _daily_bars(client, sym, limit=LOOKBACK_DAYS+25)
                 if not rows:
-                    return {"price": price, "dollar_vol": dollar_vol, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "thesis": f"{sym} no historical data."}
+                    return {"price": price, "dollar_vol": dollar_vol, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "vigl_score": 0.0, "wolf_risk": 0.0, "volume_spike": 0.0, "factors": {}, "thesis": f"{sym} no historical data."}
                 
                 atrp = _atr_pct(rows) or 0.0
                 r5 = _return(rows, 5) or 0.0
+                r1 = _return(rows, 1) or 0.0  # 1-day momentum
+                
+                # Calculate volume spike ratio
+                volume_spike = _volume_spike_ratio(rows)
                 
                 # Get compression_pct from existing out data
                 compression_pct = next((t["compression_pct"] for t in tight if t["symbol"] == sym), 0.0)
                 
-                thesis = f"{sym} is in the tightest {round((1.0 - compression_pct)*100,1)}% of its {LOOKBACK_DAYS}d volatility band, 5d RS {r5*100:+.1f}%, ATR% {atrp*100:.1f}, liquidity ${int(dollar_vol)/1_000_000}M."
+                # VIGL Pattern Analysis
+                vigl_score = _calculate_vigl_score(price, volume_spike, r1, atrp)
+                wolf_risk = _calculate_wolf_risk_score(price, volume_spike, r1, atrp, r5)
+                
+                # Factor breakdown for analysis
+                factors = {
+                    "volume_spike_ratio": round(volume_spike, 2),
+                    "price_momentum_1d": round(r1 * 100, 2),  # 1-day % change
+                    "atr_percent": round(atrp * 100, 2),
+                    "compression_percentile": round(compression_pct * 100, 2),
+                    "rs_5d_percent": round(r5 * 100, 2),
+                    "vigl_similarity": round(vigl_score, 3),
+                    "wolf_risk_score": round(wolf_risk, 3),
+                    "is_vigl_candidate": vigl_score >= 0.65,
+                    "is_high_confidence": vigl_score >= 0.80,
+                    "wolf_risk_acceptable": wolf_risk <= WOLF_RISK_THRESHOLD
+                }
+                
+                # Enhanced thesis with VIGL analysis
+                vigl_conf = "HIGH" if vigl_score >= 0.80 else "MEDIUM" if vigl_score >= 0.65 else "LOW"
+                risk_level = "HIGH" if wolf_risk > 0.6 else "MEDIUM" if wolf_risk > 0.3 else "LOW"
+                
+                thesis = f"{sym} VIGL pattern {vigl_conf} confidence ({vigl_score:.2f}), {volume_spike:.1f}x volume spike, {r1*100:+.1f}% momentum, Risk: {risk_level}, Compression: {(1-compression_pct)*100:.1f}% tightest, ATR: {atrp*100:.1f}%, Liquidity: ${int(dollar_vol)/1_000_000}M."
                 
                 return {
                     "price": price,
                     "dollar_vol": dollar_vol, 
                     "compression_pct": compression_pct,
                     "atr_pct": atrp, 
-                    "rs_5d": r5, 
+                    "rs_5d": r5,
+                    "vigl_score": vigl_score,
+                    "wolf_risk": wolf_risk,
+                    "volume_spike": volume_spike,
+                    "factors": factors,
                     "thesis": thesis
                 }
         except Exception as e:
             logger.warning(f"Enrichment failed for {sym}: {e}")
-            return {"price": 0.0, "dollar_vol": 0.0, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "thesis": f"{sym} enrichment failed."}
+            return {"price": 0.0, "dollar_vol": 0.0, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "vigl_score": 0.0, "wolf_risk": 0.0, "volume_spike": 0.0, "factors": {}, "thesis": f"{sym} enrichment failed."}
 
-    enriched = await asyncio.gather(*[_enrich(o["symbol"]) for o in out])
-    for o, extra in zip(out, enriched):
+    enriched = await asyncio.gather(*[_enrich(o["symbol"]) for o in initial_out])
+    for o, extra in zip(initial_out, enriched):
         o.update(extra)
 
-    return (out, trace.to_dict()) if with_trace else out
+    # VIGL Pattern Filtering - keep only promising candidates
+    trace.enter("vigl_filter", [o["symbol"] for o in initial_out])
+    vigl_candidates = []
+    vigl_rejected = []
+    
+    for candidate in initial_out:
+        vigl_score = candidate.get("vigl_score", 0.0)
+        wolf_risk = candidate.get("wolf_risk", 1.0)
+        price = candidate.get("price", 0.0)
+        volume_spike = candidate.get("volume_spike", 0.0)
+        
+        # VIGL Pattern Requirements (based on proven 324% winner)
+        meets_vigl_criteria = (
+            vigl_score >= 0.50 and                    # Minimum VIGL similarity
+            wolf_risk <= WOLF_RISK_THRESHOLD and      # Acceptable risk (avoid WOLF pattern)
+            price >= VIGL_PRICE_MIN and               # Above penny stock threshold
+            price <= VIGL_PRICE_MAX and               # In explosive potential range
+            volume_spike >= VIGL_VOLUME_MIN           # Minimum volume spike
+        )
+        
+        if meets_vigl_criteria:
+            # Enhanced scoring with meaningful differentiation
+            compression_score = candidate.get("score", 0.0)  # Original compression score
+            atr_pct = candidate.get("atr_pct", 0.0)
+            rs_5d = candidate.get("rs_5d", 0.0)
+            
+            # Normalize and scale factors for better differentiation
+            vigl_normalized = (vigl_score - 0.5) / 0.5  # Map 0.5-1.0 to 0.0-1.0
+            compression_normalized = compression_score  # Already 0-1
+            risk_score = max(0, 1.0 - wolf_risk)  # Invert risk for positive scoring
+            
+            # Volume spike with logarithmic scaling for better spread
+            volume_multiplier = min(math.log(volume_spike + 1) / math.log(21), 1.0)  # log scale, cap at 20x
+            
+            # Momentum factor: recent 5-day performance
+            momentum_factor = max(0, min(1, 0.5 + rs_5d * 2))  # -50% to +50% maps to 0-1
+            
+            # Volatility factor: higher ATR = more opportunity
+            volatility_factor = min(atr_pct / 0.15, 1.0)  # 15% ATR = max score
+            
+            # Multi-factor composite with amplified differences
+            composite_score = (
+                vigl_normalized * 0.25 +      # VIGL pattern (reduced weight for differentiation)
+                compression_normalized * 0.20 +  # Compression setup
+                risk_score * 0.15 +           # Risk avoidance
+                volume_multiplier * 0.20 +    # Volume spike (increased weight)
+                momentum_factor * 0.15 +      # Recent momentum
+                volatility_factor * 0.05      # Volatility opportunity
+            )
+            
+            # Apply confidence tiers with score scaling
+            if vigl_score >= 0.80:
+                composite_score *= 1.2  # High confidence boost
+            elif vigl_score >= 0.65:
+                composite_score *= 1.0  # Medium confidence
+            else:
+                composite_score *= 0.8  # Lower confidence penalty
+            
+            # Ensure score stays in reasonable range with spread
+            composite_score = min(max(composite_score, 0.0), 1.0)
+            
+            candidate["score"] = round(composite_score, 4)
+            candidate["reason"] = f"VIGL pattern (similarity: {vigl_score:.2f})"
+            
+            # Add key decision metrics for frontend display
+            candidate["decision_data"] = {
+                "volume_spike_ratio": round(volume_spike, 1),
+                "momentum_1d_pct": round(candidate.get("rs_5d", 0) * 100, 1),  # Using 5d as momentum proxy
+                "vigl_confidence": "HIGH" if vigl_score >= 0.80 else "MEDIUM" if vigl_score >= 0.65 else "LOW",
+                "risk_level": "HIGH" if wolf_risk > 0.6 else "MEDIUM" if wolf_risk > 0.3 else "LOW",
+                "atr_pct": round(atr_pct * 100, 1),
+                "compression_rank": round((1 - compression_score) * 100, 1)  # Higher = tighter compression
+            }
+            
+            vigl_candidates.append(candidate)
+        else:
+            # Track rejection reasons
+            reasons = []
+            if vigl_score < 0.50: reasons.append("low_vigl_similarity")
+            if wolf_risk > WOLF_RISK_THRESHOLD: reasons.append("high_wolf_risk")
+            if price < VIGL_PRICE_MIN: reasons.append("price_too_low")
+            if price > VIGL_PRICE_MAX: reasons.append("price_too_high")
+            if volume_spike < VIGL_VOLUME_MIN: reasons.append("insufficient_volume_spike")
+            
+            vigl_rejected.append({
+                "symbol": candidate["symbol"], 
+                "reason": "_".join(reasons),
+                "vigl_score": round(vigl_score, 3),
+                "wolf_risk": round(wolf_risk, 3),
+                "price": price,
+                "volume_spike": round(volume_spike, 1)
+            })
+    
+    trace.exit("vigl_filter", [c["symbol"] for c in vigl_candidates], vigl_rejected)
+    
+    # Intelligent quality filtering for top-tier recommendations
+    trace.enter("quality_filter", [c["symbol"] for c in vigl_candidates])
+    
+    # Sort by enhanced VIGL score
+    vigl_candidates.sort(key=lambda x: x["score"], reverse=True)
+    
+    # Apply quality tiers for intelligent filtering
+    high_confidence = [c for c in vigl_candidates if c.get("vigl_score", 0) >= 0.80]
+    medium_confidence = [c for c in vigl_candidates if 0.65 <= c.get("vigl_score", 0) < 0.80]
+    
+    # Build final selection prioritizing quality over quantity
+    final_out = []
+    target_count = limit or MAX_CANDIDATES
+    
+    # Always include high confidence picks (up to 3)
+    final_out.extend(high_confidence[:3])
+    
+    # Fill remaining slots with best medium confidence picks
+    remaining_slots = target_count - len(final_out)
+    if remaining_slots > 0:
+        # Get medium confidence picks that aren't already included
+        available_medium = [c for c in medium_confidence if c not in final_out]
+        final_out.extend(available_medium[:remaining_slots])
+    
+    # If still need more, take remaining from any tier (backup)
+    if len(final_out) < target_count:
+        remaining_slots = target_count - len(final_out)
+        remaining_candidates = [c for c in vigl_candidates if c not in final_out]
+        final_out.extend(remaining_candidates[:remaining_slots])
+    
+    # Quality metrics for trace
+    quality_metrics = {
+        "high_confidence_count": len([c for c in final_out if c.get("vigl_score", 0) >= 0.80]),
+        "medium_confidence_count": len([c for c in final_out if 0.65 <= c.get("vigl_score", 0) < 0.80]),
+        "avg_score": round(sum(c["score"] for c in final_out) / len(final_out), 4) if final_out else 0,
+        "score_range": {
+            "min": round(min(c["score"] for c in final_out), 4) if final_out else 0,
+            "max": round(max(c["score"] for c in final_out), 4) if final_out else 0
+        }
+    }
+    
+    trace.exit("quality_filter", [c["symbol"] for c in final_out])
+    trace.exit("final_selection", [c["symbol"] for c in final_out])
+    
+    logger.info(f"VIGL Discovery: {len(final_out)} candidates selected from {len(initial_out)} compressed stocks")
+    
+    return (final_out, trace.to_dict()) if with_trace else final_out
 
 def main():
     """Main entry point with Redis locking using live selector"""
