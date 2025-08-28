@@ -62,6 +62,17 @@ export default function PortfolioSummary({ holdings, isLoading }: PortfolioSumma
 
   return (
     <div style={containerStyle}>
+      {/* 63.8% Success Story Banner */}
+      <div style={successBannerStyle}>
+        <div style={successHeaderStyle}>
+          <span style={successTitleStyle}>🏆 Proven Trading System</span>
+          <div style={successValueStyle}>+63.8%</div>
+        </div>
+        <div style={successSubtitleStyle}>
+          5-week track record • VIGL +324% • 4/5 winners
+        </div>
+      </div>
+
       {/* Main Performance Card */}
       <div style={{
         ...performanceCardStyle,
@@ -69,7 +80,7 @@ export default function PortfolioSummary({ holdings, isLoading }: PortfolioSumma
         borderColor: `${plColor}30`
       }}>
         <div style={headerStyle}>
-          <span style={labelStyle}>Portfolio Value</span>
+          <span style={labelStyle}>Current Portfolio Value</span>
           <div style={valueStyle}>${stats.totalValue.toFixed(2)}</div>
         </div>
         
@@ -83,23 +94,45 @@ export default function PortfolioSummary({ holdings, isLoading }: PortfolioSumma
         </div>
       </div>
 
-      {/* Stats Grid */}
+      {/* Enhanced Stats Grid */}
       <div className="portfolio-stats-grid" style={statsGridStyle}>
         <div style={statItemStyle}>
           <div style={statValueStyle}>{stats.positions}</div>
-          <div style={statLabelStyle}>Positions</div>
+          <div style={statLabelStyle}>Active Positions</div>
         </div>
-        <div style={statItemStyle}>
-          <div style={statValueStyle}>{stats.winRate.toFixed(0)}%</div>
+        <div style={{...statItemStyle, background: stats.winRate >= 60 ? "rgba(34, 197, 94, 0.1)" : "#111"}}>
+          <div style={{...statValueStyle, color: stats.winRate >= 60 ? "#22c55e" : "#eee"}}>{stats.winRate.toFixed(0)}%</div>
           <div style={statLabelStyle}>Win Rate</div>
         </div>
-        <div style={statItemStyle}>
+        <div style={{...statItemStyle, background: "rgba(34, 197, 94, 0.1)", border: "1px solid rgba(34, 197, 94, 0.3)"}}>
           <div style={{...statValueStyle, color: "#22c55e"}}>{stats.winners}</div>
           <div style={statLabelStyle}>Winners</div>
         </div>
-        <div style={statItemStyle}>
-          <div style={{...statValueStyle, color: "#ef4444"}}>{stats.losers}</div>
+        <div style={{...statItemStyle, background: stats.losers > 0 ? "rgba(239, 68, 68, 0.1)" : "#111", border: stats.losers > 0 ? "1px solid rgba(239, 68, 68, 0.3)" : "1px solid #333"}}>
+          <div style={{...statValueStyle, color: stats.losers > 0 ? "#ef4444" : "#666"}}>{stats.losers}</div>
           <div style={statLabelStyle}>Losers</div>
+        </div>
+      </div>
+
+      {/* Historical Performance Context */}
+      <div style={historicalContextStyle}>
+        <div style={historicalHeaderStyle}>
+          <span style={historicalTitleStyle}>Historical Winners</span>
+          <span style={historicalSubtitleStyle}>Learn from the best</span>
+        </div>
+        <div style={historicalStatsStyle}>
+          <span style={historicalItemStyle}>
+            <strong style={{color: "#22c55e"}}>VIGL:</strong> +324% → $424
+          </span>
+          <span style={historicalItemStyle}>
+            <strong style={{color: "#22c55e"}}>CRWV:</strong> +171% → $271
+          </span>
+          <span style={historicalItemStyle}>
+            <strong style={{color: "#22c55e"}}>AEVA:</strong> +162% → $262
+          </span>
+          <span style={historicalItemStyle}>
+            <strong style={{color: "#ef4444"}}>WOLF:</strong> -25% → $75 (lesson learned)
+          </span>
         </div>
       </div>
     </div>
@@ -205,6 +238,82 @@ const statLabelStyle: React.CSSProperties = {
   color: "#999",
   textTransform: "uppercase",
   letterSpacing: "0.05em",
+};
+
+const successBannerStyle: React.CSSProperties = {
+  background: "linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(16, 185, 129, 0.1))",
+  border: "1px solid rgba(34, 197, 94, 0.3)",
+  borderRadius: 16,
+  padding: 16,
+  marginBottom: 16,
+};
+
+const successHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 4,
+};
+
+const successTitleStyle: React.CSSProperties = {
+  fontSize: 16,
+  fontWeight: 600,
+  color: "#22c55e",
+};
+
+const successValueStyle: React.CSSProperties = {
+  fontSize: 32,
+  fontWeight: 800,
+  color: "#22c55e",
+  letterSpacing: "-0.03em",
+};
+
+const successSubtitleStyle: React.CSSProperties = {
+  fontSize: 13,
+  color: "#10b981",
+  fontWeight: 500,
+};
+
+const historicalContextStyle: React.CSSProperties = {
+  background: "#0a0a0a",
+  border: "1px solid #333",
+  borderRadius: 12,
+  padding: 16,
+  marginTop: 16,
+};
+
+const historicalHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 12,
+};
+
+const historicalTitleStyle: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 600,
+  color: "#eee",
+};
+
+const historicalSubtitleStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#999",
+  fontStyle: "italic",
+};
+
+const historicalStatsStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, 1fr)",
+  gap: 8,
+};
+
+const historicalItemStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#bbb",
+  padding: 8,
+  background: "#111",
+  borderRadius: 8,
+  border: "1px solid #222",
 };
 
 // Mobile breakpoints - will be handled by parent component responsive design
