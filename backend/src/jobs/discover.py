@@ -827,11 +827,18 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                     "wolf_risk_acceptable": wolf_risk <= WOLF_RISK_THRESHOLD
                 }
                 
-                # Enhanced thesis with VIGL analysis
+                # Enhanced thesis with VIGL analysis - FIXED DATA ACCURACY
                 vigl_conf = "HIGH" if vigl_score >= 0.80 else "MEDIUM" if vigl_score >= 0.65 else "LOW"
                 risk_level = "HIGH" if wolf_risk > 0.6 else "MEDIUM" if wolf_risk > 0.3 else "LOW"
                 
-                thesis = f"{sym} VIGL pattern {vigl_conf} confidence ({vigl_score:.2f}), {volume_spike:.1f}x volume spike, {r1*100:+.1f}% momentum, Risk: {risk_level}, Compression: {(1-compression_pct)*100:.1f}% tightest, ATR: {atrp*100:.1f}%, Liquidity: ${int(dollar_vol)/1_000_000}M."
+                # FIX: Use 5-day momentum (r5) as it's more reliable than 1-day (r1)
+                momentum_pct = r5 * 100 if r5 is not None else 0.0
+                
+                # FIX: Compression percentile (lower = tighter compression, higher = looser)
+                compression_percentile = compression_pct * 100
+                compression_desc = f"{compression_percentile:.1f}% compression" if compression_percentile > 0 else "tight compression"
+                
+                thesis = f"{sym} VIGL pattern {vigl_conf} confidence ({vigl_score:.2f}), {volume_spike:.1f}x volume spike, {momentum_pct:+.1f}% 5d momentum, Risk: {risk_level}, {compression_desc}, ATR: {atrp*100:.1f}%, Liquidity: ${int(dollar_vol)/1_000_000:.1f}M."
                 
                 return {
                     "price": price,
