@@ -24,14 +24,42 @@ export default function TopRecommendations() {
       try {
         const data = await getJSON(`${API_BASE}/discovery/contenders`);
         if (Array.isArray(data)) {
-          const mapped = data.map((rec: any) => ({
-            symbol: rec.symbol || "N/A",
-            thesis: rec.thesis || "Strong technical and fundamental signals suggest upward momentum potential.",
-            current_price: rec.price || rec.current_price || 0,
-            target_price: rec.target_price || (rec.price || rec.current_price || 0) * 1.25,
-            confidence: Math.round((rec.confidence || rec.score || 0.75) * 100),
-            score: rec.score || 75
-          }));
+          const mapped = data.map((rec: any) => {
+            const currentPrice = rec.price || rec.current_price || 0;
+            
+            // FIXED: Calculate realistic target prices based on actual data
+            let targetPrice = currentPrice;
+            
+            if (rec.factors) {
+              // Use momentum and volatility data for realistic targets
+              const momentum = rec.factors.rs_5d_percent || 0;
+              const atrPct = rec.factors.atr_percent || 4.0;
+              const viglScore = rec.factors.vigl_similarity || 0;
+              
+              // Conservative target: Current price + (ATR * VIGL confidence factor)
+              // This gives realistic 3-8% targets instead of fake 25%
+              const confidenceFactor = Math.min(viglScore * 1.2, 1.0); // Max 1.0x multiplier
+              const targetMultiplier = 1 + (atrPct / 100) * confidenceFactor;
+              targetPrice = currentPrice * targetMultiplier;
+              
+              // If momentum is negative, reduce target accordingly  
+              if (momentum < 0) {
+                targetPrice = currentPrice * (1 + (atrPct / 100) * 0.5); // Reduced target for negative momentum
+              }
+            } else {
+              // Fallback: Conservative 5% target if no factors available
+              targetPrice = currentPrice * 1.05;
+            }
+            
+            return {
+              symbol: rec.symbol || "N/A",
+              thesis: rec.thesis || "Strong technical and fundamental signals suggest upward momentum potential.",
+              current_price: currentPrice,
+              target_price: targetPrice,
+              confidence: Math.round((rec.confidence || rec.score || 0.75) * 100),
+              score: rec.score || 75
+            };
+          });
           setRecommendations(mapped);
         }
       } catch (error) {
