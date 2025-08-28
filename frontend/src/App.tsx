@@ -1,41 +1,40 @@
 import React from "react";
-import NotificationDashboard from "./components/NotificationDashboard";
-import Recommendations from "./components/Recommendations";
-import Holdings from "./components/Holdings";
-import MarketStatus from "./components/MarketStatus";
+import TopRecommendations from "./components/TopRecommendations";
+import PortfolioTiles from "./components/PortfolioTiles";
 
 export default function App() {
   return (
-    <div style={{fontFamily:"ui-sans-serif, system-ui", color:"#e7e7e7", background:"#000"}}>
-      {/* Primary Dashboard Interface */}
-      <NotificationDashboard />
-      
-      {/* Divider */}
-      <div style={{margin:"48px 0", borderTop:"2px solid #333", position:"relative"}}>
-        <div style={{
-          position:"absolute", 
-          top:"-12px", 
-          left:"50%", 
-          transform:"translateX(-50%)", 
-          background:"#000", 
-          padding:"0 16px", 
-          color:"#666", 
-          fontSize:"14px",
-          fontWeight:600
+    <div style={{
+      fontFamily: "ui-sans-serif, system-ui", 
+      color: "#e7e7e7", 
+      background: "#000",
+      minHeight: "100vh",
+      padding: "20px"
+    }}>
+      {/* Discovery Section */}
+      <div style={{ marginBottom: "40px" }}>
+        <h1 style={{ 
+          fontSize: "24px", 
+          fontWeight: 700, 
+          marginBottom: "20px",
+          color: "#fff"
         }}>
-          LEGACY INTERFACE
-        </div>
+          🎯 Top Stock Recommendations
+        </h1>
+        <TopRecommendations />
       </div>
-      
-      {/* Legacy Interface */}
-      <div className="container-responsive">
-        <MarketStatus />
-        
-        <h2 style={{margin:"6px 0 14px"}}>Squeeze Candidates</h2>
-        <Recommendations />
-        
-        <h2 style={{margin:"22px 0 14px"}}>Your Holdings</h2>
-        <Holdings />
+
+      {/* Portfolio Section */}
+      <div>
+        <h1 style={{ 
+          fontSize: "24px", 
+          fontWeight: 700, 
+          marginBottom: "20px",
+          color: "#fff"
+        }}>
+          📊 Current Holdings
+        </h1>
+        <PortfolioTiles />
       </div>
     </div>
   );

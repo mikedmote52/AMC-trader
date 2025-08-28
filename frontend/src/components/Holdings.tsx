@@ -58,8 +58,15 @@ export default function Holdings() {
     setShowTradeModal(true);
   };
 
-  const findContender = (symbol: string) => {
-    return contenders.find(c => c.symbol === symbol);
+  const getRecommendation = (holding: Holding) => {
+    const plPct = holding.unrealized_pl_pct;
+    const suggestion = holding.suggestion || "";
+    
+    if (plPct <= -80) return { action: "SELL", reason: "Heavy loss - cut losses", color: "#ef4444" };
+    if (plPct <= -50) return { action: "HOLD", reason: "Monitor closely", color: "#f59e0b" };
+    if (plPct >= 20) return { action: "HOLD", reason: "Strong performer", color: "#22c55e" };
+    if (suggestion.includes("reduce")) return { action: "SELL", reason: "Reduce position", color: "#ef4444" };
+    return { action: "HOLD", reason: "Monitor", color: "#6b7280" };
   };
 
   if (err) return <div style={{padding:12, color:"#c00"}}>Error loading holdings: {err}</div>;
@@ -70,54 +77,62 @@ export default function Holdings() {
       <PortfolioSummary holdings={holdings} isLoading={!holdings.length && !err} />
       <div className="grid-responsive">
         {holdings.map((holding) => {
-          const contender = findContender(holding.symbol);
           const plColor = holding.unrealized_pl >= 0 ? "#22c55e" : "#ef4444";
+          const recommendation = getRecommendation(holding);
           
           return (
             <div key={holding.symbol} style={cardStyle}>
               <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
-                <div style={{fontWeight:700, fontSize:16}}>{holding.symbol}</div>
-                {contender?.score && (
-                  <div style={{
-                    background: contender.score >= 75 ? "#16a34a" : contender.score >= 70 ? "#d97706" : "#6b7280",
-                    color: "white",
-                    padding: "2px 8px",
-                    borderRadius: 999,
-                    fontSize: 12,
-                    fontWeight: 600
-                  }}>
-                    {Math.round(contender.score)}
-                  </div>
-                )}
+                <div style={{fontWeight:700, fontSize:18}}>{holding.symbol}</div>
+                <div style={{
+                  background: recommendation.color,
+                  color: "white",
+                  padding: "4px 12px",
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  textTransform: "uppercase"
+                }}>
+                  {recommendation.action}
+                </div>
               </div>
               
-              <div style={{fontSize:13, marginBottom:8, lineHeight:1.4}}>
-                <div>Qty: {holding.qty} • Avg: ${holding.avg_entry_price.toFixed(2)}</div>
-                <div>Last: ${holding.last_price.toFixed(2)} • Value: ${holding.market_value.toFixed(2)}</div>
-                <div style={{color: plColor}}>
+              <div style={{fontSize:14, marginBottom:12, color: recommendation.color, fontWeight:600}}>
+                {recommendation.reason}
+              </div>
+              
+              <div style={{fontSize:13, marginBottom:12, lineHeight:1.4}}>
+                <div>Position: {holding.qty} shares @ ${holding.avg_entry_price.toFixed(2)}</div>
+                <div>Current: ${holding.last_price.toFixed(2)} • Value: ${holding.market_value.toFixed(2)}</div>
+                <div style={{color: plColor, fontSize:15, fontWeight:600}}>
                   P&L: ${holding.unrealized_pl.toFixed(2)} ({holding.unrealized_pl_pct.toFixed(1)}%)
                 </div>
               </div>
               
-              {contender?.thesis && (
-                <div style={{fontSize:12, color:"#bbb", marginBottom:12, lineHeight:1.3}}>
-                  {contender.thesis}
-                </div>
-              )}
-              
               <div style={{display:"flex", gap:8}}>
-                <button 
-                  onClick={() => handleTrade(holding.symbol, "BUY")} 
-                  style={buyBtn}
-                >
-                  Buy / Increase
-                </button>
-                <button 
-                  onClick={() => handleTrade(holding.symbol, "SELL", holding.qty)} 
-                  style={sellBtn}
-                >
-                  Reduce / Sell
-                </button>
+                {recommendation.action === "SELL" ? (
+                  <button 
+                    onClick={() => handleTrade(holding.symbol, "SELL", holding.qty)} 
+                    style={{...sellBtn, flex: 1}}
+                  >
+                    Sell Position
+                  </button>
+                ) : (
+                  <>
+                    <button 
+                      onClick={() => handleTrade(holding.symbol, "BUY")} 
+                      style={{...buyBtn, opacity: 0.7}}
+                    >
+                      Buy More
+                    </button>
+                    <button 
+                      onClick={() => handleTrade(holding.symbol, "SELL", Math.floor(holding.qty / 2))} 
+                      style={{...sellBtn, opacity: 0.7}}
+                    >
+                      Reduce
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           );
