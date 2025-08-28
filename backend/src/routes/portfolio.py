@@ -326,30 +326,28 @@ async def get_holdings() -> Dict:
         contenders = json.loads(get_redis_client().get("amc:discovery:contenders.latest") or "[]")
         by_sym = {c["symbol"]: c for c in contenders if isinstance(c, dict)}
         
-        # Try existing portfolio service
+        # CRITICAL FIX: Always use AlpacaBroker for accurate position data
+        # The portfolio service returns simplified/wrong data structure
         try:
-            from backend.src.services.portfolio import get_current_holdings_usd
-            holdings_dict = await get_current_holdings_usd()
-            # Convert dict to position format
-            for symbol, value in holdings_dict.items():
-                positions.append({
-                    "symbol": symbol,
-                    "qty": 1,  # Default, may need to be fetched from broker
-                    "avg_entry_price": value,
-                    "current_price": value,
-                })
-        except ImportError:
-            pass
-            
-        # Try alternative portfolio service
-        if not positions:
+            from backend.src.services.broker_alpaca import AlpacaBroker
+            broker = AlpacaBroker()
+            raw_positions = await broker.get_positions()
+            if raw_positions:
+                positions = raw_positions
+        except (ImportError, AttributeError):
+            # Only use portfolio service as last resort fallback
             try:
-                from backend.src.services.broker_alpaca import AlpacaBroker
-                broker = AlpacaBroker()
-                raw_positions = await broker.get_positions()
-                if raw_positions:
-                    positions = raw_positions
-            except (ImportError, AttributeError):
+                from backend.src.services.portfolio import get_current_holdings_usd
+                holdings_dict = await get_current_holdings_usd()
+                # Convert dict to position format (simplified)
+                for symbol, value in holdings_dict.items():
+                    positions.append({
+                        "symbol": symbol,
+                        "qty": 1,  # Default, may need to be fetched from broker
+                        "avg_entry_price": value,
+                        "current_price": value,
+                    })
+            except ImportError:
                 pass
         
         # CRITICAL FIX: Don't fetch additional prices - use broker data directly
