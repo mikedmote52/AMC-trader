@@ -182,17 +182,26 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
     qty = int(pos["qty"])
     avg_entry_price = float(pos["avg_entry_price"])
     
-    # Use real current price from Polygon API, fallback to broker price
-    current_price = 0.0
-    price_source = "unknown"
+    # CRITICAL FIX: Use broker current_price for consistency with P&L calculations
+    # The broker's current_price field reflects the paper trading account's valuation
+    current_price = float(pos.get("current_price") or pos.get("asset_price") or avg_entry_price)
+    price_source = "broker"
     
+    # Override with live prices only if broker price is clearly stale/invalid
     if current_prices and symbol in current_prices:
-        current_price = current_prices[symbol]
-        price_source = "alpaca"  # Most likely from Alpaca positions now
-    else:
-        # Fallback to broker price (may be stale)
-        current_price = float(pos.get("current_price") or pos.get("asset_price") or avg_entry_price)
-        price_source = "broker"
+        live_price = current_prices[symbol]
+        broker_price = current_price
+        
+        # Use live price only if broker price seems invalid (zero or missing)
+        if broker_price <= 0:
+            current_price = live_price
+            price_source = "live_market"
+        # If broker price exists but is drastically different from live price (>90% diff), flag for review
+        elif broker_price > 0 and live_price > 0:
+            price_diff_pct = abs(broker_price - live_price) / broker_price * 100
+            if price_diff_pct > 90:
+                # Keep broker price for consistency with P&L but flag the discrepancy
+                price_source = f"broker_vs_live_{price_diff_pct:.1f}%_diff"
     
     # Price validation - flag if price seems incorrect
     price_quality_flags = []
