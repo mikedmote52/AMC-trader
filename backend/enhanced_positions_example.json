@@ -1,0 +1,107 @@
+{
+  "success": true,
+  "data": {
+    "positions": [
+      {
+        "symbol": "AMDL",
+        "unrealized_pl_pct": 1.37,
+        "market_value": 1200.00,
+        "thesis": "AMDL: Modest performer +1.4% gain in Biotech sector. Early stage development, showing neutral momentum. Current price $8.45. Biotech sector subject to regulatory and trial outcome volatility. Risk assessment: manageable risk profile.",
+        "confidence": 0.700,
+        "suggestion": "hold",
+        "reasoning": "Neutral 1.4% performance suggests thesis developing as expected. Confidence level 0.7 based on performance consistency and market factors. Recommend holding current position size pending further development. Biotech sector context considered.",
+        "sector": "Biotech",
+        "risk_level": "MODERATE",
+        "thesis_source": "Enhanced Analysis"
+      },
+      {
+        "symbol": "CARS", 
+        "unrealized_pl_pct": -0.65,
+        "market_value": 1500.00,
+        "thesis": "CARS: Modest performer +-0.7% gain in Automotive sector. Early stage development, showing neutral momentum. Current price $15.20. Auto sector facing EV transition and supply chain pressures. Risk assessment: manageable risk profile.",
+        "confidence": 0.550,
+        "suggestion": "hold",
+        "reasoning": "Neutral -0.7% performance suggests thesis developing as expected. Confidence level 0.6 based on performance consistency and market factors. Recommend holding current position size pending further development. Automotive sector context considered.",
+        "sector": "Automotive",
+        "risk_level": "MODERATE", 
+        "thesis_source": "Enhanced Analysis"
+      },
+      {
+        "symbol": "KSS",
+        "unrealized_pl_pct": 15.11,
+        "market_value": 1800.00,
+        "thesis": "KSS: Strong performer +15.1% gain in Retail sector. Positive momentum, retail recovery play showing strong fundamentals. Current price $18.75. Retail sector impacted by consumer spending and e-commerce trends. Risk assessment: manageable risk profile.",
+        "confidence": 0.850,
+        "suggestion": "increase",
+        "reasoning": "Strong +15.1% performance indicates successful thesis execution. Confidence level 0.9 based on performance consistency and market factors. Recommend increasing position due to strong performance and positive outlook. Retail sector context considered.",
+        "sector": "Retail",
+        "risk_level": "MODERATE",
+        "thesis_source": "Enhanced Analysis"
+      },
+      {
+        "symbol": "UP",
+        "unrealized_pl_pct": 108.98,
+        "market_value": 2500.00,
+        "thesis": "UP: Exceptional performer +109.0% gain in Cannabis sector. Strong momentum play with elevated volatility risk, showing strong bullish momentum. Current price $12.50. Cannabis sector with regulatory and banking challenges. Risk assessment: elevated volatility risk due to large gains.",
+        "confidence": 0.950,
+        "suggestion": "hold",
+        "reasoning": "Strong +109.0% performance indicates successful thesis execution. Confidence level 1.0 based on performance consistency and market factors. Recommend holding current position size pending further development due to elevated risk from large gains. Cannabis sector context considered.",
+        "sector": "Cannabis",
+        "risk_level": "ELEVATED",
+        "thesis_source": "Enhanced Analysis"
+      },
+      {
+        "symbol": "WULF",
+        "unrealized_pl_pct": 10.30,
+        "market_value": 3200.00,
+        "thesis": "WULF: Strong performer +10.3% gain in Bitcoin Mining sector. Positive momentum correlated with crypto market recovery, high volatility expected. Current price $22.15. Bitcoin mining sector highly correlated with crypto prices. Risk assessment: manageable risk profile.",
+        "confidence": 0.800,
+        "suggestion": "increase",
+        "reasoning": "Strong +10.3% performance indicates successful thesis execution. Confidence level 0.8 based on performance consistency and market factors. Recommend increasing position due to strong performance and positive outlook. Bitcoin Mining sector context considered.",
+        "sector": "Bitcoin Mining",
+        "risk_level": "MODERATE",
+        "thesis_source": "Enhanced Analysis"
+      },
+      {
+        "symbol": "ITOS",
+        "unrealized_pl_pct": 0.04,
+        "thesis": "ITOS VIGL pattern MEDIUM confidence (0.70), 1.8x volume spike, +0.0% 5d momentum, Risk: LOW, 1.7% compression, ATR: 5.2%, Liquidity: $26.3M.",
+        "confidence": 0.5754,
+        "suggestion": "hold",
+        "reasoning": "VIGL pattern detected with 57.5% confidence",
+        "thesis_source": "VIGL"
+      },
+      {
+        "symbol": "SHC",
+        "unrealized_pl_pct": -2.91,
+        "thesis": "SHC VIGL pattern MEDIUM confidence (0.71), 1.5x volume spike, -3.0% 5d momentum, Risk: LOW, 1.7% compression, ATR: 6.9%, Liquidity: $25.3M.",
+        "confidence": 0.5703,
+        "suggestion": "hold",
+        "reasoning": "VIGL pattern detected with 57.0% confidence",
+        "thesis_source": "VIGL"
+      },
+      {
+        "symbol": "WOOF",
+        "unrealized_pl_pct": 0.65,
+        "thesis": "WOOF VIGL pattern MEDIUM confidence (0.68), 1.0x volume spike, +3.9% 5d momentum, Risk: LOW, 1.7% compression, ATR: 4.4%, Liquidity: $13.7M.",
+        "confidence": 0.5563,
+        "suggestion": "hold",
+        "reasoning": "VIGL pattern detected with 55.6% confidence",
+        "thesis_source": "VIGL"
+      }
+    ],
+    "summary": {
+      "total_positions": 15,
+      "positions_with_thesis": 15,
+      "enhanced_analysis_count": 12,
+      "vigl_pattern_count": 3,
+      "avg_confidence": 0.712,
+      "recommendations": {
+        "increase": 3,
+        "hold": 11,
+        "reduce": 0,
+        "review": 1
+      }
+    }
+  }
+}

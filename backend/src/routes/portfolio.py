@@ -174,8 +174,8 @@ async def fetch_symbol_price(client: httpx.AsyncClient, url: str, symbol: str) -
 
 # Historical performance functions removed - using only real portfolio data
 
-def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, float] = None) -> Dict:
-    """Build normalized fields using broker position data with real current prices"""
+async def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, float] = None) -> Dict:
+    """Build normalized fields using broker position data with enhanced thesis generation"""
     symbol = pos.get("symbol", "")
     
     # Get quantities and entry price from broker
@@ -285,7 +285,7 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
     else:
         unrealized_pl_pct = 0.0
     
-    # Join discovery context from Redis
+    # Build base holding data
     holding = {
         "symbol": symbol,
         "qty": qty,
@@ -302,18 +302,43 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
         "price_quality_flags": price_quality_flags
     }
     
-    holding["thesis"] = by_sym.get(symbol, {}).get("thesis")
-    holding["confidence"] = by_sym.get(symbol, {}).get("confidence") or by_sym.get(symbol, {}).get("score")
-    # Enhanced suggestion logic with data quality considerations
+    # Check for VIGL pattern data first (priority)
+    vigl_data = by_sym.get(symbol, {})
+    if vigl_data.get("thesis") and vigl_data.get("confidence"):
+        # Use VIGL thesis and confidence
+        holding["thesis"] = vigl_data.get("thesis")
+        holding["confidence"] = vigl_data.get("confidence") or vigl_data.get("score", 0.0)
+        holding["suggestion"] = vigl_data.get("suggestion", "hold")
+        holding["reasoning"] = f"VIGL pattern detected with {vigl_data.get('confidence', 0)*100:.1f}% confidence"
+        holding["thesis_source"] = "VIGL"
+    else:
+        # Generate enhanced thesis for non-VIGL positions
+        try:
+            from ..services.thesis_generator import ThesisGenerator
+            generator = ThesisGenerator()
+            thesis_data = await generator.generate_thesis_for_position(symbol, holding)
+            
+            holding["thesis"] = thesis_data["thesis"]
+            holding["confidence"] = thesis_data["confidence"]
+            holding["suggestion"] = thesis_data["recommendation"]
+            holding["reasoning"] = thesis_data["reasoning"]
+            holding["sector"] = thesis_data["sector"]
+            holding["risk_level"] = thesis_data["risk_level"]
+            holding["thesis_source"] = "Enhanced Analysis"
+        except Exception as e:
+            print(f"Error generating enhanced thesis for {symbol}: {e}")
+            # Fallback to basic analysis
+            holding["thesis"] = f"{symbol}: Current P&L {unrealized_pl_pct:.1f}%. Position requires detailed analysis."
+            holding["confidence"] = 0.5
+            holding["suggestion"] = "hold"
+            holding["reasoning"] = "Basic analysis pending enhanced data"
+            holding["thesis_source"] = "Basic"
+    
+    # Final suggestion logic with data quality considerations
     all_flags = data_quality_flags + price_quality_flags
     if len(all_flags) > 0:
-        holding["suggestion"] = "review"  # Flag for manual review
-    else:
-        holding["suggestion"] = (
-            "increase" if (holding.get("confidence") or 0) >= 0.97
-            else "reduce" if holding["unrealized_pl_pct"] < -5.0
-            else "hold"
-        )
+        holding["suggestion"] = "review"  # Override for positions with data issues
+        holding["reasoning"] = f"Data quality issues detected: {', '.join(all_flags)}"
     
     return holding
 
@@ -354,12 +379,12 @@ async def get_holdings() -> Dict:
         # The broker positions already have current_price and unrealized_pl
         # Additional price fetching was causing data inconsistencies
         
-        # Build normalized holdings using broker data only
+        # Build normalized holdings using broker data with enhanced thesis generation
         normalized_positions = []
         for pos in positions:
             try:
-                # Use broker data directly without additional price fetching
-                normalized_pos = build_normalized_holding(pos, by_sym, None)
+                # Use enhanced async thesis generation
+                normalized_pos = await build_normalized_holding(pos, by_sym, None)
                 normalized_positions.append(normalized_pos)
             except Exception as e:
                 # Log the error but skip positions that can't be normalized

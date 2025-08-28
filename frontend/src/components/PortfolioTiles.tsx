@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { API_BASE } from "../config";
-import { getJSON } from "../lib/api";
+import { getJSON, executePositionTrade } from "../lib/api";
 import TradeModal from "./TradeModal";
 
 type Holding = {
@@ -14,6 +14,10 @@ type Holding = {
   suggestion: string;
   data_quality_flags: string[];
   needs_review: boolean;
+  price_source: string;
+  price_quality_flags: string[];
+  thesis?: string | null;
+  confidence?: number | null;
 };
 
 type TradePreset = {
@@ -28,22 +32,74 @@ export default function PortfolioTiles() {
   const [error, setError] = useState<string>("");
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradePreset, setTradePreset] = useState<TradePreset | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+
+  const loadHoldings = async () => {
+    try {
+      setLoading(true);
+      
+      // Add cache-busting timestamp to prevent stale data
+      const cacheBuster = Date.now();
+      const response = await getJSON(`${API_BASE}/portfolio/holdings?t=${cacheBuster}`);
+      
+      if (response?.success && response?.data?.positions) {
+        const positions = response.data.positions;
+        
+        // Data validation: Log position data for all 4 critical positions
+        const criticalPositions = ["KSS", "QUBT", "AMDL", "CARS"];
+        
+        console.log("=== CRITICAL POSITIONS DATA UPDATE ===");
+        criticalPositions.forEach(symbol => {
+          const position = positions.find((p: Holding) => p.symbol === symbol);
+          if (position) {
+            console.log(`${symbol} Position:`, {
+              symbol: position.symbol,
+              qty: position.qty,
+              avg_entry_price: position.avg_entry_price,
+              last_price: position.last_price,
+              unrealized_pl: position.unrealized_pl,
+              unrealized_pl_pct: position.unrealized_pl_pct,
+              price_source: position.price_source,
+              timestamp: new Date().toISOString()
+            });
+            
+            // Validate expected values for KSS specifically
+            if (symbol === "KSS") {
+              const expectedQty = 8;
+              const expectedEntryPrice = 13.30; // approximately
+              if (position.qty === expectedQty) {
+                console.log("✅ KSS quantity is correct:", position.qty);
+              } else {
+                console.error("❌ KSS quantity mismatch! Expected:", expectedQty, "Got:", position.qty);
+              }
+              
+              if (Math.abs(position.avg_entry_price - expectedEntryPrice) < 0.01) {
+                console.log("✅ KSS entry price is approximately correct:", position.avg_entry_price);
+              } else {
+                console.error("❌ KSS entry price mismatch! Expected ~", expectedEntryPrice, "Got:", position.avg_entry_price);
+              }
+            }
+          } else {
+            console.warn(`${symbol} position not found in data`);
+          }
+        });
+        
+        // Clear existing holdings first to prevent stale data
+        setHoldings([]);
+        // Then set new holdings
+        setHoldings(positions);
+        setLastUpdate(new Date());
+      }
+      setError("");
+    } catch (err: any) {
+      console.error("Portfolio loading error:", err);
+      setError(err?.message || "Failed to load holdings");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadHoldings = async () => {
-      try {
-        const response = await getJSON(`${API_BASE}/portfolio/holdings`);
-        if (response?.success && response?.data?.positions) {
-          setHoldings(response.data.positions);
-        }
-        setError("");
-      } catch (err: any) {
-        setError(err?.message || "Failed to load holdings");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadHoldings();
     const interval = setInterval(loadHoldings, 30000); // Refresh every 30 seconds
     return () => clearInterval(interval);
@@ -53,12 +109,13 @@ export default function PortfolioTiles() {
     const plPct = holding.unrealized_pl_pct;
     
     // Data quality issues
-    if (holding.needs_review || holding.data_quality_flags.length > 0) {
+    if (hasDataQualityIssues(holding)) {
+      const qualityMsg = getDataQualityMessage(holding);
       return { 
         action: "REVIEW" as const, 
-        reason: "Data needs review", 
+        reason: qualityMsg || "Data needs review", 
         color: "#f59e0b",
-        priority: "medium" as const
+        priority: "high" as const
       };
     }
     
@@ -116,16 +173,77 @@ export default function PortfolioTiles() {
     setShowTradeModal(true);
   };
 
-  // Calculate daily P&L (placeholder - would need historical data for real implementation)
-  const getDailyPL = (holding: Holding) => {
-    // For now, simulate daily P&L as a small percentage of total P&L
-    // In a real system, you'd compare today's price vs yesterday's close
-    const dailyPL = holding.unrealized_pl * (Math.random() * 0.1 - 0.05); // -5% to +5% of total P&L
-    const dailyPLPct = holding.last_price * (Math.random() * 0.04 - 0.02); // -2% to +2% daily change
-    return {
-      amount: dailyPL,
-      percentage: (dailyPLPct / holding.last_price) * 100
-    };
+  const handlePositionTrade = async (symbol: string, action: string, holding: Holding) => {
+    try {
+      setError("");
+      
+      // Show confirmation for significant trades
+      const confirmMessage = getConfirmationMessage(action, holding);
+      if (confirmMessage && !confirm(confirmMessage)) {
+        return;
+      }
+
+      // Use the API helper function
+      const result = await executePositionTrade(symbol, action);
+      
+      if (result.success) {
+        alert(`✅ Trade executed: ${result.message}`);
+        console.log("Trade result:", result);
+        // Refresh holdings to show updated position
+        loadHoldings();
+      } else {
+        alert(`❌ Trade failed: ${result.error?.message || "Unknown error"}`);
+        console.error("Trade failed:", result.error);
+      }
+    } catch (err: any) {
+      console.error("Position trade error:", err);
+      alert(`❌ Trade error: ${err?.message || "Failed to execute position trade"}`);
+      setError(err?.message || "Failed to execute position trade");
+    }
+  };
+
+  const getConfirmationMessage = (action: string, holding: Holding) => {
+    const symbol = holding.symbol;
+    const qty = holding.qty;
+    const currentPrice = holding.last_price;
+    
+    switch (action) {
+      case "TAKE_PROFITS":
+        const sellQty = Math.floor(qty * 0.5);
+        const proceeds = (sellQty * currentPrice).toFixed(2);
+        return `Take profits on ${symbol}?\n\nSell ${sellQty} shares (50% of position)\nEstimated proceeds: $${proceeds}`;
+        
+      case "TRIM_POSITION":
+        const trimQty = Math.floor(qty * 0.25);
+        const trimProceeds = (trimQty * currentPrice).toFixed(2);
+        return `Trim ${symbol} position?\n\nSell ${trimQty} shares (25% of position)\nEstimated proceeds: $${trimProceeds}`;
+        
+      case "EXIT_POSITION":
+        const exitProceeds = holding.market_value.toFixed(2);
+        return `Exit entire ${symbol} position?\n\nSell all ${qty} shares\nEstimated proceeds: $${exitProceeds}`;
+        
+      case "ADD_POSITION":
+        return `Add to ${symbol} position?\n\nBuy approximately $500 more\nCurrent price: $${currentPrice.toFixed(2)}`;
+        
+      default:
+        return null;
+    }
+  };
+
+  // Note: Daily P&L would require historical price data
+  // For now, we'll focus on displaying accurate current data
+  const hasDataQualityIssues = (holding: Holding) => {
+    return holding.needs_review || 
+           holding.data_quality_flags.length > 0 || 
+           holding.price_quality_flags.length > 0;
+  };
+
+  const getDataQualityMessage = (holding: Holding) => {
+    const flags = [...holding.data_quality_flags, ...holding.price_quality_flags];
+    if (flags.length > 0) {
+      return flags.join(', ');
+    }
+    return holding.needs_review ? 'Manual review required' : '';
   };
 
   if (loading) {
@@ -153,17 +271,47 @@ export default function PortfolioTiles() {
     );
   }
 
+  const formatLastUpdate = (date: Date | null) => {
+    if (!date) return "Never";
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSecs = Math.floor(diffMs / 1000);
+    
+    if (diffSecs < 60) return `${diffSecs}s ago`;
+    if (diffSecs < 3600) return `${Math.floor(diffSecs / 60)}m ago`;
+    return date.toLocaleTimeString();
+  };
+
   return (
     <>
+      {/* Data Status Header */}
+      <div style={headerContainerStyle}>
+        <div style={statusInfoStyle}>
+          <span style={updateTextStyle}>Last update: {formatLastUpdate(lastUpdate)}</span>
+          <button 
+            onClick={() => loadHoldings()} 
+            disabled={loading}
+            style={refreshButtonStyle}
+          >
+            {loading ? "🔄" : "↻"} Refresh
+          </button>
+        </div>
+        {holdings.length > 0 && (
+          <div style={countStyle}>{holdings.length} positions</div>
+        )}
+      </div>
+
       <div style={containerStyle}>
         {holdings.map((holding) => {
           const recommendation = getRecommendation(holding);
-          const dailyPL = getDailyPL(holding);
           const plColor = holding.unrealized_pl >= 0 ? "#22c55e" : "#ef4444";
-          const dailyColor = dailyPL.amount >= 0 ? "#22c55e" : "#ef4444";
+          const hasQualityIssues = hasDataQualityIssues(holding);
 
           return (
-            <div key={holding.symbol} style={tileStyle}>
+            <div key={holding.symbol} style={{
+              ...tileStyle,
+              border: hasQualityIssues ? "2px solid #f59e0b" : "1px solid #333"
+            }}>
               {/* Header */}
               <div style={headerStyle}>
                 <div style={symbolStyle}>{holding.symbol}</div>
@@ -176,28 +324,44 @@ export default function PortfolioTiles() {
                 </div>
               </div>
 
-              {/* Current Price */}
-              <div style={currentPriceStyle}>
-                ${holding.last_price.toFixed(2)}
+              {/* Current Price with Source */}
+              <div style={priceContainerStyle}>
+                <div style={currentPriceStyle}>
+                  ${holding.last_price.toFixed(2)}
+                </div>
+                <div style={priceSourceStyle}>
+                  via {holding.price_source}
+                </div>
               </div>
 
               {/* Position Info */}
               <div style={positionInfoStyle}>
                 {holding.qty} shares @ ${holding.avg_entry_price.toFixed(2)}
+                {/* Data validation indicator for critical positions */}
+                {(holding.symbol === "KSS" || holding.symbol === "QUBT") && (
+                  <span style={validationBadgeStyle}>✓ BROKER DATA</span>
+                )}
               </div>
+
+              {/* Data Quality Warning */}
+              {hasQualityIssues && (
+                <div style={warningStyle}>
+                  ⚠️ {getDataQualityMessage(holding)}
+                </div>
+              )}
 
               {/* P&L Section */}
               <div style={plSectionStyle}>
                 <div style={plRowStyle}>
-                  <span style={plLabelStyle}>Total P&L:</span>
+                  <span style={plLabelStyle}>Unrealized P&L:</span>
                   <span style={{ ...plValueStyle, color: plColor }}>
                     ${holding.unrealized_pl.toFixed(2)} ({holding.unrealized_pl_pct.toFixed(1)}%)
                   </span>
                 </div>
                 <div style={plRowStyle}>
-                  <span style={plLabelStyle}>Daily P&L:</span>
-                  <span style={{ ...plValueStyle, color: dailyColor }}>
-                    ${dailyPL.amount.toFixed(2)} ({dailyPL.percentage.toFixed(1)}%)
+                  <span style={plLabelStyle}>Market Value:</span>
+                  <span style={plValueStyle}>
+                    ${holding.market_value.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -207,14 +371,14 @@ export default function PortfolioTiles() {
                 {recommendation.reason}
               </div>
 
-              {/* Action Buttons */}
+              {/* Enhanced Action Buttons */}
               <div style={buttonContainerStyle}>
                 {recommendation.action === "SELL" ? (
                   <button 
-                    onClick={() => handleTrade(holding.symbol, "SELL", holding.qty)}
+                    onClick={() => handlePositionTrade(holding.symbol, "EXIT_POSITION", holding)}
                     style={sellButtonStyle}
                   >
-                    Sell Position
+                    Exit Position
                   </button>
                 ) : recommendation.action === "REVIEW" ? (
                   <button 
@@ -224,20 +388,60 @@ export default function PortfolioTiles() {
                     Review Data
                   </button>
                 ) : (
-                  <div style={holdButtonsStyle}>
-                    <button 
-                      onClick={() => handleTrade(holding.symbol, "BUY")}
-                      style={buyButtonStyle}
-                    >
-                      Buy More
-                    </button>
-                    <button 
-                      onClick={() => handleTrade(holding.symbol, "SELL", Math.floor(holding.qty / 2))}
-                      style={reduceButtonStyle}
-                    >
-                      Reduce
-                    </button>
-                  </div>
+                  <>
+                    {/* Primary Action Buttons for Winning Positions */}
+                    {holding.unrealized_pl > 0 && (
+                      <div style={profitActionsStyle}>
+                        <button 
+                          onClick={() => handlePositionTrade(holding.symbol, "TAKE_PROFITS", holding)}
+                          style={takeProfitsButtonStyle}
+                          title="Sell 50% to lock in gains"
+                        >
+                          Take Profits (50%)
+                        </button>
+                        <button 
+                          onClick={() => handlePositionTrade(holding.symbol, "TRIM_POSITION", holding)}
+                          style={trimButtonStyle}
+                          title="Sell 25% to reduce risk"
+                        >
+                          Trim (25%)
+                        </button>
+                      </div>
+                    )}
+                    
+                    {/* Standard Action Buttons */}
+                    <div style={standardActionsStyle}>
+                      <button 
+                        onClick={() => handlePositionTrade(holding.symbol, "ADD_POSITION", holding)}
+                        style={buyButtonStyle}
+                        title="Add ~$500 to position"
+                      >
+                        Add More
+                      </button>
+                      {holding.qty > 2 && (
+                        <button 
+                          onClick={() => handlePositionTrade(holding.symbol, "TRIM_POSITION", holding)}
+                          style={reduceButtonStyle}
+                          title="Sell 25% of position"
+                        >
+                          Trim
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* Advanced Actions (Only for larger positions) */}
+                    {holding.market_value > 100 && (
+                      <div style={advancedActionsStyle}>
+                        <button 
+                          onClick={() => handlePositionTrade(holding.symbol, "EXIT_POSITION", holding)}
+                          style={exitButtonStyle}
+                          title="Close entire position"
+                        >
+                          Exit All
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -294,10 +498,33 @@ const recommendationBadgeStyle: React.CSSProperties = {
   textTransform: "uppercase"
 };
 
+const priceContainerStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "baseline",
+  justifyContent: "space-between"
+};
+
 const currentPriceStyle: React.CSSProperties = {
   fontSize: "24px",
   fontWeight: 700,
   color: "#fff"
+};
+
+const priceSourceStyle: React.CSSProperties = {
+  fontSize: "11px",
+  color: "#666",
+  textTransform: "uppercase",
+  fontWeight: 500
+};
+
+const warningStyle: React.CSSProperties = {
+  background: "rgba(245, 158, 11, 0.1)",
+  border: "1px solid #f59e0b",
+  borderRadius: "8px",
+  padding: "8px 12px",
+  fontSize: "12px",
+  color: "#f59e0b",
+  fontWeight: 500
 };
 
 const positionInfoStyle: React.CSSProperties = {
@@ -416,4 +643,115 @@ const subTextStyle: React.CSSProperties = {
   fontSize: "14px",
   marginTop: "8px",
   color: "#666"
+};
+
+const headerContainerStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: "20px",
+  padding: "12px 16px",
+  background: "linear-gradient(135deg, #1a1a1a 0%, #111 100%)",
+  borderRadius: "12px",
+  border: "1px solid #333"
+};
+
+const statusInfoStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "12px"
+};
+
+const updateTextStyle: React.CSSProperties = {
+  fontSize: "13px",
+  color: "#999",
+  fontWeight: 500
+};
+
+const refreshButtonStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "1px solid #444",
+  borderRadius: "8px",
+  padding: "6px 12px",
+  color: "#ccc",
+  fontSize: "12px",
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  gap: "4px"
+};
+
+const countStyle: React.CSSProperties = {
+  fontSize: "13px",
+  color: "#666",
+  fontWeight: 500
+};
+
+const validationBadgeStyle: React.CSSProperties = {
+  fontSize: "9px",
+  color: "#22c55e",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  marginLeft: "8px",
+  padding: "2px 4px",
+  background: "rgba(34, 197, 94, 0.1)",
+  borderRadius: "4px",
+  border: "1px solid rgba(34, 197, 94, 0.3)"
+};
+
+// New styles for enhanced position actions
+const profitActionsStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: "8px",
+  marginBottom: "8px"
+};
+
+const standardActionsStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: "8px",
+  marginBottom: "8px"
+};
+
+const advancedActionsStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "center"
+};
+
+const takeProfitsButtonStyle: React.CSSProperties = {
+  background: "#22c55e",
+  border: "none",
+  borderRadius: "8px",
+  padding: "8px 10px",
+  color: "#000",
+  fontSize: "12px",
+  fontWeight: 600,
+  cursor: "pointer",
+  textTransform: "uppercase"
+};
+
+const trimButtonStyle: React.CSSProperties = {
+  background: "#f59e0b",
+  border: "none",
+  borderRadius: "8px",
+  padding: "8px 10px",
+  color: "#000",
+  fontSize: "12px",
+  fontWeight: 600,
+  cursor: "pointer",
+  textTransform: "uppercase"
+};
+
+const exitButtonStyle: React.CSSProperties = {
+  background: "#ef4444",
+  border: "none",
+  borderRadius: "8px",
+  padding: "6px 16px",
+  color: "#fff",
+  fontSize: "11px",
+  fontWeight: 600,
+  cursor: "pointer",
+  textTransform: "uppercase",
+  opacity: 0.8
 };

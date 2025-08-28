@@ -288,6 +288,225 @@ example_bracket = {
 }
 execute.__dict__["__docs_examples__"]= [example_market, example_limit, example_notional, example_bracket]  # Fast hack to carry examples
 
+# --- POSITION-SPECIFIC TRADE SCHEMAS ---
+
+class PositionTradeReq(BaseModel):
+    symbol: str = Field(..., description="Ticker symbol")
+    action: Literal["TAKE_PROFITS", "TRIM_POSITION", "ADD_POSITION", "EXIT_POSITION"] = Field(..., description="Position-specific action")
+    mode: Mode = Field("auto", description="live|shadow|auto") 
+    percentage: Optional[float] = Field(None, ge=0.01, le=1.0, description="Percentage for trim/take profits (0.25 = 25%)")
+    notional_usd: Optional[float] = Field(None, ge=1, description="Dollar amount for add position")
+    time_in_force: TIF = Field("day")
+    
+    @field_validator("symbol")
+    @classmethod
+    def upcase(cls, v): return v.upper()
+
+class PositionTradeResp(BaseModel):
+    success: bool
+    symbol: str
+    action: str
+    calculated_qty: Optional[int] = None
+    current_position: Optional[dict] = None
+    execution_result: Optional[ExecResult] = None
+    error: Optional[dict] = None
+    message: Optional[str] = None
+
+# --- POSITION-SPECIFIC TRADE ROUTES ---
+
+@router.post("/trades/position", response_model=PositionTradeResp, responses={
+    400: {"description": "Invalid position or calculation error"},
+    404: {"description": "Position not found"},
+    502: {"description": "Broker error"},
+})
+async def execute_position_trade(req: PositionTradeReq):
+    """Execute position-specific trades with smart quantity calculations"""
+    try:
+        # Get current position from broker
+        try:
+            from backend.src.services.broker_alpaca import AlpacaBroker
+            broker = AlpacaBroker()
+            positions = await broker.get_positions()
+            current_position = next((p for p in positions if p.get("symbol") == req.symbol), None)
+            
+            if not current_position:
+                raise HTTPException(status_code=404, detail={
+                    "error": "position_not_found",
+                    "symbol": req.symbol,
+                    "message": f"No current position found for {req.symbol}"
+                })
+        except ImportError:
+            raise HTTPException(status_code=500, detail={
+                "error": "broker_unavailable",
+                "message": "Alpaca broker service unavailable"
+            })
+        
+        # Extract position data
+        current_qty = int(float(current_position.get("qty", 0)))
+        current_price = float(current_position.get("current_price", 0))
+        
+        if current_qty <= 0:
+            raise HTTPException(status_code=400, detail={
+                "error": "invalid_position", 
+                "message": f"Invalid position quantity: {current_qty}"
+            })
+        
+        # Calculate trade quantities based on action
+        calculated_qty = 0
+        trade_action = "SELL"  # Default for most position actions
+        
+        if req.action == "TAKE_PROFITS":
+            # Sell 50% of position to lock in gains
+            percentage = req.percentage or 0.5
+            calculated_qty = max(1, int(current_qty * percentage))
+            trade_action = "SELL"
+            
+        elif req.action == "TRIM_POSITION":
+            # Sell 25% of position (or custom percentage)
+            percentage = req.percentage or 0.25
+            calculated_qty = max(1, int(current_qty * percentage))
+            trade_action = "SELL"
+            
+        elif req.action == "EXIT_POSITION":
+            # Sell entire position
+            calculated_qty = current_qty
+            trade_action = "SELL"
+            
+        elif req.action == "ADD_POSITION":
+            # Buy more shares with dollar amount
+            if req.notional_usd:
+                calculated_qty = max(1, int(req.notional_usd / max(current_price, 0.01)))
+            else:
+                # Default to $500 if no amount specified
+                calculated_qty = max(1, int(500 / max(current_price, 0.01)))
+            trade_action = "BUY"
+        
+        # Create standard trade request
+        trade_req = TradeReq(
+            symbol=req.symbol,
+            action=trade_action,
+            mode=req.mode,
+            qty=calculated_qty,
+            time_in_force=req.time_in_force
+        )
+        
+        # Execute the trade using existing logic
+        trade_response = await execute(trade_req)
+        
+        return PositionTradeResp(
+            success=trade_response.success,
+            symbol=req.symbol,
+            action=req.action,
+            calculated_qty=calculated_qty,
+            current_position={
+                "qty": current_qty,
+                "current_price": current_price,
+                "market_value": float(current_position.get("market_value", 0)),
+                "unrealized_pl": float(current_position.get("unrealized_pl", 0))
+            },
+            execution_result=trade_response.execution_result,
+            error=trade_response.error,
+            message=f"{req.action}: {trade_action} {calculated_qty} shares of {req.symbol}"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": "execution_error",
+            "message": str(e)
+        })
+
+@router.get("/trades/position/{symbol}/preview")
+async def preview_position_trades(symbol: str):
+    """Preview possible position trades for a symbol"""
+    try:
+        symbol = symbol.upper()
+        
+        # Get current position
+        try:
+            from backend.src.services.broker_alpaca import AlpacaBroker
+            broker = AlpacaBroker()
+            positions = await broker.get_positions()
+            current_position = next((p for p in positions if p.get("symbol") == symbol), None)
+            
+            if not current_position:
+                return {
+                    "symbol": symbol,
+                    "has_position": False,
+                    "message": f"No current position found for {symbol}"
+                }
+                
+        except ImportError:
+            raise HTTPException(status_code=500, detail={
+                "error": "broker_unavailable"
+            })
+        
+        # Calculate preview data
+        current_qty = int(float(current_position.get("qty", 0)))
+        current_price = float(current_position.get("current_price", 0))
+        market_value = float(current_position.get("market_value", 0))
+        unrealized_pl = float(current_position.get("unrealized_pl", 0))
+        
+        # Calculate trade previews
+        take_profits_qty = max(1, int(current_qty * 0.5))  # 50%
+        trim_qty = max(1, int(current_qty * 0.25))  # 25%
+        add_position_qty_500 = max(1, int(500 / max(current_price, 0.01)))
+        add_position_qty_1000 = max(1, int(1000 / max(current_price, 0.01)))
+        
+        return {
+            "symbol": symbol,
+            "has_position": True,
+            "current_position": {
+                "qty": current_qty,
+                "current_price": round(current_price, 2),
+                "market_value": round(market_value, 2),
+                "unrealized_pl": round(unrealized_pl, 2),
+                "unrealized_pl_pct": round((unrealized_pl / max(market_value - unrealized_pl, 0.01)) * 100, 2)
+            },
+            "trade_options": {
+                "take_profits": {
+                    "action": "SELL",
+                    "qty": take_profits_qty,
+                    "percentage": 50,
+                    "estimated_proceeds": round(take_profits_qty * current_price, 2),
+                    "remaining_qty": current_qty - take_profits_qty
+                },
+                "trim_position": {
+                    "action": "SELL", 
+                    "qty": trim_qty,
+                    "percentage": 25,
+                    "estimated_proceeds": round(trim_qty * current_price, 2),
+                    "remaining_qty": current_qty - trim_qty
+                },
+                "exit_position": {
+                    "action": "SELL",
+                    "qty": current_qty,
+                    "percentage": 100,
+                    "estimated_proceeds": round(market_value, 2),
+                    "remaining_qty": 0
+                },
+                "add_position_500": {
+                    "action": "BUY",
+                    "qty": add_position_qty_500,
+                    "notional": 500,
+                    "new_total_qty": current_qty + add_position_qty_500
+                },
+                "add_position_1000": {
+                    "action": "BUY", 
+                    "qty": add_position_qty_1000,
+                    "notional": 1000,
+                    "new_total_qty": current_qty + add_position_qty_1000
+                }
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": "preview_error",
+            "message": str(e)
+        })
+
 # Helper functions for polygon data
 async def polygon_last_price(symbol: str) -> float:
     """Get latest price from polygon"""
