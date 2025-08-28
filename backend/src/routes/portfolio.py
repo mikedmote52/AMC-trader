@@ -352,17 +352,16 @@ async def get_holdings() -> Dict:
             except (ImportError, AttributeError):
                 pass
         
-        # Extract symbols for price fetching
-        symbols = [pos.get("symbol") for pos in positions if pos.get("symbol")]
+        # CRITICAL FIX: Don't fetch additional prices - use broker data directly
+        # The broker positions already have current_price and unrealized_pl
+        # Additional price fetching was causing data inconsistencies
         
-        # Fetch real current prices from Alpaca (primary) and Polygon (fallback)
-        current_prices = await fetch_current_prices(symbols)
-        
-        # Build normalized holdings with real current prices
+        # Build normalized holdings using broker data only
         normalized_positions = []
         for pos in positions:
             try:
-                normalized_pos = build_normalized_holding(pos, by_sym, current_prices)
+                # Pass None for current_prices to force use of broker data
+                normalized_pos = build_normalized_holding(pos, by_sym, None)
                 normalized_positions.append(normalized_pos)
             except Exception as e:
                 # Log the error but skip positions that can't be normalized
