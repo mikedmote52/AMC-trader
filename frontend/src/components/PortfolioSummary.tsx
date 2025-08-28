@@ -43,7 +43,10 @@ export default function PortfolioSummary({ holdings, isLoading }: PortfolioSumma
     // Sector exposure (simplified - using symbol patterns for demo)
     const sectorMap: Record<string, string> = {
       'VIGL': 'Tech', 'CRWV': 'Energy', 'AEVA': 'Auto', 'WOLF': 'Entertainment',
-      'QUBT': 'Tech', 'RGTI': 'Tech', 'IONQ': 'Tech', 'QBTS': 'Tech'
+      'QUBT': 'Tech', 'RGTI': 'Tech', 'IONQ': 'Tech', 'QBTS': 'Tech',
+      'AMDL': 'Healthcare', 'CARS': 'Auto', 'GMAB': 'Biotech', 'KSS': 'Retail',
+      'SPHR': 'Tech', 'SSRM': 'Mining', 'TEM': 'Energy', 'TEVA': 'Pharma',
+      'UP': 'Transport', 'WOOF': 'Consumer', 'WULF': 'Crypto'
     };
     
     const sectorExposure = holdings.reduce((sectors: Record<string, number>, h) => {
@@ -235,7 +238,7 @@ export default function PortfolioSummary({ holdings, isLoading }: PortfolioSumma
                 ...topMoverValueStyle,
                 color: stats.topMover.unrealized_pl_pct >= 0 ? "#22c55e" : "#ef4444"
               }}>
-                {stats.topMover.symbol} {(stats.topMover.unrealized_pl_pct * 100).toFixed(1)}%
+                {stats.topMover.symbol} {stats.topMover.unrealized_pl_pct.toFixed(1)}%
               </span>
             </div>
             <div style={topMoverDescStyle}>

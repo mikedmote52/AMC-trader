@@ -95,7 +95,7 @@ export default function Holdings() {
                 <div>Qty: {holding.qty} • Avg: ${holding.avg_entry_price.toFixed(2)}</div>
                 <div>Last: ${holding.last_price.toFixed(2)} • Value: ${holding.market_value.toFixed(2)}</div>
                 <div style={{color: plColor}}>
-                  P&L: ${holding.unrealized_pl.toFixed(2)} ({(holding.unrealized_pl_pct * 100).toFixed(1)}%)
+                  P&L: ${holding.unrealized_pl.toFixed(2)} ({holding.unrealized_pl_pct.toFixed(1)}%)
                 </div>
               </div>
               
