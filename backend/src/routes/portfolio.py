@@ -358,17 +358,8 @@ async def get_holdings() -> Dict:
         normalized_positions = []
         for pos in positions:
             try:
-                # DEBUG: Print raw position data for UP
-                if pos.get("symbol") == "UP":
-                    print(f"RAW UP POSITION DATA: {pos}")
-                
-                # Pass None for current_prices to force use of broker data
+                # Use broker data directly without additional price fetching
                 normalized_pos = build_normalized_holding(pos, by_sym, None)
-                
-                # DEBUG: Print normalized position data for UP
-                if pos.get("symbol") == "UP":
-                    print(f"NORMALIZED UP POSITION: {normalized_pos}")
-                
                 normalized_positions.append(normalized_pos)
             except Exception as e:
                 # Log the error but skip positions that can't be normalized
@@ -393,8 +384,7 @@ async def get_holdings() -> Dict:
         # Return in format expected by frontend
         return {
             "success": True,
-            "data": summary_data,
-            "debug_raw_positions": [pos for pos in positions if pos.get("symbol") == "UP"]  # Temporary debug
+            "data": summary_data
         }
             
     except Exception as e:
