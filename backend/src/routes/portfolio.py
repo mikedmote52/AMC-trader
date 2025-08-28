@@ -179,7 +179,7 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
     symbol = pos.get("symbol", "")
     
     # Get quantities and entry price from broker
-    qty = int(pos["qty"])
+    qty = int(float(pos["qty"]))  # Handle string quantities from Alpaca
     
     # CRITICAL FIX: Calculate cost_basis from market_value and unrealized_pl
     # cost_basis field is often 0, but can be calculated from: market_value - unrealized_pl
@@ -188,11 +188,11 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
     market_value_raw = float(pos.get("market_value", 0))
     unrealized_pl_raw = float(pos.get("unrealized_pl", 0))
     
-    # Calculate true cost basis from market value and unrealized P&L
-    if market_value_raw > 0 and unrealized_pl_raw != 0:
+    # Use broker's cost_basis directly if available, otherwise calculate
+    if cost_basis_raw > 0:
+        cost_basis = cost_basis_raw  # Use broker's cost basis (most reliable)
+    elif market_value_raw > 0 and unrealized_pl_raw != 0:
         cost_basis = market_value_raw - unrealized_pl_raw
-    elif cost_basis_raw > 0:
-        cost_basis = cost_basis_raw
     else:
         cost_basis = avg_entry_price_raw * qty if qty > 0 else 0
     
@@ -237,10 +237,10 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
     if current_price < 1.0 and avg_entry_price > 50.0:
         price_quality_flags.append("suspiciously_low_price")
     
-    # CRITICAL FIX: Use broker's P&L calculations directly
-    # Don't recalculate - use what Alpaca broker reports
-    market_value = round(qty * current_price, 2)
-    unrealized_pl = unrealized_pl_raw  # Use broker's calculation directly
+    # CRITICAL FIX: Use broker's calculations directly - don't recalculate
+    # The broker already provides correct market_value and unrealized_pl
+    market_value = market_value_raw  # Use broker's market value directly
+    unrealized_pl = unrealized_pl_raw  # Use broker's P&L calculation directly
     
     # CRITICAL FIX: Data corruption detection and correction for entry prices
     data_quality_flags = []
