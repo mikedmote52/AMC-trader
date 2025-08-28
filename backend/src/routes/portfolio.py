@@ -180,7 +180,18 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
     
     # Get quantities and entry price from broker
     qty = int(pos["qty"])
-    avg_entry_price = float(pos["avg_entry_price"])
+    
+    # CRITICAL FIX: Use cost_basis to calculate true entry price
+    # avg_entry_price field can be stale/incorrect, but cost_basis is reliable
+    cost_basis = float(pos.get("cost_basis", 0))
+    avg_entry_price_raw = float(pos.get("avg_entry_price", 0))
+    
+    # Calculate true entry price from cost basis
+    if cost_basis > 0 and qty > 0:
+        avg_entry_price = cost_basis / qty
+    else:
+        # Fallback to raw avg_entry_price if cost_basis is unavailable
+        avg_entry_price = avg_entry_price_raw
     
     # CRITICAL FIX: Use broker current_price for consistency with P&L calculations
     # The broker's current_price field reflects the paper trading account's valuation
@@ -270,7 +281,9 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
     holding = {
         "symbol": symbol,
         "qty": qty,
-        "avg_entry_price": avg_entry_price,
+        "avg_entry_price": avg_entry_price,  # Calculated from cost_basis / qty
+        "avg_entry_price_raw": avg_entry_price_raw,  # Raw from Alpaca (may be wrong)
+        "cost_basis": cost_basis,  # Total cost basis
         "last_price": current_price,  # Real current price
         "market_value": market_value,
         "unrealized_pl": unrealized_pl,
