@@ -237,9 +237,10 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
     if current_price < 1.0 and avg_entry_price > 50.0:
         price_quality_flags.append("suspiciously_low_price")
     
-    # Calculate real P&L with current market prices
+    # CRITICAL FIX: Use broker's P&L calculations directly
+    # Don't recalculate - use what Alpaca broker reports
     market_value = round(qty * current_price, 2)
-    unrealized_pl = round((current_price - avg_entry_price) * qty, 2)
+    unrealized_pl = unrealized_pl_raw  # Use broker's calculation directly
     
     # CRITICAL FIX: Data corruption detection and correction for entry prices
     data_quality_flags = []
@@ -256,9 +257,9 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
         corrected_avg_entry_price = current_price * 0.95  # Assume 5% gain as baseline
         print(f"CORRECTED: {symbol} entry price from ${avg_entry_price} to ${corrected_avg_entry_price}")
     
-    # Fix percentage calculation using corrected entry price
-    if corrected_avg_entry_price > 0:
-        raw_pl_pct = ((current_price - corrected_avg_entry_price) / corrected_avg_entry_price) * 100
+    # Calculate percentage using broker P&L and cost basis
+    if cost_basis > 0:
+        raw_pl_pct = (unrealized_pl / cost_basis) * 100
         
         # Data validation: Flag extreme P&L percentages that may indicate remaining data issues
         # Flag extreme losses (>95% loss) - likely data quality issue or catastrophic position
@@ -281,9 +282,6 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
             display_pl_pct = 999.9  # Cap display at +999.9%
             
         unrealized_pl_pct = round(display_pl_pct, 2)
-        
-        # Recalculate P&L with corrected entry price
-        unrealized_pl = round((current_price - corrected_avg_entry_price) * qty, 2)
     else:
         unrealized_pl_pct = 0.0
     
