@@ -356,10 +356,13 @@ class DiscoveryPipeline:
                         intraday_low = prev_data.low  
                         day_open = prev_data.open
                         
-                        # Attempt to get real-time data if market is open
-                        if is_market_hours():
+                        # Attempt to get real-time data if market is open (with circuit breaker)
+                        enhanced_data_enabled = os.getenv('ENHANCED_PRICING', 'false').lower() == 'true'
+                        
+                        if enhanced_data_enabled and is_market_hours():
                             try:
-                                # Get today's aggregated bars (1 minute resolution)
+                                # Get today's aggregated bars (1 minute resolution) 
+                                # Only for a limited number of symbols to avoid rate limits
                                 url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/minute/{today}/{today}"
                                 params = {
                                     'apikey': os.getenv('POLYGON_API_KEY'),
@@ -368,7 +371,7 @@ class DiscoveryPipeline:
                                     'limit': 1
                                 }
                                 
-                                response = requests.get(url, params=params, timeout=10)
+                                response = requests.get(url, params=params, timeout=5)  # Reduced timeout
                                 
                                 if response.status_code == 200:
                                     data = response.json()
@@ -377,14 +380,14 @@ class DiscoveryPipeline:
                                         current_price = latest['c']  # Current close
                                         current_volume = latest['v']  # Current volume
                                         
-                                        logger.info(f"Got real-time data for {symbol}: ${current_price}")
+                                        logger.debug(f"Enhanced real-time data for {symbol}: ${current_price}")
                                     else:
                                         logger.debug(f"No intraday data for {symbol}, using previous close")
                                 else:
-                                    logger.debug(f"API response {response.status_code} for {symbol}")
+                                    logger.debug(f"Real-time API response {response.status_code} for {symbol}")
                                     
                             except Exception as rt_e:
-                                logger.debug(f"Real-time fetch failed for {symbol}: {rt_e}")
+                                logger.debug(f"Enhanced pricing failed for {symbol}: {rt_e}, falling back to previous close")
                         
                         # Calculate comprehensive metrics
                         price_change = current_price - prev_close_price
@@ -417,7 +420,12 @@ class DiscoveryPipeline:
                             'data_timestamp': datetime.now().isoformat()
                         }
                         
-                        logger.info(f"Enhanced data for {symbol}: ${current_price} ({price_change_pct:+.2f}%)")
+                        # Ensure we have valid pricing data
+                        if current_price <= 0:
+                            logger.warning(f"Invalid price for {symbol}: {current_price}, skipping")
+                            continue
+                            
+                        logger.debug(f"Market data for {symbol}: ${current_price:.2f} ({price_change_pct:+.2f}%)")
                     else:
                         logger.warning(f"No data available for {symbol}")
                         
