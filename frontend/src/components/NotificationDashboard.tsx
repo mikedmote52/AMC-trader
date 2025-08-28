@@ -64,17 +64,15 @@ export default function NotificationDashboard() {
     try {
       setError("");
       
-      // For now, use mock data. In production, these would be separate API calls
-      // const [briefData, recommendationsData, pulseData, timelineData, notificationsData] = await Promise.all([
-      //   getJSON(`${API_BASE}/notifications/daily-brief`),
-      //   getJSON(`${API_BASE}/discovery/contenders`),
-      //   getJSON(`${API_BASE}/notifications/market-pulse`),
-      //   getJSON(`${API_BASE}/notifications/timeline`),
-      //   getJSON(`${API_BASE}/notifications/history`)
-      // ]);
+      // Fetch real data from actual API endpoints
+      const [portfolioData, recommendationsData] = await Promise.all([
+        getJSON(`${API_BASE}/portfolio/holdings`).catch(() => ({ data: { summary: {} } })),
+        getJSON(`${API_BASE}/discovery/contenders`).catch(() => [])
+      ]);
 
-      // Mock data for demonstration
-      const mockData: DashboardData = {
+      // Use real portfolio data for daily brief
+      const portfolioSummary = portfolioData?.data?.summary || {};
+      const realData: DashboardData = {
         dailyBrief: {
           date: new Date().toLocaleDateString('en-US', { 
             weekday: 'long', 
@@ -82,120 +80,44 @@ export default function NotificationDashboard() {
             month: 'long', 
             day: 'numeric' 
           }),
-          topOpportunities: 3,
-          portfolioChange: 412,
-          portfolioChangePct: 3.2,
-          riskLevel: "GREEN",
-          marketSentiment: "Bullish"
+          topOpportunities: Array.isArray(recommendationsData) ? recommendationsData.length : 0,
+          portfolioChange: portfolioSummary.total_unrealized_pl || 0,
+          portfolioChangePct: portfolioSummary.total_unrealized_pl_pct || 0,
+          riskLevel: portfolioSummary.total_unrealized_pl >= 0 ? "GREEN" : "RED",
+          marketSentiment: portfolioSummary.total_unrealized_pl >= 0 ? "Bullish" : "Bearish"
         },
-        recommendations: [
-          {
-            symbol: "VIGL",
-            confidence: 87,
-            pattern: "VIGL",
-            volume: 2400000,
-            volumeMultiplier: 12.3,
-            entryPrice: 3.24,
-            targetPrice: 4.50,
-            potentialReturn: 38.9,
-            timestamp: new Date().toISOString()
-          },
-          {
-            symbol: "QUBT",
-            confidence: 82,
-            pattern: "Volume Breakout",
-            volume: 1800000,
-            volumeMultiplier: 8.7,
-            entryPrice: 2.15,
-            targetPrice: 2.85,
-            potentialReturn: 32.6,
-            timestamp: new Date().toISOString()
-          },
-          {
-            symbol: "RGTI",
-            confidence: 75,
-            pattern: "Momentum",
-            volume: 950000,
-            volumeMultiplier: 5.2,
-            entryPrice: 1.89,
-            targetPrice: 2.35,
-            potentialReturn: 24.3,
-            timestamp: new Date().toISOString()
-          }
-        ],
+        recommendations: Array.isArray(recommendationsData) ? recommendationsData.map((rec: any) => ({
+          symbol: rec.symbol || "N/A",
+          confidence: Math.round((rec.score || rec.confidence || 0) * 100),
+          pattern: rec.pattern || "Analysis",
+          volume: rec.volume || 0,
+          volumeMultiplier: rec.rel_vol_30m || 1,
+          entryPrice: rec.price || 0,
+          targetPrice: rec.target_price || rec.price || 0,
+          potentialReturn: ((rec.target_price || rec.price || 0) - (rec.price || 0)) / (rec.price || 1) * 100,
+          timestamp: new Date().toISOString()
+        })) : [],
         marketPulse: {
-          preMarketMovers: 3,
-          volumeLeaders: ["VIGL", "QUBT", "RGTI"],
-          riskAlerts: [],
-          nextScanTime: "2:15 PM EST",
+          preMarketMovers: Array.isArray(recommendationsData) ? recommendationsData.length : 0,
+          volumeLeaders: Array.isArray(recommendationsData) ? recommendationsData.slice(0, 3).map((rec: any) => rec.symbol || "N/A") : [],
+          riskAlerts: portfolioSummary.total_unrealized_pl < -1000 ? ["High portfolio drawdown detected"] : [],
+          nextScanTime: "Next scan scheduled",
           marketStatus: "MARKET_OPEN",
           lastUpdate: new Date().toISOString()
         },
         timeline: [
           {
-            time: "08:00 AM",
-            status: "COMPLETED",
-            title: "Morning scan complete",
-            description: "3 opportunities identified with high confidence scores",
-            importance: "HIGH"
-          },
-          {
-            time: "12:30 PM",
-            status: "COMPLETED",
-            title: "Mid-day update",
-            description: "2 positions up, 1 down - portfolio +$284",
-            importance: "MEDIUM"
-          },
-          {
-            time: "16:00 PM",
-            status: "IN_PROGRESS",
-            title: "End-of-day analysis",
-            description: "Analyzing final market moves and position performance",
-            importance: "HIGH"
-          },
-          {
-            time: "18:00 PM",
-            status: "SCHEDULED",
-            title: "Tomorrow's prep",
-            description: "Generate watch list and strategy for next trading day",
-            importance: "MEDIUM"
+            time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            status: "COMPLETED" as const,
+            title: "Data Updated",
+            description: `Portfolio: ${portfolioSummary.total_positions || 0} positions, ${Array.isArray(recommendationsData) ? recommendationsData.length : 0} recommendations`,
+            importance: "MEDIUM" as const
           }
         ],
-        notifications: [
-          {
-            id: "1",
-            time: "08:00 AM",
-            type: "BRIEF",
-            title: "Morning brief sent",
-            message: "Daily trading brief delivered with 3 top opportunities",
-            status: "SENT",
-            channel: "BOTH",
-            importance: "HIGH"
-          },
-          {
-            id: "2",
-            time: "02:00 PM",
-            type: "ALERT",
-            title: "VIGL alert: +8.2% move",
-            message: "VIGL up 8.2% on volume spike - target approaching",
-            status: "SENT",
-            channel: "SMS",
-            importance: "HIGH"
-          },
-          {
-            id: "3",
-            time: "06:00 PM",
-            type: "SUMMARY",
-            title: "Portfolio summary (+$284)",
-            message: "Daily portfolio update: +$284 (+2.1%) across 11 positions",
-            status: "SENT",
-            channel: "DASHBOARD",
-            importance: "MEDIUM"
-          }
-        ]
+        notifications: []
       };
 
-      setData(mockData);
+      setData(realData);
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
