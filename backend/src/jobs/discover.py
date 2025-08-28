@@ -86,26 +86,34 @@ def _volume_spike_ratio(bars):
     return current_volume / avg_volume if avg_volume > 0 else 0.0
 
 def _calculate_vigl_score(price, volume_spike, momentum, atr_pct):
-    """Calculate VIGL pattern similarity score (0-1)"""
-    # Price score: optimal range $2.94-$4.66, but accept $0.50-$10.00 with penalty
-    if 2.94 <= price <= 4.66:
-        price_score = 1.0
-    elif 0.50 <= price <= 10.00:
-        # Distance penalty from optimal range
-        if price < 2.94:
-            price_score = 0.5 + 0.5 * (price - 0.50) / (2.94 - 0.50)
-        else:  # price > 4.66
-            price_score = 0.5 + 0.5 * (10.00 - price) / (10.00 - 4.66)
+    """Calculate VIGL pattern similarity score (0-1) - Updated for current market conditions"""
+    # Price score: Realistic range for current market - broader acceptance
+    if 1.0 <= price <= 50.0:
+        # Good price range for momentum plays
+        if price <= 10.0:
+            price_score = 1.0  # Small caps preferred
+        elif price <= 25.0:
+            price_score = 0.8  # Mid-small caps acceptable
+        else:  # price <= 50.0
+            price_score = 0.6  # Mid caps acceptable
+    elif 50.0 < price <= 100.0:
+        price_score = 0.4  # Large caps possible but less explosive
+    elif 0.50 <= price < 1.0:
+        price_score = 0.3  # Penny stocks risky but possible
     else:
-        price_score = 0.0
+        price_score = 0.1  # Very large caps or sub-penny
     
-    # Volume spike score: target 20.9x, minimum 3x
-    if volume_spike >= VIGL_VOLUME_TARGET:
-        volume_score = 1.0
-    elif volume_spike >= VIGL_VOLUME_MIN:
-        volume_score = 0.3 + 0.7 * (volume_spike - VIGL_VOLUME_MIN) / (VIGL_VOLUME_TARGET - VIGL_VOLUME_MIN)
+    # Volume spike score: Realistic targets for current market (most stocks 0.5-2.0x)
+    if volume_spike >= 2.0:
+        volume_score = 1.0  # Excellent volume spike
+    elif volume_spike >= 1.5:
+        volume_score = 0.8  # Good volume spike
+    elif volume_spike >= 1.0:
+        volume_score = 0.6  # Moderate volume spike
+    elif volume_spike >= 0.75:
+        volume_score = 0.4  # Slight volume increase
     else:
-        volume_score = 0.0
+        volume_score = 0.2  # Below average volume
     
     # Momentum score: positive momentum preferred
     momentum_score = max(0, min(1, 0.5 + momentum * 2))  # -50% to +50% maps to 0-1
@@ -693,9 +701,8 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         except Exception:
             return sym, None
 
-    # cap survivors before expensive step
-    prelimit = min(len(kept_syms), 400 if not relaxed else 800)
-    kept_syms = kept_syms[:prelimit]
+    # Process ALL surviving candidates - no arbitrary caps that destroy intelligent filtering
+    # Note: Removed the 400-stock cap that was randomly truncating the carefully filtered universe
 
     pairs = await asyncio.gather(*[fetch_bars(s) for s in kept_syms])
     comp = {s:p for s,p in pairs if p is not None}
@@ -804,13 +811,13 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         price = candidate.get("price", 0.0)
         volume_spike = candidate.get("volume_spike", 0.0)
         
-        # VIGL Pattern Requirements (based on proven 324% winner)
+        # VIGL Pattern Requirements - Realistic for current market conditions
         meets_vigl_criteria = (
-            vigl_score >= 0.50 and                    # Minimum VIGL similarity
-            wolf_risk <= WOLF_RISK_THRESHOLD and      # Acceptable risk (avoid WOLF pattern)
-            price >= VIGL_PRICE_MIN and               # Above penny stock threshold
-            price <= VIGL_PRICE_MAX and               # In explosive potential range
-            volume_spike >= VIGL_VOLUME_MIN           # Minimum volume spike
+            vigl_score >= 0.40 and                    # Achievable VIGL similarity with new scoring
+            wolf_risk <= WOLF_RISK_THRESHOLD and      # Acceptable risk (avoid WOLF pattern)  
+            price >= 0.50 and                         # Above sub-penny threshold
+            price <= 100.0 and                        # Realistic price range for all caps
+            volume_spike >= 0.75                      # Realistic volume requirement (above average)
         )
         
         if meets_vigl_criteria:
