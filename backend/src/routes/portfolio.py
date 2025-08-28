@@ -684,3 +684,34 @@ async def get_portfolio_composition() -> Dict:
             "error": str(e),
             "data": {}
         }
+
+@router.get("/debug/raw-broker-positions")
+async def debug_raw_broker_positions() -> Dict:
+    """Debug endpoint to see raw position data from Alpaca broker"""
+    try:
+        from backend.src.services.broker_alpaca import AlpacaBroker
+        broker = AlpacaBroker()
+        raw_positions = await broker.get_positions()
+        
+        # Find UP position specifically
+        up_position = None
+        for pos in raw_positions:
+            if pos.get("symbol") == "UP":
+                up_position = pos
+                break
+        
+        return {
+            "success": True,
+            "data": {
+                "total_positions": len(raw_positions),
+                "up_position_raw": up_position,
+                "sample_positions": raw_positions[:3] if len(raw_positions) > 3 else raw_positions
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "data": {}
+        }
+
