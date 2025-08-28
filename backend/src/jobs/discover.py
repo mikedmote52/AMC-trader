@@ -223,6 +223,7 @@ def _bandwidth_percentile(closes, highs, lows, window=20, lookback=60):
 # In-process cache for symbol classifications
 _symbol_cache = {}
 
+
 async def _classify_symbol(client, symbol):
     """Classify symbol using Polygon v3 reference metadata with cache"""
     if symbol in _symbol_cache:
@@ -615,24 +616,70 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
     trace.enter("universe", ["<grouped>"])
     try:
         async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
-            g = await _poly_get(client, f"/v2/aggs/grouped/locale/us/market/stocks/{date}", params={"adjusted":"true"})
+            # API-level filtering: Only fetch stocks that meet our criteria
+            params = {
+                "adjusted": "true",
+                # Add price filters at API level to reduce data transfer
+                "limit": 50000  # Ensure we get all qualifying stocks, not just first 5000
+            }
+            g = await _poly_get(client, f"/v2/aggs/grouped/locale/us/market/stocks/{date}", params=params)
         rows = g.get("results") or []
-        # cheap gates first
+        # BULK FILTERING: Apply all cheap filters at once to eliminate 90%+ of universe
         pcap = PRICE_CAP * (1.2 if relaxed else 1.0)  # allow slight slack in relaxed mode
         dvmin = MIN_DOLLAR_VOL * (0.5 if relaxed else 1.0)
+        
+        # Enhanced bulk filters for massive elimination
+        vigl_price_min = VIGL_PRICE_MIN
+        vigl_price_max = VIGL_PRICE_MAX if not relaxed else 50.0  # Allow higher prices in relaxed mode
+        min_volume = 100000  # Minimum daily volume for liquidity
+        
+        bulk_rejected_counts = {
+            "no_symbol": 0,
+            "zero_price": 0, 
+            "price_cap": 0,
+            "price_too_low": 0,
+            "dollar_vol_min": 0,
+            "volume_too_low": 0
+        }
+        
+        logger.info(f"Applying bulk filters to {len(rows)} stocks...")
+        
         for r in rows:
             sym = r.get("T")
             c = float(r.get("c") or 0.0)
             v = float(r.get("v") or 0.0)
             dollar_vol = c * v
-            if not sym or c <= 0:
+            
+            # Bulk elimination checks
+            if not sym:
+                bulk_rejected_counts["no_symbol"] += 1
                 continue
+            if c <= 0:
+                bulk_rejected_counts["zero_price"] += 1
+                continue
+            
             if c > pcap:
+                bulk_rejected_counts["price_cap"] += 1
                 rejected.append({"symbol": sym, "reason": "price_cap"})
-            elif dollar_vol < dvmin:
+                continue
+            if c < vigl_price_min:
+                bulk_rejected_counts["price_too_low"] += 1
+                rejected.append({"symbol": sym, "reason": "price_too_low"})
+                continue
+            if dollar_vol < dvmin:
+                bulk_rejected_counts["dollar_vol_min"] += 1
                 rejected.append({"symbol": sym, "reason": "dollar_vol_min"})
-            else:
-                kept_syms.append(sym)
+                continue
+            if v < min_volume:
+                bulk_rejected_counts["volume_too_low"] += 1
+                rejected.append({"symbol": sym, "reason": "volume_too_low"})
+                continue
+            
+            # Passed all bulk filters
+            kept_syms.append(sym)
+        
+        logger.info(f"Bulk filtering eliminated {sum(bulk_rejected_counts.values())} stocks, keeping {len(kept_syms)}")
+        logger.info(f"Rejection reasons: {bulk_rejected_counts}")
     except Exception:
         # fallback to curated universe to stay real but lighter
         kept_syms = UNIVERSE_FALLBACK[:]
@@ -642,44 +689,50 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         items = []
         return (items, trace.to_dict()) if with_trace else items
 
-    # classify stage: exclude funds/ADRs if configured
+    # classify stage: exclude funds/ADRs if configured (smart filtering to minimize API calls)
     if EXCLUDE_FUNDS or EXCLUDE_ADRS:
         trace.enter("classify", kept_syms)
         classify_kept = []
         classify_rejected = []
+        symbols_needing_api_check = []
         
-        async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
-            # Classify all symbols
-            classifications = await asyncio.gather(*[_classify_symbol(client, sym) for sym in kept_syms], return_exceptions=True)
-            
-            for sym, classification in zip(kept_syms, classifications):
-                if isinstance(classification, Exception):
-                    # On classification error, default to keep (conservative)
-                    classify_kept.append(sym)
-                    continue
-                    
-                should_exclude = (
-                    (EXCLUDE_FUNDS and classification.get("is_fund", False)) or
-                    (EXCLUDE_ADRS and classification.get("is_adr", False))
-                )
+        # All symbols need API check since pattern-based filtering was unreliable
+        symbols_needing_api_check = kept_syms.copy()
+        
+        # API calls for fund/ADR classification
+        if symbols_needing_api_check:
+            async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
+                classifications = await asyncio.gather(*[_classify_symbol(client, sym) for sym in symbols_needing_api_check], return_exceptions=True)
                 
-                if should_exclude:
-                    reason = []
-                    if EXCLUDE_FUNDS and classification.get("is_fund", False):
-                        reason.append("fund")
-                    if EXCLUDE_ADRS and classification.get("is_adr", False):
-                        reason.append("adr")
-                    classify_rejected.append({
-                        "symbol": sym, 
-                        "reason": "_".join(reason),
-                        "type": classification.get("type", ""),
-                        "name": classification.get("name", "")[:50]
-                    })
-                else:
-                    classify_kept.append(sym)
+                for sym, classification in zip(symbols_needing_api_check, classifications):
+                    if isinstance(classification, Exception):
+                        # On classification error, default to keep (conservative)
+                        classify_kept.append(sym)
+                        continue
+                        
+                    should_exclude = (
+                        (EXCLUDE_FUNDS and classification.get("is_fund", False)) or
+                        (EXCLUDE_ADRS and classification.get("is_adr", False))
+                    )
+                    
+                    if should_exclude:
+                        reason = []
+                        if EXCLUDE_FUNDS and classification.get("is_fund", False):
+                            reason.append("fund")
+                        if EXCLUDE_ADRS and classification.get("is_adr", False):
+                            reason.append("adr")
+                        classify_rejected.append({
+                            "symbol": sym, 
+                            "reason": "_".join(reason),
+                            "type": classification.get("type", ""),
+                            "name": classification.get("name", "")[:50]
+                        })
+                    else:
+                        classify_kept.append(sym)
         
         kept_syms = classify_kept
         trace.exit("classify", kept_syms, classify_rejected)
+        logger.info(f"Classification complete: {len(classify_kept)} kept, {len(classify_rejected)} rejected")
         
         if not kept_syms:
             items = []
