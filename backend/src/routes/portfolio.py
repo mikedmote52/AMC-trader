@@ -181,16 +181,26 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
     # Get quantities and entry price from broker
     qty = int(pos["qty"])
     
-    # CRITICAL FIX: Use cost_basis to calculate true entry price
-    # avg_entry_price field can be stale/incorrect, but cost_basis is reliable
-    cost_basis = float(pos.get("cost_basis", 0))
+    # CRITICAL FIX: Calculate cost_basis from market_value and unrealized_pl
+    # cost_basis field is often 0, but can be calculated from: market_value - unrealized_pl
+    cost_basis_raw = float(pos.get("cost_basis", 0))
     avg_entry_price_raw = float(pos.get("avg_entry_price", 0))
+    market_value_raw = float(pos.get("market_value", 0))
+    unrealized_pl_raw = float(pos.get("unrealized_pl", 0))
+    
+    # Calculate true cost basis from market value and unrealized P&L
+    if market_value_raw > 0 and unrealized_pl_raw != 0:
+        cost_basis = market_value_raw - unrealized_pl_raw
+    elif cost_basis_raw > 0:
+        cost_basis = cost_basis_raw
+    else:
+        cost_basis = avg_entry_price_raw * qty if qty > 0 else 0
     
     # Calculate true entry price from cost basis
     if cost_basis > 0 and qty > 0:
         avg_entry_price = cost_basis / qty
     else:
-        # Fallback to raw avg_entry_price if cost_basis is unavailable
+        # Fallback to raw avg_entry_price if cost_basis calculation fails
         avg_entry_price = avg_entry_price_raw
     
     # CRITICAL FIX: Use broker current_price for consistency with P&L calculations
