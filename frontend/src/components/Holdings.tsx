@@ -37,7 +37,9 @@ export default function Holdings() {
         getJSON<any>(`${API_BASE}/discovery/contenders`)
       ]);
       
-      setHoldings(Array.isArray(holdingsData) ? holdingsData : []);
+      // Extract positions from the holdings response structure
+      const positions = holdingsData?.data?.positions || holdingsData?.positions || [];
+      setHoldings(Array.isArray(positions) ? positions : []);
       setContenders(Array.isArray(contendersData) ? contendersData : []);
     } catch (e: any) {
       setErr(e?.message || String(e));

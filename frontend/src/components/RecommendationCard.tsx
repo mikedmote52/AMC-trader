@@ -52,28 +52,58 @@ export default function RecommendationCard({ item }: { item: Candidate }) {
     }
   };
 
+  // Determine if this is a top pick (score >= 75)
+  const isTopPick = score >= 75;
+  const cardStyleEnhanced = {
+    ...cardStyle,
+    ...(isTopPick && {
+      background: "linear-gradient(135deg, rgba(34, 197, 94, 0.1), #111)",
+      borderColor: "rgba(34, 197, 94, 0.3)",
+      boxShadow: "0 0 20px rgba(34, 197, 94, 0.15)"
+    })
+  };
+
   return (
     <>
-      <div style={cardStyle}>
-        <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8}}>
+      <div style={cardStyleEnhanced} className="recommendation-card">
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12}}>
           <div>
-            <div style={{fontWeight:700, fontSize:18, marginBottom:4}}>{item.symbol}</div>
-            <div style={{fontSize:14, opacity:0.8}}>
+            <div style={{fontWeight:700, fontSize:20, marginBottom:4, letterSpacing:"-0.02em"}}>
+              {item.symbol}
+              {isTopPick && <span style={{marginLeft:8, fontSize:12, color:"#22c55e"}}>🔥</span>}
+            </div>
+            <div style={{fontSize:24, fontWeight:700, color:score >= 75 ? "#22c55e" : "#fff"}}>
               ${item.price?.toFixed(2) || "N/A"}
             </div>
           </div>
-          <div className={`px-2 py-1 text-xs rounded-full font-bold ${getScoreClass(score)}`}>
+          <div style={{
+            background: score >= 75 ? "#22c55e" : score >= 70 ? "#eab308" : "#6b7280",
+            color: "#000",
+            padding: "6px 12px",
+            borderRadius: 999,
+            fontSize: 14,
+            fontWeight: 700,
+            minWidth: 40,
+            textAlign: "center"
+          }}>
             {score}
           </div>
         </div>
         
-        <div style={{fontSize:12, color:"#bbb", marginBottom:12, minHeight:20}}>
-          {item.thesis || "No thesis available"}
+        <div style={{fontSize:13, color:"#999", marginBottom:16, minHeight:40, lineHeight:1.4}}>
+          {item.thesis || "Analyzing opportunity..."}
         </div>
         
         <div style={{display:"flex", gap:8}}>
           <button onClick={handleDetailsClick} style={detailsBtn}>Details</button>
-          <button onClick={() => setShowTradeModal(true)} style={buyBtn}>Buy</button>
+          <button onClick={() => setShowTradeModal(true)} style={{
+            ...buyBtn,
+            ...(isTopPick && {
+              background: "#22c55e",
+              borderColor: "#22c55e",
+              fontWeight: 700
+            })
+          }}>Buy</button>
         </div>
       </div>
 
@@ -164,29 +194,35 @@ const cardStyle: React.CSSProperties = {
   border:"1px solid #333",
   borderRadius:12,
   padding:16,
-  background:"#111",
+  background:"linear-gradient(135deg, #1a1a1a 0%, #111 100%)",
   color:"#eee",
   width:"100%",
-  minWidth:280
+  minWidth:280,
+  transition:"all 0.2s ease",
+  position:"relative"
 };
 
 const detailsBtn: React.CSSProperties = {
-  padding:"8px 12px",
+  padding:"10px 16px",
   borderRadius:8,
   border:"1px solid #444",
-  background:"#222",
-  color:"#eee",
+  background:"rgba(255,255,255,0.05)",
+  color:"#aaa",
   cursor:"pointer",
-  fontSize:12
+  fontSize:13,
+  fontWeight:600,
+  flex:1,
+  transition:"all 0.2s ease"
 };
 
 const buyBtn: React.CSSProperties = {
-  padding:"8px 12px",
+  padding:"10px 16px",
   borderRadius:8,
   border:"1px solid #16a34a",
   background:"#16a34a",
   color:"white",
   cursor:"pointer",
+  transition:"all 0.2s ease",
   fontSize:12,
   fontWeight:600
 };
