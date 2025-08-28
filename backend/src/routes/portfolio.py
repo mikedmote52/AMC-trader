@@ -157,9 +157,35 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
     
     # Fix percentage calculation: (current_price - avg_entry_price) / avg_entry_price * 100
     if avg_entry_price > 0:
-        unrealized_pl_pct = round(((current_price - avg_entry_price) / avg_entry_price) * 100, 2)
+        raw_pl_pct = ((current_price - avg_entry_price) / avg_entry_price) * 100
+        
+        # Data validation: Flag extreme P&L percentages that may indicate data issues
+        data_quality_flags = []
+        
+        # Flag extreme losses (>95% loss) - likely data quality issue or catastrophic position
+        if raw_pl_pct < -95.0:
+            data_quality_flags.append("extreme_loss")
+        
+        # Flag extreme gains (>1000% gain) - likely data quality issue  
+        if raw_pl_pct > 1000.0:
+            data_quality_flags.append("extreme_gain")
+            
+        # Flag price ratio anomalies (100x+ difference in prices)
+        price_ratio = current_price / avg_entry_price if avg_entry_price > 0 else 1.0
+        if price_ratio > 100.0 or price_ratio < 0.01:
+            data_quality_flags.append("price_anomaly")
+        
+        # Cap extreme percentages for UI stability while preserving the alert
+        display_pl_pct = raw_pl_pct
+        if raw_pl_pct < -99.9:
+            display_pl_pct = -99.9  # Cap display at -99.9%
+        elif raw_pl_pct > 999.9:
+            display_pl_pct = 999.9  # Cap display at +999.9%
+            
+        unrealized_pl_pct = round(display_pl_pct, 2)
     else:
         unrealized_pl_pct = 0.0
+        data_quality_flags = []
     
     # Join discovery context from Redis
     holding = {
@@ -170,16 +196,22 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
         "market_value": market_value,
         "unrealized_pl": unrealized_pl,
         "unrealized_pl_pct": unrealized_pl_pct,
-        "price_source": "polygon" if (current_prices and symbol in current_prices) else "broker"
+        "price_source": "polygon" if (current_prices and symbol in current_prices) else "broker",
+        "data_quality_flags": data_quality_flags,
+        "needs_review": len(data_quality_flags) > 0
     }
     
     holding["thesis"] = by_sym.get(symbol, {}).get("thesis")
     holding["confidence"] = by_sym.get(symbol, {}).get("confidence") or by_sym.get(symbol, {}).get("score")
-    holding["suggestion"] = (
-        "increase" if (holding.get("confidence") or 0) >= 0.97
-        else "reduce" if holding["unrealized_pl_pct"] < -5.0  # Fix threshold to use percentage
-        else "hold"
-    )
+    # Enhanced suggestion logic with data quality considerations
+    if len(data_quality_flags) > 0:
+        holding["suggestion"] = "review"  # Flag for manual review
+    else:
+        holding["suggestion"] = (
+            "increase" if (holding.get("confidence") or 0) >= 0.97
+            else "reduce" if holding["unrealized_pl_pct"] < -5.0
+            else "hold"
+        )
     
     return holding
 
