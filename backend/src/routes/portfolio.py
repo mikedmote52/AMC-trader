@@ -1,10 +1,66 @@
 from fastapi import APIRouter
 from typing import List, Dict
 import json
+import os
+import httpx
+import asyncio
 from datetime import datetime, timedelta
 from ..shared.redis_client import get_redis_client
 
 router = APIRouter()
+
+# Polygon API configuration
+POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
+
+async def fetch_current_prices(symbols: List[str]) -> Dict[str, float]:
+    """Fetch real-time prices from Polygon API"""
+    if not POLYGON_API_KEY or not symbols:
+        return {}
+    
+    prices = {}
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Fetch current prices for all symbols in parallel
+            tasks = []
+            for symbol in symbols:
+                # Use previous close as current price (most reliable for after-hours)
+                url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/prev"
+                task = fetch_symbol_price(client, url, symbol)
+                tasks.append(task)
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for symbol, result in zip(symbols, results):
+                if isinstance(result, Exception):
+                    print(f"Failed to fetch price for {symbol}: {result}")
+                    continue
+                if result:
+                    prices[symbol] = result
+                    
+    except Exception as e:
+        print(f"Error fetching current prices: {e}")
+    
+    return prices
+
+async def fetch_symbol_price(client: httpx.AsyncClient, url: str, symbol: str) -> float:
+    """Fetch price for a single symbol"""
+    try:
+        params = {"apiKey": POLYGON_API_KEY}
+        response = await client.get(url, params=params)
+        response.raise_for_status()
+        
+        data = response.json()
+        results = data.get("results", [])
+        
+        if results and len(results) > 0:
+            # Use closing price as current price
+            return float(results[0].get("c", 0.0))
+            
+    except Exception as e:
+        print(f"Error fetching price for {symbol}: {e}")
+    
+    return 0.0
 
 # Historical performance data (June 1 - July 4)
 HISTORICAL_PERFORMANCE_DATA = {
@@ -79,34 +135,49 @@ def get_winner_loser_analysis():
         "win_rate": round((len(winners) / len(HISTORICAL_PERFORMANCE_DATA)) * 100, 1)
     }
 
-def build_normalized_holding(pos: Dict, by_sym: Dict) -> Dict:
-    """Build normalized fields using broker position data"""
+def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, float] = None) -> Dict:
+    """Build normalized fields using broker position data with real current prices"""
     symbol = pos.get("symbol", "")
     
-    # Ensure holdings map 1:1 from broker (no client recompute)
+    # Get quantities and entry price from broker
     qty = int(pos["qty"])
-    last_price = float(pos.get("current_price") or pos.get("asset_price"))
-    market_value = round(qty * last_price, 2)
     avg_entry_price = float(pos["avg_entry_price"])
-    unrealized_pl = round((last_price - avg_entry_price) * qty, 2)
-    unrealized_pl_pct = round((last_price / avg_entry_price - 1.0) if avg_entry_price else 0.0, 4)
+    
+    # Use real current price from Polygon API, fallback to broker price
+    current_price = 0.0
+    if current_prices and symbol in current_prices:
+        current_price = current_prices[symbol]
+    else:
+        # Fallback to broker price (may be stale)
+        current_price = float(pos.get("current_price") or pos.get("asset_price") or avg_entry_price)
+    
+    # Calculate real P&L with current market prices
+    market_value = round(qty * current_price, 2)
+    unrealized_pl = round((current_price - avg_entry_price) * qty, 2)
+    
+    # Fix percentage calculation: (current_price - avg_entry_price) / avg_entry_price * 100
+    if avg_entry_price > 0:
+        unrealized_pl_pct = round(((current_price - avg_entry_price) / avg_entry_price) * 100, 2)
+    else:
+        unrealized_pl_pct = 0.0
     
     # Join discovery context from Redis
     holding = {
         "symbol": symbol,
         "qty": qty,
         "avg_entry_price": avg_entry_price,
-        "last_price": last_price,
+        "last_price": current_price,  # Real current price
         "market_value": market_value,
         "unrealized_pl": unrealized_pl,
-        "unrealized_pl_pct": unrealized_pl_pct
+        "unrealized_pl_pct": unrealized_pl_pct,
+        "price_source": "polygon" if (current_prices and symbol in current_prices) else "broker"
     }
     
     holding["thesis"] = by_sym.get(symbol, {}).get("thesis")
     holding["confidence"] = by_sym.get(symbol, {}).get("confidence") or by_sym.get(symbol, {}).get("score")
     holding["suggestion"] = (
         "increase" if (holding.get("confidence") or 0) >= 0.97
-        else "reduce" if holding["unrealized_pl_pct"] < -0.05
+        else "reduce" if holding["unrealized_pl_pct"] < -5.0  # Fix threshold to use percentage
         else "hold"
     )
     
@@ -147,22 +218,42 @@ async def get_holdings() -> Dict:
             except (ImportError, AttributeError):
                 pass
         
-        # Build normalized holdings
+        # Extract symbols for price fetching
+        symbols = [pos.get("symbol") for pos in positions if pos.get("symbol")]
+        
+        # Fetch real current prices from Polygon API
+        current_prices = await fetch_current_prices(symbols)
+        
+        # Build normalized holdings with real current prices
         normalized_positions = []
         for pos in positions:
             try:
-                normalized_pos = build_normalized_holding(pos, by_sym)
+                normalized_pos = build_normalized_holding(pos, by_sym, current_prices)
                 normalized_positions.append(normalized_pos)
-            except Exception:
-                # Skip positions that can't be normalized
+            except Exception as e:
+                # Log the error but skip positions that can't be normalized
+                print(f"Error normalizing position {pos.get('symbol', 'unknown')}: {e}")
                 continue
+        
+        # Add summary metrics
+        total_market_value = sum(pos.get("market_value", 0) for pos in normalized_positions)
+        total_unrealized_pl = sum(pos.get("unrealized_pl", 0) for pos in normalized_positions)
+        
+        summary_data = {
+            "positions": normalized_positions,
+            "summary": {
+                "total_positions": len(normalized_positions),
+                "total_market_value": round(total_market_value, 2),
+                "total_unrealized_pl": round(total_unrealized_pl, 2),
+                "total_unrealized_pl_pct": round((total_unrealized_pl / (total_market_value - total_unrealized_pl)) * 100, 2) if (total_market_value - total_unrealized_pl) > 0 else 0.0,
+                "price_update_timestamp": datetime.now().isoformat()
+            }
+        }
         
         # Return in format expected by frontend
         return {
             "success": True,
-            "data": {
-                "positions": normalized_positions
-            }
+            "data": summary_data
         }
             
     except Exception as e:
@@ -170,7 +261,8 @@ async def get_holdings() -> Dict:
             "success": False,
             "error": str(e),
             "data": {
-                "positions": []
+                "positions": [],
+                "summary": {}
             }
         }
 
