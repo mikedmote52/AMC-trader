@@ -189,18 +189,16 @@ async def health():
 app.include_router(trades_router)
 app.include_router(polygon_debug, prefix="/debug")
 
-# Include discovery, portfolio, and daily updates routers
+# Include discovery, portfolio, learning, and daily updates routers
 from backend.src.routes import discovery as discovery_routes
 from backend.src.routes import portfolio as portfolio_routes
+from backend.src.routes import learning as learning_routes
 from backend.src.routes import daily_updates as daily_updates_routes
 
 app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery"])
 app.include_router(portfolio_routes.router, prefix="/portfolio", tags=["portfolio"])
+app.include_router(learning_routes.router, prefix="/learning", tags=["learning"])
 app.include_router(daily_updates_routes.router, prefix="/daily-updates", tags=["daily-updates"])
-
-# Learning system temporarily disabled due to database import issues
-# Will be re-enabled after database setup is complete
-# app.include_router(learning_routes.router, prefix="/learning", tags=["learning"])
 
 # Compatibility routes for old frontend paths
 from starlette.responses import RedirectResponse

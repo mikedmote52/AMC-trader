@@ -1,4 +1,5 @@
 import os
+import asyncpg
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -25,3 +26,13 @@ def get_db_session():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     return Session()
+
+async def get_db_pool():
+    """Get asyncpg connection pool for the learning system"""
+    database_url = os.getenv('DATABASE_URL', 'postgresql://localhost/amc_trader')
+    try:
+        pool = await asyncpg.create_pool(database_url, min_size=1, max_size=20)
+        return pool
+    except Exception as e:
+        print(f"Failed to create database pool: {e}")
+        return None
