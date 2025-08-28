@@ -62,3 +62,91 @@ button:focus-visible {
   outline: 2px solid #00d4ff;
   outline-offset: 2px;
 }
+
+/* Mobile-responsive enhancements */
+@media (max-width: 768px) {
+  #root {
+    padding: 8px;
+  }
+  
+  button {
+    min-height: 44px; /* Touch-friendly button size */
+    padding: 0.8em 1.2em;
+  }
+  
+  /* Improve text scaling on mobile */
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.25rem; }
+  
+  /* Cards stack on mobile */
+  .recommendation-card,
+  .holdings-card {
+    min-width: unset !important;
+  }
+}
+
+@media (max-width: 640px) {
+  body {
+    font-size: 14px;
+  }
+  
+  /* Stack portfolio stats vertically on small screens */
+  .portfolio-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  
+  /* Reduce padding on small screens */
+  .card-container {
+    padding: 12px !important;
+  }
+  
+  /* Larger touch targets for mobile */
+  button {
+    min-height: 48px;
+    font-size: 1rem;
+  }
+}
+
+/* Utility classes for responsive design */
+.container-responsive {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+@media (max-width: 768px) {
+  .container-responsive {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .container-responsive {
+    padding: 8px;
+  }
+}
+
+.grid-responsive {
+  display: grid;
+  gap: 12px;
+}
+
+/* Default: 3 columns for large screens */
+.grid-responsive {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+/* 2 columns for medium screens */
+@media (max-width: 1024px) {
+  .grid-responsive {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+}
+
+/* 1 column for mobile */
+@media (max-width: 640px) {
+  .grid-responsive {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}

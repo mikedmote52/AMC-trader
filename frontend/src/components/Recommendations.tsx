@@ -47,7 +47,7 @@ export default function Recommendations() {
   if (!items.length) return <div style={{padding:12}}>No recommendations yet. The discovery job may still be running.</div>;
 
   return (
-    <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(320px, 1fr))", gap:12}}>
+    <div className="grid-responsive">
       {items.map((it) => (
         <RecommendationCard key={it.symbol} item={it} />
       ))}

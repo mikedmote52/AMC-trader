@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { API_BASE } from "../config";
 import { getJSON } from "../lib/api";
 import TradeModal from "./TradeModal";
+import PortfolioSummary from "./PortfolioSummary";
 
 type Holding = {
   symbol: string;
@@ -66,7 +67,8 @@ export default function Holdings() {
 
   return (
     <>
-      <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(320px, 1fr))", gap:12}}>
+      <PortfolioSummary holdings={holdings} isLoading={!holdings.length && !err} />
+      <div className="grid-responsive">
         {holdings.map((holding) => {
           const contender = findContender(holding.symbol);
           const plColor = holding.unrealized_pl >= 0 ? "#22c55e" : "#ef4444";

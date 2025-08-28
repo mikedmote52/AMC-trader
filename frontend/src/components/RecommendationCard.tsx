@@ -66,44 +66,99 @@ export default function RecommendationCard({ item }: { item: Candidate }) {
   return (
     <>
       <div style={cardStyleEnhanced} className="recommendation-card">
+        {/* Header with priority indicator */}
+        {isTopPick && (
+          <div style={priorityBannerStyle}>
+            ⚡ HIGH PRIORITY
+          </div>
+        )}
+        
         <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12}}>
-          <div>
-            <div style={{fontWeight:700, fontSize:20, marginBottom:4, letterSpacing:"-0.02em"}}>
-              {item.symbol}
-              {isTopPick && <span style={{marginLeft:8, fontSize:12, color:"#22c55e"}}>🔥</span>}
+          <div style={{flex: 1}}>
+            <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:4}}>
+              <div style={{fontWeight:700, fontSize:20, letterSpacing:"-0.02em"}}>
+                {item.symbol}
+              </div>
+              {item.confidence && (
+                <div style={{
+                  fontSize: 11,
+                  color: "#999",
+                  background: "rgba(255,255,255,0.05)",
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                }}>
+                  {Math.round(item.confidence * 100)}% confidence
+                </div>
+              )}
             </div>
             <div style={{fontSize:24, fontWeight:700, color:score >= 75 ? "#22c55e" : "#fff"}}>
               ${item.price?.toFixed(2) || "N/A"}
             </div>
+            
+            {/* Quick metrics row */}
+            <div style={{display:"flex", gap:8, marginTop:4, fontSize:11, color:"#666"}}>
+              {item.rel_vol_30m && (
+                <span>Vol: {item.rel_vol_30m.toFixed(1)}x</span>
+              )}
+              {item.atr_pct && (
+                <span>ATR: {(item.atr_pct * 100).toFixed(1)}%</span>
+              )}
+              {item.dollar_vol && (
+                <span>${(item.dollar_vol / 1e6).toFixed(1)}M</span>
+              )}
+            </div>
           </div>
+          
           <div style={{
             background: score >= 75 ? "#22c55e" : score >= 70 ? "#eab308" : "#6b7280",
-            color: "#000",
-            padding: "6px 12px",
-            borderRadius: 999,
-            fontSize: 14,
+            color: score >= 75 ? "#000" : "#fff",
+            padding: "8px 12px",
+            borderRadius: 12,
+            fontSize: 16,
             fontWeight: 700,
-            minWidth: 40,
-            textAlign: "center"
+            minWidth: 48,
+            textAlign: "center",
+            boxShadow: score >= 75 ? "0 0 16px rgba(34, 197, 94, 0.3)" : "none"
           }}>
             {score}
           </div>
         </div>
         
-        <div style={{fontSize:13, color:"#999", marginBottom:16, minHeight:40, lineHeight:1.4}}>
+        {/* Thesis with better typography */}
+        <div style={{
+          fontSize:13, 
+          color: isTopPick ? "#ccc" : "#999", 
+          marginBottom:16, 
+          minHeight:36, 
+          lineHeight:1.4,
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden"
+        }}>
           {item.thesis || "Analyzing opportunity..."}
         </div>
         
+        {/* Enhanced action buttons */}
         <div style={{display:"flex", gap:8}}>
-          <button onClick={handleDetailsClick} style={detailsBtn}>Details</button>
+          <button onClick={handleDetailsClick} style={{
+            ...detailsBtn,
+            flex: 1
+          }}>
+            📊 Details
+          </button>
           <button onClick={() => setShowTradeModal(true)} style={{
             ...buyBtn,
+            flex: 2,
             ...(isTopPick && {
-              background: "#22c55e",
+              background: "linear-gradient(135deg, #22c55e, #16a34a)",
               borderColor: "#22c55e",
-              fontWeight: 700
+              fontWeight: 700,
+              boxShadow: "0 4px 12px rgba(34, 197, 94, 0.2)"
             })
-          }}>Buy</button>
+          }}>
+            {isTopPick ? "🚀 BUY NOW" : "📈 Buy"}
+          </button>
         </div>
       </div>
 
@@ -257,4 +312,20 @@ const cellStyle: React.CSSProperties = {
   padding:"8px 12px",
   borderBottom:"1px solid #333",
   fontSize:13
+};
+
+const priorityBannerStyle: React.CSSProperties = {
+  position: "absolute",
+  top: -1,
+  left: -1,
+  right: -1,
+  background: "linear-gradient(90deg, #22c55e, #16a34a)",
+  color: "#000",
+  fontSize: 10,
+  fontWeight: 800,
+  padding: "4px 8px",
+  textAlign: "center",
+  letterSpacing: "0.05em",
+  borderTopLeftRadius: 12,
+  borderTopRightRadius: 12,
 };
