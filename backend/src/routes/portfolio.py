@@ -395,7 +395,8 @@ async def get_holdings() -> Dict:
         # Return in format expected by frontend
         return {
             "success": True,
-            "data": summary_data
+            "data": summary_data,
+            "debug_raw_positions": [pos for pos in positions if pos.get("symbol") == "UP"]  # Temporary debug
         }
             
     except Exception as e:
