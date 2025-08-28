@@ -19,7 +19,30 @@ async def fetch_current_prices(symbols: List[str]) -> Dict[str, float]:
     
     prices = {}
     
-    # Try Alpaca real-time prices first
+    # Try Alpaca real-time prices from positions first (more reliable than market data endpoint)
+    try:
+        from backend.src.services.broker_alpaca import AlpacaBroker
+        broker = AlpacaBroker()
+        
+        # Get all positions which include current market prices from Alpaca
+        positions = await broker.get_positions()
+        
+        # Extract current prices from positions
+        for pos in positions:
+            symbol = pos.get("symbol")
+            current_price = pos.get("current_price")
+            if symbol in symbols and current_price and float(current_price) > 0:
+                prices[symbol] = float(current_price)
+                print(f"Got Alpaca price for {symbol}: ${current_price}")
+        
+        # Return early if we got all prices from Alpaca positions
+        if len(prices) == len(symbols):
+            return prices
+            
+    except Exception as e:
+        print(f"Alpaca positions price fetch failed: {e}")
+        
+    # Fallback: Try Alpaca market data API (may not work with current permissions)
     try:
         alpaca_key = os.getenv("ALPACA_API_KEY")
         alpaca_secret = os.getenv("ALPACA_API_SECRET")
@@ -27,30 +50,32 @@ async def fetch_current_prices(symbols: List[str]) -> Dict[str, float]:
         
         if alpaca_key and alpaca_secret:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                # Get latest trades for all symbols
+                # Get latest trades for all symbols not already priced
                 headers = {
                     "APCA-API-KEY-ID": alpaca_key,
                     "APCA-API-SECRET-KEY": alpaca_secret
                 }
                 
                 for symbol in symbols:
-                    try:
-                        # Get latest trade price from Alpaca
-                        url = f"{alpaca_base_url}/v2/stocks/{symbol}/trades/latest"
-                        response = await client.get(url, headers=headers)
-                        if response.status_code == 200:
-                            data = response.json()
-                            if "trade" in data and "p" in data["trade"]:
-                                prices[symbol] = float(data["trade"]["p"])
-                                continue
-                    except Exception as e:
-                        print(f"Failed to get Alpaca price for {symbol}: {e}")
+                    if symbol not in prices:  # Only fetch missing prices
+                        try:
+                            # Get latest trade price from Alpaca
+                            url = f"{alpaca_base_url}/v2/stocks/{symbol}/trades/latest"
+                            response = await client.get(url, headers=headers)
+                            if response.status_code == 200:
+                                data = response.json()
+                                if "trade" in data and "p" in data["trade"]:
+                                    prices[symbol] = float(data["trade"]["p"])
+                                    print(f"Got Alpaca market data price for {symbol}: ${data['trade']['p']}")
+                                    continue
+                        except Exception as e:
+                            print(f"Failed to get Alpaca market data price for {symbol}: {e}")
                 
                 # Return early if we got all prices from Alpaca
                 if len(prices) == len(symbols):
                     return prices
     except Exception as e:
-        print(f"Alpaca price fetch failed: {e}")
+        print(f"Alpaca market data price fetch failed: {e}")
     
     # Fallback to Polygon for any missing prices
     if POLYGON_API_KEY:
@@ -163,7 +188,7 @@ def build_normalized_holding(pos: Dict, by_sym: Dict, current_prices: Dict[str, 
     
     if current_prices and symbol in current_prices:
         current_price = current_prices[symbol]
-        price_source = "polygon"
+        price_source = "alpaca"  # Most likely from Alpaca positions now
     else:
         # Fallback to broker price (may be stale)
         current_price = float(pos.get("current_price") or pos.get("asset_price") or avg_entry_price)

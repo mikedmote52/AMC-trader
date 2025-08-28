@@ -27,6 +27,34 @@ class AlpacaBroker:
             return {"status": "error", "broker_status": r.status_code, "broker_body": r.text}
         return r.json()
 
+    async def get_positions(self):
+        """Get current positions from Alpaca broker"""
+        try:
+            r = await self.client.get("/v2/positions")
+            r.raise_for_status()
+            positions = r.json()
+            
+            # Convert to expected format
+            formatted_positions = []
+            for pos in positions:
+                formatted_pos = {
+                    "symbol": pos.get("symbol"),
+                    "qty": pos.get("qty"),
+                    "avg_entry_price": float(pos.get("avg_entry_price", 0)),
+                    "current_price": float(pos.get("current_price", 0)),
+                    "market_value": float(pos.get("market_value", 0)),
+                    "unrealized_pl": float(pos.get("unrealized_pl", 0)),
+                    "cost_basis": float(pos.get("cost_basis", 0)),
+                    "side": pos.get("side")
+                }
+                formatted_positions.append(formatted_pos)
+                
+            return formatted_positions
+            
+        except Exception as e:
+            print(f"Error getting positions from Alpaca: {e}")
+            return []
+
     async def close(self):
         await self.client.aclose()
 
