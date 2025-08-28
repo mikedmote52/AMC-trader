@@ -40,13 +40,21 @@ UNIVERSE_FALLBACK = [s.strip().upper() for s in os.getenv("AMC_DISCOVERY_UNIVERS
 EXCLUDE_FUNDS = os.getenv("AMC_EXCLUDE_FUNDS", "true").lower() in ("1", "true", "yes")
 EXCLUDE_ADRS = os.getenv("AMC_EXCLUDE_ADRS", "true").lower() in ("1", "true", "yes")
 
-# VIGL Pattern Detection Parameters
-VIGL_PRICE_MIN = float(os.getenv("AMC_VIGL_PRICE_MIN", "0.50"))      # $0.50 minimum
-VIGL_PRICE_MAX = float(os.getenv("AMC_VIGL_PRICE_MAX", "10.00"))     # $10.00 maximum for explosive potential
-VIGL_VOLUME_MIN = float(os.getenv("AMC_VIGL_VOLUME_MIN", "3.0"))     # 3x minimum volume spike
-VIGL_VOLUME_TARGET = float(os.getenv("AMC_VIGL_VOLUME_TARGET", "20.9"))  # Target 20.9x for VIGL pattern
-VIGL_MOMENTUM_MIN = float(os.getenv("AMC_VIGL_MOMENTUM_MIN", "0.05"))  # 5% minimum momentum
-WOLF_RISK_THRESHOLD = float(os.getenv("AMC_WOLF_RISK_THRESHOLD", "0.6"))  # WOLF pattern avoidance
+# EXPLOSIVE PATTERN LEARNING - Based on VIGL's 324% Winner Analysis
+EXPLOSIVE_PRICE_MIN = float(os.getenv("AMC_EXPLOSIVE_PRICE_MIN", "2.50"))    # Sweet spot: $2.50-$25 for max explosive potential  
+EXPLOSIVE_PRICE_MAX = float(os.getenv("AMC_EXPLOSIVE_PRICE_MAX", "25.00"))   # Above $25 = harder to explode
+EXPLOSIVE_VOLUME_MIN = float(os.getenv("AMC_EXPLOSIVE_VOLUME_MIN", "5.0"))   # 5x+ volume for true breakouts
+EXPLOSIVE_VOLUME_TARGET = float(os.getenv("AMC_EXPLOSIVE_VOLUME_TARGET", "15.0"))  # 15x+ volume = explosive potential
+EXPLOSIVE_MOMENTUM_MIN = float(os.getenv("AMC_EXPLOSIVE_MOMENTUM_MIN", "0.08"))     # 8%+ momentum for explosive moves
+EXPLOSIVE_ATR_MIN = float(os.getenv("AMC_EXPLOSIVE_ATR_MIN", "0.06"))         # 6%+ ATR for volatility expansion
+WOLF_RISK_THRESHOLD = float(os.getenv("AMC_WOLF_RISK_THRESHOLD", "0.6"))     # WOLF pattern avoidance
+
+# Legacy VIGL parameters (kept for compatibility)
+VIGL_PRICE_MIN = EXPLOSIVE_PRICE_MIN
+VIGL_PRICE_MAX = EXPLOSIVE_PRICE_MAX  
+VIGL_VOLUME_MIN = EXPLOSIVE_VOLUME_MIN
+VIGL_VOLUME_TARGET = EXPLOSIVE_VOLUME_TARGET
+VIGL_MOMENTUM_MIN = EXPLOSIVE_MOMENTUM_MIN
 
 # Configure logging
 logging.basicConfig(
@@ -85,51 +93,80 @@ def _volume_spike_ratio(bars):
     avg_volume = sum(avg_volumes) / len(avg_volumes) if avg_volumes else 1
     return current_volume / avg_volume if avg_volume > 0 else 0.0
 
-def _calculate_vigl_score(price, volume_spike, momentum, atr_pct):
-    """Calculate VIGL pattern similarity score (0-1) - Updated for current market conditions"""
-    # Price score: Realistic range for current market - broader acceptance
-    if 1.0 <= price <= 50.0:
-        # Good price range for momentum plays
-        if price <= 10.0:
-            price_score = 1.0  # Small caps preferred
-        elif price <= 25.0:
-            price_score = 0.8  # Mid-small caps acceptable
-        else:  # price <= 50.0
-            price_score = 0.6  # Mid caps acceptable
-    elif 50.0 < price <= 100.0:
-        price_score = 0.4  # Large caps possible but less explosive
+def _calculate_explosive_potential(price, volume_spike, momentum, atr_pct):
+    """Calculate EXPLOSIVE potential score (0-1) - Learning from 324% VIGL winner patterns"""
+    
+    # EXPLOSIVE PRICE SCORING - Based on historical explosive winners
+    if EXPLOSIVE_PRICE_MIN <= price <= EXPLOSIVE_PRICE_MAX:
+        # Sweet spot: $2.50-$25 for maximum explosive potential
+        if 3.0 <= price <= 12.0:
+            price_score = 1.0   # VIGL winner zone: $3-12 range
+        elif 2.5 <= price <= 20.0:
+            price_score = 0.85  # High explosive potential
+        else:
+            price_score = 0.7   # Good explosive potential
+    elif 1.0 <= price < EXPLOSIVE_PRICE_MIN:
+        price_score = 0.5   # Too low - penny stock risk
+    elif EXPLOSIVE_PRICE_MAX < price <= 50.0:
+        price_score = 0.3   # Too high - harder to explode
     elif 0.50 <= price < 1.0:
         price_score = 0.3  # Penny stocks risky but possible
     else:
         price_score = 0.1  # Very large caps or sub-penny
     
-    # Volume spike score: Realistic targets for current market (most stocks 0.5-2.0x)
-    if volume_spike >= 2.0:
-        volume_score = 1.0  # Excellent volume spike
+    # EXPLOSIVE VOLUME SCORING - Critical for breakouts
+    if volume_spike >= EXPLOSIVE_VOLUME_TARGET:  # 15x+ volume
+        volume_score = 1.0   # TRUE explosive volume
+    elif volume_spike >= 10.0:
+        volume_score = 0.9   # Very high explosive potential
+    elif volume_spike >= EXPLOSIVE_VOLUME_MIN:  # 5x+ volume
+        volume_score = 0.8   # Good explosive potential
+    elif volume_spike >= 3.0:
+        volume_score = 0.6   # Moderate interest
     elif volume_spike >= 1.5:
-        volume_score = 0.8  # Good volume spike
-    elif volume_spike >= 1.0:
-        volume_score = 0.6  # Moderate volume spike
-    elif volume_spike >= 0.75:
-        volume_score = 0.4  # Slight volume increase
+        volume_score = 0.4   # Some interest
     else:
-        volume_score = 0.2  # Below average volume
+        volume_score = 0.1   # No real interest
     
-    # Momentum score: positive momentum preferred
-    momentum_score = max(0, min(1, 0.5 + momentum * 2))  # -50% to +50% maps to 0-1
+    # EXPLOSIVE MOMENTUM SCORING - Recent breakout strength
+    momentum_abs = abs(momentum)
+    if momentum >= 0.15:  # 15%+ positive momentum
+        momentum_score = 1.0   # Strong explosive momentum
+    elif momentum >= EXPLOSIVE_MOMENTUM_MIN:  # 8%+ momentum
+        momentum_score = 0.8   # Good momentum
+    elif momentum >= 0.05:  # 5%+ momentum
+        momentum_score = 0.6   # Some momentum
+    elif momentum >= 0.0:
+        momentum_score = 0.4   # Flat but not declining
+    elif momentum >= -0.05:  # Slight decline acceptable
+        momentum_score = 0.3   # Minor pullback opportunity
+    else:
+        momentum_score = 0.1   # Declining - avoid
     
-    # Volatility (ATR) score: higher volatility = more explosive potential
-    volatility_score = min(atr_pct / 0.15, 1.0)  # 15% ATR = max score
+    # ATR VOLATILITY SCORING - Expansion indicates explosive potential
+    if atr_pct >= 0.10:  # 10%+ ATR = high volatility
+        atr_score = 1.0   # Maximum explosive potential
+    elif atr_pct >= EXPLOSIVE_ATR_MIN:  # 6%+ ATR
+        atr_score = 0.8   # Good volatility
+    elif atr_pct >= 0.04:  # 4%+ ATR
+        atr_score = 0.6   # Moderate volatility
+    else:
+        atr_score = 0.3   # Low volatility - less explosive
     
-    # Weighted VIGL similarity: volume spike is most important
-    vigl_score = (
-        volume_score * 0.4 +      # Volume spike is critical
-        price_score * 0.3 +       # Price range matters
-        momentum_score * 0.2 +    # Momentum important
-        volatility_score * 0.1    # Volatility adds confirmation
+    # WEIGHTED EXPLOSIVE SCORE - Optimized for explosive winners
+    explosive_score = (
+        price_score * 0.25 +      # Price range importance
+        volume_score * 0.35 +     # Volume surge most important
+        momentum_score * 0.25 +   # Momentum crucial
+        atr_score * 0.15         # Volatility expansion
     )
     
-    return min(vigl_score, 1.0)
+    return explosive_score
+
+# Legacy function for compatibility
+def _calculate_vigl_score(price, volume_spike, momentum, atr_pct):
+    """Legacy VIGL score - now uses explosive potential calculation"""
+    return _calculate_explosive_potential(price, volume_spike, momentum, atr_pct)
 
 def _calculate_wolf_risk_score(price, volume_spike, momentum, atr_pct, rs_5d):
     """Calculate WOLF pattern risk score (0-1, higher = more risky)"""
@@ -754,10 +791,42 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         except Exception:
             return sym, None
 
-    # Process ALL surviving candidates - no arbitrary caps that destroy intelligent filtering
-    # Note: Removed the 400-stock cap that was randomly truncating the carefully filtered universe
-
-    pairs = await asyncio.gather(*[fetch_bars(s) for s in kept_syms])
+    # SMART PROCESSING: Only fetch bars for top candidates to avoid API overload and rate limits
+    # Pre-sort by explosive potential using data we already have
+    logger.info(f"Smart filtering: Processing top candidates from {len(kept_syms)} stocks...")
+    
+    # Pre-sort by likely explosive potential (price + volume from initial data)
+    volume_data = {row.get("T"): float(row.get("v", 0)) for row in rows if row.get("T") in kept_syms}
+    price_data = {row.get("T"): float(row.get("c", 0)) for row in rows if row.get("T") in kept_syms}
+    
+    # Score by explosive potential indicators
+    scored_syms = []
+    for sym in kept_syms:
+        vol = volume_data.get(sym, 0)
+        price = price_data.get(sym, 0)
+        # Quick explosive potential score
+        explosive_score = 0
+        if 2.0 <= price <= 25.0:  # Sweet spot range
+            explosive_score += 3
+        elif 1.0 <= price <= 50.0:
+            explosive_score += 2
+        if vol >= 1000000:  # High volume
+            explosive_score += 2
+        elif vol >= 500000:
+            explosive_score += 1
+            
+        scored_syms.append((sym, explosive_score, vol, price))
+    
+    # Sort by explosive potential, then by volume
+    scored_syms.sort(key=lambda x: (x[1], x[2]), reverse=True)
+    
+    # Process top candidates first (limit to prevent API overload)
+    process_batch = min(len(scored_syms), 600 if relaxed else 400)
+    top_candidates = [s[0] for s in scored_syms[:process_batch]]
+    
+    logger.info(f"Processing {len(top_candidates)} top candidates (filtered from {len(kept_syms)})")
+    
+    pairs = await asyncio.gather(*[fetch_bars(s) for s in top_candidates])
     comp = {s:p for s,p in pairs if p is not None}
     trace.exit("compression_calc", list(comp.keys()),
                [{"symbol":s,"reason":"no_history"} for s,p in pairs if p is None])
@@ -831,14 +900,40 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 vigl_conf = "HIGH" if vigl_score >= 0.80 else "MEDIUM" if vigl_score >= 0.65 else "LOW"
                 risk_level = "HIGH" if wolf_risk > 0.6 else "MEDIUM" if wolf_risk > 0.3 else "LOW"
                 
-                # FIX: Use 5-day momentum (r5) as it's more reliable than 1-day (r1)
+                # EXPLOSIVE PATTERN ANALYSIS - Learning from winners
                 momentum_pct = r5 * 100 if r5 is not None else 0.0
                 
-                # FIX: Compression percentile (lower = tighter compression, higher = looser)
-                compression_percentile = compression_pct * 100
-                compression_desc = f"{compression_percentile:.1f}% compression" if compression_percentile > 0 else "tight compression"
+                # Explosive potential scoring
+                explosive_score = _calculate_explosive_potential(price, volume_spike, r5 or 0.0, atrp)
                 
-                thesis = f"{sym} VIGL pattern {vigl_conf} confidence ({vigl_score:.2f}), {volume_spike:.1f}x volume spike, {momentum_pct:+.1f}% 5d momentum, Risk: {risk_level}, {compression_desc}, ATR: {atrp*100:.1f}%, Liquidity: ${int(dollar_vol)/1_000_000:.1f}M."
+                # Classification based on explosive potential
+                if explosive_score >= 0.75:
+                    pattern_type = "EXPLOSIVE"
+                    confidence_level = "HIGH"
+                elif explosive_score >= 0.60:
+                    pattern_type = "BREAKOUT" 
+                    confidence_level = "MEDIUM-HIGH"
+                elif vigl_score >= 0.60:
+                    pattern_type = "VIGL"
+                    confidence_level = vigl_conf
+                else:
+                    pattern_type = "MOMENTUM"
+                    confidence_level = "MEDIUM"
+                
+                # Compression percentile (FIXED - was showing inverted values)
+                compression_percentile = compression_pct * 100
+                if compression_percentile <= 5.0:
+                    compression_desc = f"TIGHT compression ({compression_percentile:.1f}%)"
+                elif compression_percentile <= 15.0:
+                    compression_desc = f"moderate compression ({compression_percentile:.1f}%)"
+                else:
+                    compression_desc = f"loose compression ({compression_percentile:.1f}%)"
+                
+                # Explosive potential indicators
+                volume_desc = "EXPLOSIVE volume" if volume_spike >= 10.0 else f"{volume_spike:.1f}x volume surge"
+                momentum_desc = f"{momentum_pct:+.1f}% momentum" + (" [STRONG]" if momentum_pct >= 10.0 else "")
+                
+                thesis = f"{sym} {pattern_type} pattern {confidence_level} confidence ({vigl_score:.2f}), {volume_desc}, {momentum_desc}, Risk: {risk_level}, {compression_desc}, ATR: {atrp*100:.1f}%, Liquidity: ${int(dollar_vol)/1_000_000:.1f}M."
                 
                 return {
                     "price": price,
@@ -871,13 +966,24 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         price = candidate.get("price", 0.0)
         volume_spike = candidate.get("volume_spike", 0.0)
         
-        # VIGL Pattern Requirements - Realistic for current market conditions
-        meets_vigl_criteria = (
-            vigl_score >= 0.40 and                    # Achievable VIGL similarity with new scoring
-            wolf_risk <= WOLF_RISK_THRESHOLD and      # Acceptable risk (avoid WOLF pattern)  
-            price >= 0.50 and                         # Above sub-penny threshold
-            price <= 100.0 and                        # Realistic price range for all caps
-            volume_spike >= 0.75                      # Realistic volume requirement (above average)
+        # EXPLOSIVE PATTERN REQUIREMENTS - Calibrated for explosive opportunities  
+        meets_explosive_criteria = (
+            vigl_score >= 0.40 and                           # Achievable threshold for explosive potential
+            wolf_risk <= WOLF_RISK_THRESHOLD and             # Acceptable risk (avoid WOLF pattern)  
+            price >= 0.50 and                                # $0.50+ minimum (include micro caps)
+            price <= 100.0 and                               # Under $100 for good explosive potential  
+            volume_spike >= 1.5 and                          # 1.5x+ volume surge (realistic for explosive moves)
+            candidate.get("rs_5d", 0) >= -0.10 and          # Allow 10% pullbacks (better buying opportunities)
+            candidate.get("atr_pct", 0) >= 0.025             # 2.5%+ ATR minimum for movement potential
+        )
+        
+        # Legacy criteria (more lenient) for compatibility  
+        meets_vigl_criteria = meets_explosive_criteria or (
+            vigl_score >= 0.45 and                    # Lower backup threshold
+            wolf_risk <= WOLF_RISK_THRESHOLD and      # Risk control
+            price >= 0.50 and                         # Basic price filter  
+            price <= 50.0 and                         # Extended range
+            volume_spike >= 2.0                       # Decent volume surge
         )
         
         if meets_vigl_criteria:
