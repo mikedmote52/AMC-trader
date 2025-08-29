@@ -8,6 +8,62 @@ from ..shared.database import get_db_pool
 
 router = APIRouter()
 
+@router.post("/init-database")
+async def init_learning_database():
+    """Initialize learning system database tables"""
+    try:
+        pool = await get_db_pool()
+        if not pool:
+            return {"success": False, "error": "Database connection failed"}
+        
+        async with pool.acquire() as conn:
+            # Create learning_decisions table
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS learning_decisions (
+                    id SERIAL PRIMARY KEY,
+                    symbol VARCHAR(10) NOT NULL,
+                    decision_type VARCHAR(20) NOT NULL,
+                    recommendation_source VARCHAR(50) NOT NULL,
+                    confidence_score FLOAT NOT NULL,
+                    price_at_decision FLOAT NOT NULL,
+                    market_time VARCHAR(20) NOT NULL,
+                    reasoning TEXT,
+                    decision_data JSONB,
+                    created_at TIMESTAMP DEFAULT NOW()
+                );
+            """)
+            
+            # Create learning_outcomes table
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS learning_outcomes (
+                    id SERIAL PRIMARY KEY,
+                    decision_id INTEGER REFERENCES learning_decisions(id),
+                    symbol VARCHAR(10) NOT NULL,
+                    outcome_type VARCHAR(20) NOT NULL,
+                    price_at_outcome FLOAT NOT NULL,
+                    return_pct FLOAT NOT NULL,
+                    days_held INTEGER NOT NULL,
+                    market_conditions JSONB,
+                    created_at TIMESTAMP DEFAULT NOW()
+                );
+            """)
+            
+            # Create indexes
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_learning_decisions_symbol 
+                ON learning_decisions(symbol);
+            """)
+            
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_learning_outcomes_symbol 
+                ON learning_outcomes(symbol);
+            """)
+        
+        return {"success": True, "message": "Learning database tables created successfully"}
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 # Learning system: Track decisions, outcomes, and adapt recommendations
 class LearningSystem:
     """
