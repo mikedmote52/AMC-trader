@@ -329,103 +329,26 @@ class DiscoveryPipeline:
             return []
     
     def fetch_polygon_prices(self, symbols: List[str]) -> Dict[str, Dict]:
-        """Fetch comprehensive real-time market data from Polygon API"""
+        """Fetch current prices and volume from Polygon API"""
         price_data = {}
         
         try:
-            import requests
-            from datetime import datetime, timedelta
-            
-            # Get current date for today's bars
-            today = datetime.now().strftime('%Y-%m-%d')
-            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-            
+            # Get previous close data for all symbols
             for symbol in symbols:
                 try:
-                    # First get previous close for baseline
+                    # Get previous close
                     prev_close = self.polygon_client.get_previous_close_agg(symbol)
                     
                     if prev_close and len(prev_close) > 0:
-                        prev_data = prev_close[0]
-                        prev_close_price = prev_data.close
-                        
-                        # Try to get current day data for real-time info
-                        current_price = prev_close_price  # Default fallback
-                        current_volume = prev_data.volume
-                        intraday_high = prev_data.high
-                        intraday_low = prev_data.low  
-                        day_open = prev_data.open
-                        
-                        # Attempt to get real-time data if market is open (with circuit breaker)
-                        enhanced_data_enabled = os.getenv('ENHANCED_PRICING', 'false').lower() == 'true'
-                        
-                        if enhanced_data_enabled and is_market_hours():
-                            try:
-                                # Get today's aggregated bars (1 minute resolution) 
-                                # Only for a limited number of symbols to avoid rate limits
-                                url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/minute/{today}/{today}"
-                                params = {
-                                    'apikey': os.getenv('POLYGON_API_KEY'),
-                                    'adjusted': 'true',
-                                    'sort': 'desc',
-                                    'limit': 1
-                                }
-                                
-                                response = requests.get(url, params=params, timeout=5)  # Reduced timeout
-                                
-                                if response.status_code == 200:
-                                    data = response.json()
-                                    if data.get('results') and len(data['results']) > 0:
-                                        latest = data['results'][0]
-                                        current_price = latest['c']  # Current close
-                                        current_volume = latest['v']  # Current volume
-                                        
-                                        logger.debug(f"Enhanced real-time data for {symbol}: ${current_price}")
-                                    else:
-                                        logger.debug(f"No intraday data for {symbol}, using previous close")
-                                else:
-                                    logger.debug(f"Real-time API response {response.status_code} for {symbol}")
-                                    
-                            except Exception as rt_e:
-                                logger.debug(f"Enhanced pricing failed for {symbol}: {rt_e}, falling back to previous close")
-                        
-                        # Calculate comprehensive metrics
-                        price_change = current_price - prev_close_price
-                        price_change_pct = (price_change / prev_close_price) * 100 if prev_close_price > 0 else 0.0
-                        
-                        # Enhanced price data structure
+                        data = prev_close[0]
                         price_data[symbol] = {
-                            # Core pricing
-                            'price': current_price,
-                            'prev_close': prev_close_price,
-                            'open': day_open,
-                            'high': intraday_high, 
-                            'low': intraday_low,
-                            
-                            # Volume data
-                            'volume': current_volume,
-                            'volume_weighted_price': prev_data.volume_weighted_average_price if hasattr(prev_data, 'volume_weighted_average_price') else current_price,
-                            
-                            # Change metrics
-                            'change_dollar': price_change,
-                            'change_percent': price_change_pct,
-                            
-                            # Trading metrics  
-                            'day_range': intraday_high - intraday_low,
-                            'day_range_pct': ((intraday_high - intraday_low) / current_price) * 100 if current_price > 0 else 0,
-                            'position_in_range': ((current_price - intraday_low) / (intraday_high - intraday_low)) if intraday_high > intraday_low else 0.5,
-                            
-                            # Data freshness
-                            'is_real_time': is_market_hours(),
-                            'data_timestamp': datetime.now().isoformat()
+                            'price': data.close,
+                            'volume': data.volume,
+                            'high': data.high,
+                            'low': data.low,
+                            'open': data.open
                         }
-                        
-                        # Ensure we have valid pricing data
-                        if current_price <= 0:
-                            logger.warning(f"Invalid price for {symbol}: {current_price}, skipping")
-                            continue
-                            
-                        logger.debug(f"Market data for {symbol}: ${current_price:.2f} ({price_change_pct:+.2f}%)")
+                        logger.debug(f"Fetched data for {symbol}: ${data.close}")
                     else:
                         logger.warning(f"No data available for {symbol}")
                         
@@ -436,7 +359,7 @@ class DiscoveryPipeline:
         except Exception as e:
             logger.error(f"Error fetching Polygon data: {e}")
             
-        logger.info(f"Successfully fetched enhanced price data for {len(price_data)} symbols")
+        logger.info(f"Successfully fetched price data for {len(price_data)} symbols")
         return price_data
     
     def compute_sentiment_score(self, symbol: str, price_data: Dict) -> Optional[float]:
@@ -997,14 +920,10 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                     pattern_type = "MOMENTUM"
                     confidence_level = "MEDIUM"
                 
-                # Get enhanced market data for comprehensive thesis
+                # Get basic market data for thesis 
                 market_data = price_data.get(sym, {})
                 current_price = market_data.get('price', price)
-                change_pct = market_data.get('change_percent', 0.0)
-                day_range_pct = market_data.get('day_range_pct', 0.0)
-                position_in_range = market_data.get('position_in_range', 0.5)
                 intraday_volume = market_data.get('volume', 0)
-                is_real_time = market_data.get('is_real_time', False)
                 
                 # Compression percentile (FIXED - was showing inverted values)
                 compression_percentile = compression_pct * 100
@@ -1015,87 +934,22 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 else:
                     compression_desc = f"loose compression ({compression_percentile:.1f}%)"
                 
-                # Enhanced volume analysis 
-                if volume_spike >= 10.0:
-                    volume_desc = f"EXPLOSIVE {volume_spike:.1f}x volume surge"
-                elif volume_spike >= 5.0:
-                    volume_desc = f"MASSIVE {volume_spike:.1f}x volume spike"
-                elif volume_spike >= 2.0:
-                    volume_desc = f"STRONG {volume_spike:.1f}x volume increase"
-                else:
-                    volume_desc = f"{volume_spike:.1f}x volume surge"
+                # Explosive potential indicators
+                volume_desc = "EXPLOSIVE volume" if volume_spike >= 10.0 else f"{volume_spike:.1f}x volume surge"
+                momentum_desc = f"{momentum_pct:+.1f}% momentum" + (" [STRONG]" if momentum_pct >= 10.0 else "")
                 
-                # Enhanced momentum analysis with intraday context
-                momentum_desc = f"{momentum_pct:+.1f}% 5-day momentum"
-                if change_pct != 0:
-                    momentum_desc += f", {change_pct:+.2f}% today"
-                
-                if momentum_pct >= 10.0:
-                    momentum_desc += " [STRONG TREND]"
-                elif momentum_pct <= -10.0:
-                    momentum_desc += " [PULLBACK]"
-                
-                # Position in daily range analysis
-                range_position_desc = ""
-                if position_in_range >= 0.85:
-                    range_position_desc = " near daily HIGH"
-                elif position_in_range <= 0.15:
-                    range_position_desc = " near daily LOW"
-                elif 0.4 <= position_in_range <= 0.6:
-                    range_position_desc = " mid-range"
-                
-                # Market session context
-                session_context = ""
-                if is_real_time:
-                    session_context = " [LIVE]"
-                else:
-                    session_context = " [Pre/Post Market]"
-                
-                # Enhanced thesis with comprehensive market analysis
-                thesis = f"{sym} {pattern_type} signal - {confidence_level} confidence ({vigl_score:.2f}). "
-                thesis += f"Price: ${current_price:.2f}{range_position_desc}{session_context}. "
-                thesis += f"{volume_desc} ({intraday_volume:,} shares). "
-                thesis += f"{momentum_desc}. "
-                thesis += f"Technical: {compression_desc}, ATR {atrp*100:.1f}%, Risk {risk_level}. "
-                thesis += f"Liquidity: ${int(dollar_vol)/1_000_000:.1f}M daily volume."
+                thesis = f"{sym} {pattern_type} pattern {confidence_level} confidence ({vigl_score:.2f}), {volume_desc}, {momentum_desc}, Risk: {risk_level}, {compression_desc}, ATR: {atrp*100:.1f}%, Liquidity: ${int(dollar_vol)/1_000_000:.1f}M."
                 
                 return {
-                    # Core pricing (updated with real-time data)
-                    "price": current_price,
-                    "prev_close": market_data.get('prev_close', price),
-                    "change_dollar": market_data.get('change_dollar', 0.0),
-                    "change_percent": change_pct,
-                    "intraday_high": market_data.get('high', price),
-                    "intraday_low": market_data.get('low', price),
-                    "day_range_pct": day_range_pct,
-                    "position_in_range": position_in_range,
-                    
-                    # Volume and liquidity
-                    "dollar_vol": dollar_vol,
-                    "intraday_volume": intraday_volume,
-                    "volume_spike": volume_spike,
-                    
-                    # Technical indicators
+                    "price": price,
+                    "dollar_vol": dollar_vol, 
                     "compression_pct": compression_pct,
                     "atr_pct": atrp, 
                     "rs_5d": r5,
                     "vigl_score": vigl_score,
                     "wolf_risk": wolf_risk,
-                    
-                    # Data freshness
-                    "is_real_time": is_real_time,
-                    "data_timestamp": market_data.get('data_timestamp'),
-                    
-                    # Enhanced factors with market context
-                    "factors": {
-                        **factors,
-                        "current_price": current_price,
-                        "change_percent_today": change_pct,
-                        "day_range_percent": day_range_pct,
-                        "position_in_daily_range": position_in_range,
-                        "intraday_volume": intraday_volume,
-                        "is_live_data": is_real_time
-                    },
+                    "volume_spike": volume_spike,
+                    "factors": factors,
                     "thesis": thesis
                 }
         except Exception as e:
