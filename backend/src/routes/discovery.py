@@ -232,7 +232,11 @@ async def get_squeeze_candidates(min_score: float = Query(0.70, ge=0.0, le=1.0))
             
             # Extract data for squeeze detection
             # Fix data mapping - calculate missing values from available data
-            current_volume = item.get('volume', 0.0)
+            price = item.get('price', 0.0)
+            dollar_volume = item.get('dollar_vol', 0.0)
+            
+            # Calculate share volume from dollar volume and price
+            current_volume = dollar_volume / price if price > 0 else 0.0
             volume_spike_ratio = item.get('volume_spike', 1.0)
             
             # Reverse calculate avg_volume_30d from current volume and spike ratio
