@@ -851,16 +851,16 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
     async def _enrich(sym):
         try:
             async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
-                # Get recent price/volume data
-                g = await _poly_get(client, f"/v2/aggs/grouped/locale/us/market/stocks/{date}", params={"adjusted":"true"})
-                rows = g.get("results") or []
-                price_row = next((r for r in rows if r.get("T") == sym), None)
+                # Get recent price/volume data for THIS SPECIFIC STOCK ONLY
+                prev_data = await _poly_get(client, f"/v2/aggs/ticker/{sym}/prev", params={"adjusted":"true"})
+                results = prev_data.get("results") or []
                 
-                if not price_row:
+                if not results:
                     return {"price": 0.0, "dollar_vol": 0.0, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "vigl_score": 0.0, "wolf_risk": 0.0, "volume_spike": 0.0, "factors": {}, "thesis": f"{sym} data unavailable."}
                 
-                price = float(price_row.get("c") or 0.0)
-                volume = float(price_row.get("v") or 0.0)
+                price_data = results[0]
+                price = float(price_data.get("c") or 0.0)
+                volume = float(price_data.get("v") or 0.0)
                 dollar_vol = price * volume
                 
                 # Get historical bars for metrics
