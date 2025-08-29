@@ -5,6 +5,7 @@ import importlib
 import math
 import os
 from backend.src.shared.redis_client import get_redis_client
+from backend.src.services.squeeze_detector import SqueezeDetector
 
 router = APIRouter()
 
@@ -197,3 +198,141 @@ async def discovery_test(relaxed: bool = Query(True), limit: int = Query(10)):
         return {"items": items, "trace": trace, "module": mod, "relaxed": relaxed, "limit": limit}
     except Exception as e:
         return {"items": [], "trace": {}, "module": mod, "error": str(e)}
+
+@router.get("/squeeze-candidates")
+async def get_squeeze_candidates(min_score: float = Query(0.70, ge=0.0, le=1.0)):
+    """
+    VIGL Squeeze Pattern Detection Endpoint
+    
+    Returns only stocks with squeeze_score > min_score threshold
+    Designed to identify explosive opportunities like VIGL (+324%)
+    
+    Args:
+        min_score: Minimum squeeze score (0.0-1.0), default 0.70 for high confidence
+        
+    Returns:
+        List of high-confidence squeeze candidates with detailed analysis
+    """
+    try:
+        r = get_redis_client()
+        
+        # Get current discovery contenders
+        items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
+        
+        squeeze_candidates = []
+        squeeze_detector = SqueezeDetector()
+        
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+                
+            symbol = item.get("symbol")
+            if not symbol:
+                continue
+            
+            # Extract data for squeeze detection
+            squeeze_data = {
+                'symbol': symbol,
+                'price': item.get('price', 0.0),
+                'volume': item.get('volume', 0.0),
+                'avg_volume_30d': item.get('factors', {}).get('avg_volume_30d', 1000000),
+                'short_interest': item.get('factors', {}).get('short_interest', 0.0),
+                'float': item.get('factors', {}).get('float_shares', 50000000),
+                'borrow_rate': item.get('factors', {}).get('borrow_rate', 0.0),
+                'shares_outstanding': item.get('factors', {}).get('shares_outstanding', 100000000),
+                # Additional fields that might be in factors
+                'market_cap': item.get('factors', {}).get('market_cap', item.get('price', 0) * 50000000)
+            }
+            
+            # Detect squeeze pattern
+            squeeze_result = squeeze_detector.detect_vigl_pattern(symbol, squeeze_data)
+            
+            if squeeze_result and squeeze_result.squeeze_score >= min_score:
+                # Build enhanced candidate record
+                candidate = {
+                    'symbol': symbol,
+                    'price': squeeze_result.price,
+                    'squeeze_score': squeeze_result.squeeze_score,
+                    'squeeze_pattern': squeeze_result.pattern_match,
+                    'confidence': squeeze_result.confidence,
+                    'volume_spike': squeeze_result.volume_spike,
+                    'short_interest': squeeze_result.short_interest * 100,  # Convert to percentage
+                    'float_shares': squeeze_result.float_shares,
+                    'borrow_rate': squeeze_result.borrow_rate * 100,  # Convert to percentage
+                    'thesis': squeeze_result.thesis,
+                    
+                    # Preserve original discovery data
+                    'original_score': item.get('score', 0.0),
+                    'original_reason': item.get('reason', ''),
+                    'factors': item.get('factors', {}),
+                    
+                    # Add VIGL classification
+                    'is_vigl_class': squeeze_result.squeeze_score >= 0.85,
+                    'is_high_confidence': squeeze_result.squeeze_score >= 0.75,
+                    'explosive_potential': 'EXTREME' if squeeze_result.squeeze_score >= 0.85 else 'HIGH'
+                }
+                
+                squeeze_candidates.append(candidate)
+        
+        # Sort by squeeze score descending (best first)
+        squeeze_candidates.sort(key=lambda x: x['squeeze_score'], reverse=True)
+        
+        # Add metadata
+        response = {
+            'candidates': squeeze_candidates,
+            'count': len(squeeze_candidates),
+            'min_score_threshold': min_score,
+            'vigl_class_count': len([c for c in squeeze_candidates if c['is_vigl_class']]),
+            'high_confidence_count': len([c for c in squeeze_candidates if c['is_high_confidence']]),
+            'avg_squeeze_score': round(sum(c['squeeze_score'] for c in squeeze_candidates) / len(squeeze_candidates), 3) if squeeze_candidates else 0.0,
+            'squeeze_weights': {
+                'volume_surge': 40,  # 40% weight
+                'short_interest': 30,  # 30% weight 
+                'float_tightness': 20,  # 20% weight
+                'borrow_pressure': 10   # 10% weight
+            },
+            'criteria': {
+                'price_range': '$2.00 - $10.00',
+                'volume_min': '10x average',
+                'volume_target': '20.9x (VIGL level)',
+                'float_max': '50M shares',
+                'short_interest_min': '20%',
+                'market_cap_max': '$500M'
+            }
+        }
+        
+        return response
+        
+    except Exception as e:
+        return {
+            'candidates': [],
+            'count': 0,
+            'error': str(e),
+            'min_score_threshold': min_score
+        }
+
+@router.get("/squeeze-validation")
+async def validate_squeeze_detector():
+    """
+    Validate SqueezeDetector against historical winners
+    
+    Returns validation results for VIGL, CRWV, AEVA patterns
+    """
+    try:
+        detector = SqueezeDetector()
+        validation_result = detector.validate_historical_winners()
+        
+        # Add current detector configuration
+        validation_result['current_config'] = {
+            'vigl_criteria': detector.VIGL_CRITERIA,
+            'confidence_levels': detector.CONFIDENCE_LEVELS,
+            'algorithm_version': 'v1.0_vigl_restoration'
+        }
+        
+        return validation_result
+        
+    except Exception as e:
+        return {
+            'validation_complete': False,
+            'error': str(e)
+        }
