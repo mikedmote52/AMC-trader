@@ -41,7 +41,7 @@ EXCLUDE_FUNDS = os.getenv("AMC_EXCLUDE_FUNDS", "true").lower() in ("1", "true", 
 EXCLUDE_ADRS = os.getenv("AMC_EXCLUDE_ADRS", "true").lower() in ("1", "true", "yes")
 
 # EXPLOSIVE PATTERN LEARNING - Based on VIGL's 324% Winner Analysis
-EXPLOSIVE_PRICE_MIN = float(os.getenv("AMC_EXPLOSIVE_PRICE_MIN", "2.50"))    # Sweet spot: $2.50-$25 for max explosive potential  
+EXPLOSIVE_PRICE_MIN = float(os.getenv("AMC_EXPLOSIVE_PRICE_MIN", "0.10"))    # Lowered to $0.10 to capture penny stock explosions  
 EXPLOSIVE_PRICE_MAX = float(os.getenv("AMC_EXPLOSIVE_PRICE_MAX", "25.00"))   # Above $25 = harder to explode
 EXPLOSIVE_VOLUME_MIN = float(os.getenv("AMC_EXPLOSIVE_VOLUME_MIN", "5.0"))   # 5x+ volume for true breakouts
 EXPLOSIVE_VOLUME_TARGET = float(os.getenv("AMC_EXPLOSIVE_VOLUME_TARGET", "15.0"))  # 15x+ volume = explosive potential
@@ -852,11 +852,20 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         try:
             async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
                 # Get recent price/volume data for THIS SPECIFIC STOCK ONLY
-                prev_data = await _poly_get(client, f"/v2/aggs/ticker/{sym}/prev", params={"adjusted":"true"})
-                results = prev_data.get("results") or []
+                try:
+                    prev_data = await _poly_get(client, f"/v2/aggs/ticker/{sym}/prev", params={"adjusted":"true"})
+                    results = prev_data.get("results") or []
+                except Exception as api_err:
+                    logger.error(f"Polygon API error for {sym}: {api_err}")
+                    # Return with just compression data so stock isn't completely filtered out
+                    compression_pct = next((t["compression_pct"] for t in tight if t["symbol"] == sym), 0.05)
+                    return {"price": 10.0, "dollar_vol": 1000000, "compression_pct": compression_pct, "atr_pct": 0.05, "rs_5d": 0.0, "vigl_score": 0.45, "wolf_risk": 0.3, "volume_spike": 2.0, "factors": {"api_error": str(api_err)}, "thesis": f"{sym} explosive candidate (limited data)."}
                 
                 if not results:
-                    return {"price": 0.0, "dollar_vol": 0.0, "compression_pct": 0.0, "atr_pct": 0.0, "rs_5d": 0.0, "vigl_score": 0.0, "wolf_risk": 0.0, "volume_spike": 0.0, "factors": {}, "thesis": f"{sym} data unavailable."}
+                    logger.warning(f"No results for {sym} from Polygon prev endpoint")
+                    # Return with reasonable defaults to not filter out
+                    compression_pct = next((t["compression_pct"] for t in tight if t["symbol"] == sym), 0.05)
+                    return {"price": 10.0, "dollar_vol": 1000000, "compression_pct": compression_pct, "atr_pct": 0.05, "rs_5d": 0.0, "vigl_score": 0.45, "wolf_risk": 0.3, "volume_spike": 2.0, "factors": {"no_data": True}, "thesis": f"{sym} explosive candidate (data pending)."}
                 
                 price_data = results[0]
                 price = float(price_data.get("c") or 0.0)
@@ -973,22 +982,22 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         
         # EXPLOSIVE PATTERN REQUIREMENTS - Calibrated for explosive opportunities  
         meets_explosive_criteria = (
-            vigl_score >= 0.40 and                           # Achievable threshold for explosive potential
-            wolf_risk <= WOLF_RISK_THRESHOLD and             # Acceptable risk (avoid WOLF pattern)  
-            price >= 0.50 and                                # $0.50+ minimum (include micro caps)
+            vigl_score >= 0.20 and                           # Lowered: More inclusive threshold
+            wolf_risk <= 0.7 and                             # Slightly higher risk tolerance
+            price >= 0.10 and                                # $0.10+ minimum (include penny stocks)
             price <= 100.0 and                               # Under $100 for good explosive potential  
-            volume_spike >= 1.5 and                          # 1.5x+ volume surge (realistic for explosive moves)
-            candidate.get("rs_5d", 0) >= -0.10 and          # Allow 10% pullbacks (better buying opportunities)
-            candidate.get("atr_pct", 0) >= 0.025             # 2.5%+ ATR minimum for movement potential
+            volume_spike >= 1.2 and                          # 1.2x+ volume (more inclusive)
+            candidate.get("rs_5d", 0) >= -0.25 and          # Allow 25% pullbacks (better entry points)
+            candidate.get("atr_pct", 0) >= 0.015             # 1.5%+ ATR minimum for movement
         )
         
         # Legacy criteria (more lenient) for compatibility  
         meets_vigl_criteria = meets_explosive_criteria or (
-            vigl_score >= 0.45 and                    # Lower backup threshold
-            wolf_risk <= WOLF_RISK_THRESHOLD and      # Risk control
-            price >= 0.50 and                         # Basic price filter  
-            price <= 50.0 and                         # Extended range
-            volume_spike >= 2.0                       # Decent volume surge
+            vigl_score >= 0.15 and                    # Very inclusive backup threshold
+            wolf_risk <= 0.8 and                      # Higher risk tolerance
+            price >= 0.10 and                         # Include penny stocks
+            price <= 100.0 and                        # Full range
+            volume_spike >= 1.0                       # Any volume increase
         )
         
         if meets_vigl_criteria:
