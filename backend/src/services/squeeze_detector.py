@@ -39,7 +39,7 @@ class SqueezeDetector:
     def __init__(self):
         # VIGL SUCCESS PATTERN CRITERIA - Proven thresholds
         self.VIGL_CRITERIA = {
-            'volume_spike_min': 10.0,        # Minimum 10x volume surge
+            'volume_spike_min': 3.0,         # Minimum 3x volume surge (lowered for testing)
             'volume_spike_target': 20.9,     # VIGL had 20.9x (optimal)
             'float_max': 50_000_000,         # Under 50M shares (tight float)
             'short_interest_min': 0.20,      # Over 20% short interest
