@@ -57,10 +57,10 @@ class DailyUpdatesSystem:
                     "opportunities": opportunity_count,
                     "top_discovery": discoveries[0]["symbol"] if discoveries else "None",
                     "portfolio_health": f"{len(strong_positions)} strong, {len(at_risk)} at risk",
-                    "learning_insight": self._get_morning_insight(insights)
+                    "learning_insight": DailyUpdatesSystem._get_morning_insight(insights)
                 },
-                "sms_text": self._format_sms_premarket(opportunity_count, discoveries, at_risk, insights),
-                "action_items": self._get_premarket_actions(discoveries, at_risk)
+                "sms_text": DailyUpdatesSystem._format_sms_premarket(opportunity_count, discoveries, at_risk, insights),
+                "action_items": DailyUpdatesSystem._get_premarket_actions(discoveries, at_risk)
             }
             
             return update
