@@ -37,7 +37,7 @@ export default function PatternHistory({ currentSymbol, onPatternSelect }: Patte
       setLoading(true);
       setError("");
       
-      const response = await getJSON<PatternMatch[]>(`${API_BASE}/patterns/history?limit=50`);
+      const response = await getJSON<PatternMatch[]>(`${API_BASE}/pattern-memory/history?limit=50`);
       
       // Add mock data for demonstration if no real data
       const mockPatterns: PatternMatch[] = [

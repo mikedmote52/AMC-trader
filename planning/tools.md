@@ -1,694 +1,454 @@
----
-run_id: 2025-08-30T20-17-35Z
-analysis_date: 2025-08-30
-system: AMC-TRADER  
-focus: Enhanced Market Data Tools & Trading Execution Specifications
----
+# AMC-TRADER Portfolio Health & Thesis Tracking Tools Specification
 
-# AMC-TRADER Tools Specification
+## Executive Summary
+
+This specification defines a comprehensive portfolio health and thesis tracking system for AMC-TRADER that integrates with existing VIGL pattern detection, squeeze analysis, and thesis generation capabilities. The system focuses on portfolio-level health metrics, position-level health scoring with intelligent thesis tracking, projected outcome calculations for learning system optimization, and smart risk-based organization.
 
 ## Core Trading APIs
 
-### Enhanced Market Data Tools
-
-#### 1. Expanded Universe Data Source API
-**Endpoint**: `/discovery/universe/expand`  
-**Authentication**: Polygon API Key required  
-**Function Signature**: `expand_universe(price_range: tuple, market_cap_range: tuple, min_volume: int) -> List[str]`
-
-**Schema**:
+### Portfolio Health API
+- **Endpoint**: `/portfolio/health`
+- **Authentication**: Bearer token (Alpaca API integration)
+- **Function Signature**: `get_portfolio_health() -> PortfolioHealthResponse`
+- **Schema**:
 ```json
 {
-  "request": {
-    "price_range": [0.50, 50.0],
-    "market_cap_range": [10000000, 1000000000],
-    "min_volume": 500000,
-    "exclude_otc": true,
-    "min_float": 5000000,
-    "max_float": 75000000
+  "overall_health_score": 85.2,
+  "risk_level": "MODERATE",
+  "concentration_risk": 28.5,
+  "sector_diversification_score": 72.1,
+  "position_health_distribution": {
+    "healthy": 12,
+    "at_risk": 3,
+    "critical": 2
   },
-  "response": {
-    "symbols": ["QUBT", "WULF", "MARA", "..."],
-    "count": 1247,
-    "filters_applied": {...},
-    "refresh_timestamp": "2025-08-30T20:17:35Z"
+  "portfolio_momentum": "BULLISH",
+  "cash_utilization": 0.92,
+  "projected_monthly_return": 8.4,
+  "health_alerts": ["HIGH_CONCENTRATION_UP", "THESIS_BREAKDOWN_PTNM"],
+  "timestamp": "2024-08-30T20:17:35Z"
+}
+```
+- **Retry Policy**: 3 attempts with exponential backoff (1s, 2s, 4s)
+- **Latency Budget**: P50: 200ms, P95: 500ms, P99: 1000ms
+- **Rate Limits**: 60 requests/minute per user
+
+### Position Health Scoring API
+- **Endpoint**: `/positions/{symbol}/health`
+- **Authentication**: Bearer token
+- **Function Signature**: `get_position_health(symbol: str, include_projections: bool = True) -> PositionHealthResponse`
+- **Schema**:
+```json
+{
+  "symbol": "UP",
+  "health_score": 92.1,
+  "health_status": "EXCELLENT",
+  "thesis_status": "CONFIRMED",
+  "vigl_pattern_match": {
+    "similarity": 0.87,
+    "pattern_type": "VIGL_SQUEEZE",
+    "confidence": 0.92
+  },
+  "performance_metrics": {
+    "unrealized_pl_pct": 85.5,
+    "vs_spy_performance": 78.2,
+    "momentum_score": 0.81,
+    "volatility_score": 0.65
+  },
+  "risk_assessment": {
+    "stop_loss_distance": -8.2,
+    "position_size_risk": "OPTIMAL",
+    "sector_risk": "LOW",
+    "correlation_risk": 0.23
+  },
+  "projected_outcomes": {
+    "30_day_target": 12.5,
+    "90_day_target": 25.0,
+    "stop_loss_probability": 0.15,
+    "thesis_success_probability": 0.83
   }
 }
 ```
+- **Retry Policy**: 2 attempts with 500ms delay
+- **Latency Budget**: P50: 150ms, P95: 300ms, P99: 500ms
+- **Rate Limits**: 120 requests/minute per user
 
-**Retry Policy**: 
-- Exponential backoff: 1s, 2s, 4s, 8s, 16s
-- Circuit breaker: 5 failures within 60s triggers 300s cooldown
-- Fallback: Return cached universe from Redis `amc:universe:cached` (24hr TTL)
-
-**Latency Budget**: P50: 2s, P95: 5s, P99: 8s  
-**Rate Limits**: 5 requests/minute per API key
-**Concurrency**: Max 2 parallel expansion requests
-
-#### 2. Real-time Volume Spike Detection API
-**Endpoint**: `/market-data/volume-spikes`  
-**Authentication**: Polygon API Key + Redis access  
-**Function Signature**: `detect_volume_spikes(symbols: List[str], spike_threshold: float = 5.0) -> List[VolumeSpike]`
-
-**Schema**:
+### Enhanced Thesis Tracking API
+- **Endpoint**: `/thesis/{symbol}`
+- **Authentication**: Bearer token
+- **Function Signature**: `get_enhanced_thesis(symbol: str, include_ai: bool = True) -> ThesisResponse`
+- **Schema**:
 ```json
 {
-  "request": {
-    "symbols": ["QUBT", "MARA", "RIOT"],
-    "spike_threshold": 10.0,
-    "lookback_minutes": 30,
-    "min_volume": 100000
+  "symbol": "QUBT",
+  "thesis_type": "ENTRY_CONFIRMED",
+  "ai_generated": true,
+  "investment_thesis": "QUBT quantum computing breakthrough with institutional validation. Revenue acceleration + patent portfolio expansion creating sustainable moat.",
+  "key_catalysts": [
+    "Q4 earnings beat expectations",
+    "IBM partnership announcement",
+    "Quantum advantage demonstration"
+  ],
+  "risk_factors": [
+    "Technology competition risk",
+    "Market volatility in tech sector",
+    "Execution risk on scaling"
+  ],
+  "price_targets": {
+    "conservative": 12.50,
+    "base_case": 18.75,
+    "bull_case": 28.00,
+    "stop_loss": 8.92
   },
-  "response": {
-    "spikes": [
-      {
-        "symbol": "QUBT",
-        "current_volume": 15670000,
-        "avg_volume_30d": 785000,
-        "spike_ratio": 19.96,
-        "dollar_volume": 89500000,
-        "detection_time": "2025-08-30T20:15:00Z",
-        "confidence": 0.94
+  "timeline": "3-6 months for initial targets",
+  "confidence_score": 0.78,
+  "learning_metadata": {
+    "decision_logged": true,
+    "outcome_tracking": true,
+    "pattern_classification": "TECH_CATALYST",
+    "historical_similar_trades": 3
+  },
+  "last_updated": "2024-08-30T20:17:35Z"
+}
+```
+- **Retry Policy**: 3 attempts with exponential backoff
+- **Latency Budget**: P50: 300ms, P95: 800ms, P99: 1500ms (includes AI processing)
+- **Rate Limits**: 30 requests/minute per user (AI-enhanced), 60/min for cached
+
+### Smart Position Organization API
+- **Endpoint**: `/portfolio/positions/organized`
+- **Authentication**: Bearer token
+- **Function Signature**: `get_organized_positions(sort_by: str = "health_priority") -> OrganizedPositionsResponse`
+- **Schema**:
+```json
+{
+  "organization_type": "health_priority",
+  "categories": {
+    "urgent_action": {
+      "positions": ["PTNM", "FINV"],
+      "total_value": 1250.00,
+      "avg_health_score": 25.3,
+      "recommended_action": "REVIEW_IMMEDIATELY"
+    },
+    "profit_taking": {
+      "positions": ["UP", "WULF"],
+      "total_value": 4320.00,
+      "avg_health_score": 88.7,
+      "recommended_action": "CONSIDER_TRIMMING"
+    },
+    "hold_monitor": {
+      "positions": ["QUBT", "GMAB", "KSS"],
+      "total_value": 2180.00,
+      "avg_health_score": 67.2,
+      "recommended_action": "MONITOR_THESIS"
+    }
+  },
+  "sorting_metadata": {
+    "primary_sort": "health_score",
+    "secondary_sort": "thesis_confidence",
+    "filters_applied": ["exclude_cash"],
+    "last_updated": "2024-08-30T20:17:35Z"
+  }
+}
+```
+- **Retry Policy**: 2 attempts with 300ms delay
+- **Latency Budget**: P50: 100ms, P95: 200ms, P99: 400ms
+- **Rate Limits**: 30 requests/minute per user
+
+## Data Enrichers
+
+### Portfolio Health Calculator
+- **Purpose**: Real-time portfolio health scoring with multi-dimensional risk analysis
+- **Dependencies**: [Alpaca Positions API, Polygon Market Data, Redis Cache, VIGL Pattern Detection]
+- **Processing Pipeline**:
+  1. Fetch current positions from Alpaca broker
+  2. Enrich with real-time price data from Polygon
+  3. Calculate position-level health scores
+  4. Aggregate portfolio-level health metrics
+  5. Apply VIGL pattern scoring weights
+  6. Generate health alerts and recommendations
+- **Error Handling**: Graceful degradation with cached data, fallback to basic metrics if AI unavailable
+
+### VIGL Pattern Health Integrator
+- **Purpose**: Integrate VIGL squeeze detection scores into position health calculations
+- **Dependencies**: [SqueezeDetector Service, Historical Pattern Database, Thesis Generator]
+- **Processing Pipeline**:
+  1. Retrieve VIGL pattern confidence scores
+  2. Map pattern similarity to health multipliers
+  3. Apply historical pattern success rates
+  4. Weight by current market conditions
+  5. Generate pattern-specific health insights
+- **Error Handling**: Default to standard health calculation if VIGL data unavailable
+
+### Thesis Performance Tracker
+- **Purpose**: Track thesis accuracy and update confidence scoring based on outcomes
+- **Dependencies**: [Learning System Database, Performance Analytics, Market Data]
+- **Processing Pipeline**:
+  1. Monitor position performance vs thesis predictions
+  2. Calculate thesis accuracy metrics
+  3. Update confidence scoring algorithms
+  4. Log learning data for system improvement
+  5. Generate thesis status updates
+- **Error Handling**: Queue failed updates for retry, maintain thesis history integrity
+
+### Smart Position Organizer
+- **Purpose**: Risk-based position sorting and grouping with intelligent categorization
+- **Dependencies**: [Portfolio Health Calculator, Thesis Tracker, Market Conditions]
+- **Processing Pipeline**:
+  1. Calculate composite risk scores per position
+  2. Apply thesis status weighting
+  3. Group by risk categories and sectors
+  4. Sort by action priority (urgent → monitor)
+  5. Generate organization metadata
+- **Error Handling**: Fall back to simple P&L sorting if advanced metrics fail
+
+## Signal Generators
+
+### Portfolio Health Score Generator
+- **Calculation Method**:
+```python
+health_score = (
+    position_performance_score * 0.35 +
+    risk_management_score * 0.25 +
+    diversification_score * 0.20 +
+    thesis_confirmation_score * 0.15 +
+    momentum_score * 0.05
+)
+
+# With VIGL pattern boost
+if vigl_pattern_detected:
+    health_score += vigl_confidence * 0.10
+```
+- **Input Requirements**: [Position P&L, Sector allocation, Thesis status, VIGL scores, Market momentum]
+- **Update Frequency**: Real-time during market hours, every 5 minutes after hours
+- **Validation Rules**: Score must be 0-100, validate input data quality, flag anomalies
+
+### Position Health Status Generator
+- **Calculation Method**:
+```python
+position_health = {
+    "EXCELLENT": health_score >= 85 and pl_pct > 10,
+    "GOOD": health_score >= 70 or (pl_pct > 5 and thesis_confirmed),
+    "MODERATE": health_score >= 50 or (pl_pct > -5 and thesis_intact),
+    "AT_RISK": health_score >= 30 or (pl_pct > -15 and stop_loss_safe),
+    "CRITICAL": health_score < 30 or pl_pct < -20
+}
+```
+- **Input Requirements**: [Health score, P&L percentage, Thesis status, Stop loss distance]
+- **Update Frequency**: Every position update (real-time)
+- **Validation Rules**: Single status per position, thesis status must be valid enum
+
+### Projected Outcome Calculator
+- **Calculation Method**:
+```python
+# Monte Carlo simulation with historical pattern data
+projected_return = (
+    base_case_probability * base_case_return +
+    bull_case_probability * bull_case_return +
+    bear_case_probability * bear_case_return
+)
+
+# VIGL pattern historical success rate adjustment
+if vigl_pattern_match > 0.8:
+    projected_return *= 1.324  # Historical VIGL average return
+```
+- **Input Requirements**: [Current price, Historical volatility, Thesis targets, Market conditions, Pattern classification]
+- **Update Frequency**: Daily after market close, on significant price moves (>5%)
+- **Validation Rules**: Projections must include confidence intervals, validate against historical ranges
+
+### Learning System Decision Logger
+- **Calculation Method**:
+```python
+decision_value = {
+    "confidence_weighted_return": actual_return * original_confidence,
+    "thesis_accuracy_score": 1.0 if thesis_confirmed else 0.0,
+    "pattern_success_rate": pattern_wins / pattern_total_decisions,
+    "system_improvement_factor": new_accuracy / baseline_accuracy
+}
+```
+- **Input Requirements**: [Original decision data, Current outcomes, Time held, Market context]
+- **Update Frequency**: On position close or major milestone (50% gain/loss)
+- **Validation Rules**: All decisions must be logged, outcome data must be complete
+
+## Integration Architecture
+
+### AMC-TRADER API Compatibility
+- **Base URL**: https://amc-trader.onrender.com
+- **Existing Endpoints**: Maintain full compatibility with `/portfolio/holdings`, `/discovery/contenders`
+- **New Endpoints**: Add health and thesis endpoints with consistent response format
+- **Authentication**: Integrate with existing Alpaca API key management
+- **Data Flow**: Preserve existing Redis caching strategy, add health cache layer
+
+### Live Trading Safety Integration
+- **Position Size Validation**: Integrate with existing risk management rules
+- **Stop Loss Automation**: Connect to Alpaca bracket order system
+- **Thesis Breakdown Alerts**: Real-time notifications for critical health changes
+- **Paper vs Live Mode**: Separate health thresholds for paper (aggressive) vs live (conservative)
+
+### Learning System Integration Points
+- **Decision Logging**: 
+  ```python
+  await LearningSystem.log_decision(
+      symbol=symbol,
+      decision_type="THESIS_UPDATE",
+      recommendation_source="portfolio_health_system",
+      confidence_score=health_score / 100,
+      metadata={
+          "health_status": position_health,
+          "vigl_pattern": vigl_match,
+          "thesis_source": "ai_enhanced"
       }
-    ],
-    "alerts_triggered": 3,
-    "processing_time_ms": 847
-  }
-}
-```
-
-**Retry Policy**:
-- Real-time data: No retries, return cached data on failure
-- Circuit breaker: 3 consecutive failures = 60s cooldown
-- Graceful degradation: Use 5-minute delayed data if real-time fails
-
-**Latency Budget**: P50: 300ms, P95: 800ms, P99: 1.2s
-**Rate Limits**: 100 requests/minute during market hours
-**Cache Strategy**: Redis TTL 30s for volume spike data
-
-#### 3. Small-cap Screening and Filtering Tools  
-**Endpoint**: `/screening/small-cap-filter`
-**Authentication**: Polygon API Key  
-**Function Signature**: `filter_small_caps(criteria: SmallCapCriteria) -> FilteredResults`
-
-**Schema**:
-```json
-{
-  "request": {
-    "market_cap_max": 1000000000,
-    "market_cap_min": 50000000,
-    "price_range": [2.0, 25.0],
-    "float_max": 50000000,
-    "volume_min_30d": 500000,
-    "exclude_sectors": ["REIT", "FUND"],
-    "short_interest_min": 0.15
-  },
-  "response": {
-    "filtered_symbols": [...],
-    "total_screened": 4567,
-    "passed_filters": 127,
-    "filter_stats": {
-      "price_filtered": 2340,
-      "volume_filtered": 1200,
-      "float_filtered": 900
-    }
-  }
-}
-```
-
-**Retry Policy**: 
-- Batch processing with checkpoints every 500 symbols
-- Auto-resume on failure from last checkpoint
-- Exponential backoff: 500ms, 1s, 2s, 4s
-
-**Latency Budget**: P50: 15s, P95: 45s, P99: 90s
-**Rate Limits**: 2 full scans per hour
-**Processing**: Async with status updates via WebSocket
-
-#### 4. Historical Pattern Matching Data Enricher
-**Endpoint**: `/enrichment/pattern-match`
-**Authentication**: Internal API key  
-**Function Signature**: `enrich_with_patterns(symbol: str, patterns: List[str]) -> PatternMatchResult`
-
-**Schema**:
-```json
-{
-  "request": {
-    "symbol": "QUBT",
-    "patterns": ["VIGL", "CRWV", "AEVA"],
-    "lookback_days": 252,
-    "similarity_threshold": 0.75
-  },
-  "response": {
-    "symbol": "QUBT",
-    "pattern_matches": [
-      {
-        "pattern": "VIGL",
-        "similarity_score": 0.87,
-        "matched_date": "2023-11-15",
-        "outcome_30d": 0.324,
-        "confidence": "HIGH",
-        "factors": {
-          "volume_match": 0.92,
-          "price_pattern_match": 0.81,
-          "float_similarity": 0.88
-        }
+  )
+  ```
+- **Outcome Tracking**:
+  ```python
+  await LearningSystem.log_outcome(
+      symbol=symbol,
+      outcome_type="thesis_confirmation" if confirmed else "thesis_failure",
+      return_pct=actual_return,
+      days_held=days_held,
+      market_conditions={
+          "initial_health_score": original_health,
+          "final_health_score": current_health,
+          "thesis_accuracy": thesis_accuracy
       }
-    ],
-    "enrichment_timestamp": "2025-08-30T20:17:35Z"
-  }
-}
-```
+  )
+  ```
 
-**Retry Policy**:
-- Pattern analysis: 3 retries with jitter (±20%)
-- Database lookups: 2 retries for historical data
-- Fallback: Return basic metrics if enrichment fails
+## Security and Compliance
 
-**Latency Budget**: P50: 1.5s, P95: 4s, P99: 8s
-**Rate Limits**: 50 enrichments/minute
-**Cache Strategy**: Redis TTL 3600s for pattern matches
+### API Key Rotation Strategy
+- **Alpaca Keys**: Rotate every 90 days, maintain 2-key overlap period
+- **Polygon Keys**: Monitor usage, rotate on 80% limit approach
+- **Claude API**: Separate keys for production/development environments
+- **Redis Auth**: Environment-specific passwords, rotate monthly
 
----
+### Secure Credential Storage
+- **Production**: Environment variables with encrypted secrets
+- **Development**: Local .env files (git-ignored)
+- **Staging**: Separate credential set for testing
+- **Backup Keys**: Encrypted offline storage for emergency access
 
-## Trading Execution Enhancements
+### Audit Logging Requirements
+- **Decision Logging**: All portfolio health decisions with full context
+- **Performance Tracking**: Complete audit trail of thesis updates
+- **Error Logging**: Detailed error context for debugging and compliance
+- **Access Logging**: All API access with user context and timestamps
 
-### 1. Integrated Stop-Loss/Profit-Taking Order Tools
-**Endpoint**: `/trading/bracket-orders`
-**Authentication**: Alpaca API Key + 2FA  
-**Function Signature**: `create_bracket_order(symbol: str, side: str, qty: int, stop_loss_pct: float, take_profit_pct: float) -> BracketOrderResult`
+## Testing Requirements
 
-**Schema**:
-```json
-{
-  "request": {
-    "symbol": "QUBT",
-    "side": "buy",
-    "qty": 100,
-    "order_type": "market",
-    "stop_loss_pct": 0.08,
-    "take_profit_pct": 0.25,
-    "time_in_force": "day"
-  },
-  "response": {
-    "parent_order_id": "abc123",
-    "stop_loss_order_id": "def456", 
-    "take_profit_order_id": "ghi789",
-    "status": "submitted",
-    "estimated_fill_price": 12.45,
-    "risk_amount": 9.96,
-    "profit_target": 155.63
-  }
-}
-```
+### Unit Test Specifications
+- **Health Calculator Tests**:
+  ```python
+  test_portfolio_health_calculation()
+  test_position_health_scoring()
+  test_vigl_pattern_integration()
+  test_thesis_performance_tracking()
+  ```
+- **Integration Tests**:
+  ```python
+  test_alpaca_position_data_flow()
+  test_learning_system_integration()
+  test_redis_cache_performance()
+  test_ai_thesis_generation_fallbacks()
+  ```
 
-**Retry Policy**:
-- Order submission: No retries (financial safety)
-- Order status checks: 3 retries with 100ms intervals
-- Connection failures: Immediate fallback to backup API endpoint
+### Load Testing Parameters
+- **Portfolio Health API**: 100 concurrent users, 1000 requests/minute
+- **Position Health API**: 50 concurrent users, 500 requests/minute
+- **Thesis API**: 20 concurrent users, 200 requests/minute (AI-limited)
+- **Response Time SLA**: 95% of requests under P95 latency targets
 
-**Latency Budget**: P50: 150ms, P95: 400ms, P99: 800ms
-**Rate Limits**: Alpaca account limits (200 orders/day)
-**Safety Checks**: Position size validation, duplicate order prevention
+### Mock Service Specifications
+- **Mock Alpaca API**: Complete position data with realistic P&L
+- **Mock Polygon API**: Historical and real-time price data simulation
+- **Mock AI Service**: Deterministic thesis generation for testing
+- **Mock Learning System**: Outcome tracking and decision logging simulation
 
-### 2. One-Click Bracket Order API
-**Endpoint**: `/trading/one-click-bracket`  
-**Authentication**: Alpaca API Key + session token  
-**Function Signature**: `one_click_bracket(symbol: str, confidence: float, account_risk_pct: float = 0.02) -> QuickOrderResult`
+## Monitoring and Observability
 
-**Schema**:
-```json
-{
-  "request": {
-    "symbol": "QUBT",
-    "confidence": 0.87,
-    "account_risk_pct": 0.02,
-    "max_position_value": 10000,
-    "squeeze_score": 0.94
-  },
-  "response": {
-    "calculated_position": {
-      "shares": 80,
-      "entry_price": 12.45,
-      "position_value": 996,
-      "stop_loss_price": 11.45,
-      "take_profit_price": 15.56
-    },
-    "order_ids": {
-      "parent": "abc123",
-      "stop_loss": "def456",
-      "take_profit": "ghi789"
-    },
-    "risk_metrics": {
-      "account_risk_pct": 0.02,
-      "max_loss_usd": 80.00,
-      "reward_risk_ratio": 3.125
-    }
-  }
-}
-```
+### Health Score Monitoring
+- **Portfolio Health Alerts**: < 70 score triggers review, < 50 triggers intervention
+- **Position Health Alerts**: CRITICAL status triggers immediate notification
+- **Thesis Breakdown Alerts**: Confidence drop > 20 points triggers review
+- **Performance Degradation**: API response time > 2x baseline triggers scaling
 
-**Retry Policy**: 
-- Pre-flight validation: 2 retries for account balance/margin
-- Order execution: Single attempt (no retries for safety)
-- Status confirmation: 5 retries with exponential backoff
+### Learning System Metrics
+- **Decision Accuracy**: Track portfolio health system recommendation success rate
+- **Thesis Accuracy**: Monitor AI thesis prediction vs actual outcomes
+- **Pattern Success Rates**: VIGL and other pattern performance tracking
+- **System Improvement**: Overall learning system effectiveness measurement
 
-**Latency Budget**: P50: 200ms, P95: 500ms, P99: 1s
-**Rate Limits**: 20 one-click orders per hour
-**Safety Features**: Circuit breaker on account loss > 5%
-
-### 3. Risk Management Validation Tools  
-**Endpoint**: `/trading/risk-validation`
-**Authentication**: Internal service key  
-**Function Signature**: `validate_trade_risk(trade_request: TradeRequest) -> RiskValidationResult`
-
-**Schema**:
-```json
-{
-  "request": {
-    "symbol": "QUBT",
-    "side": "buy",
-    "quantity": 100,
-    "price": 12.45,
-    "account_value": 25000,
-    "existing_positions": [...]
-  },
-  "response": {
-    "approved": true,
-    "risk_score": 0.23,
-    "validations": {
-      "position_size_check": "PASS",
-      "correlation_check": "PASS", 
-      "sector_concentration": "PASS",
-      "volatility_check": "WARN"
-    },
-    "recommendations": [
-      "Consider reducing position size due to high volatility",
-      "Set stop-loss at 8% below entry"
-    ],
-    "max_recommended_shares": 80
-  }
-}
-```
-
-**Retry Policy**: 
-- Risk calculations: 1 retry with fresh data
-- Account data: 2 retries for balance/positions
-- No retries on validation failures (safety first)
-
-**Latency Budget**: P50: 100ms, P95: 250ms, P99: 500ms  
-**Rate Limits**: Unlimited (internal service)
-**Validation Rules**: Position size, correlation, sector limits
-
-### 4. Order Status Tracking and Notifications
-**Endpoint**: `/trading/order-status` (WebSocket)  
-**Authentication**: JWT token + session validation  
-**Function Signature**: `subscribe_order_updates(order_ids: List[str]) -> WebSocketStream`
-
-**Schema**:
-```json
-{
-  "subscription": {
-    "order_ids": ["abc123", "def456"],
-    "include_fills": true,
-    "include_cancellations": true
-  },
-  "status_update": {
-    "order_id": "abc123",
-    "status": "filled",
-    "filled_qty": 100,
-    "avg_fill_price": 12.42,
-    "timestamp": "2025-08-30T20:18:00Z",
-    "commission": 0.00,
-    "notification_sent": true
-  }
-}
-```
-
-**Retry Policy**:
-- WebSocket reconnection: Exponential backoff (1s to 30s)
-- Message delivery: 3 retry attempts
-- Fallback: HTTP polling every 5s if WebSocket fails
-
-**Latency Budget**: Real-time (<100ms for status updates)
-**Rate Limits**: 1000 status updates per minute
-**Notification Channels**: WebSocket, push notifications, email
-
----
-
-## Discovery Pipeline Tools
-
-### 1. Shadow Testing Framework for New Patterns  
-**Endpoint**: `/discovery/shadow-test`
-**Authentication**: Admin API key  
-**Function Signature**: `run_shadow_test(test_config: ShadowTestConfig) -> ShadowTestResult`
-
-**Schema**:
-```json
-{
-  "request": {
-    "test_name": "enhanced_vigl_v2",
-    "test_duration_days": 30,
-    "patterns_to_test": ["VIGL_V2", "CRWV_ENHANCED"],
-    "control_pattern": "VIGL_V1",
-    "sample_size": 100,
-    "confidence_threshold": 0.75
-  },
-  "response": {
-    "test_id": "shadow_test_001",
-    "status": "running",
-    "progress": {
-      "days_completed": 5,
-      "samples_processed": 23,
-      "preliminary_results": {
-        "v2_accuracy": 0.78,
-        "v1_accuracy": 0.72,
-        "improvement": 0.06
-      }
-    }
-  }
-}
-```
-
-**Retry Policy**:
-- Test execution: No retries (maintain test integrity)
-- Data collection: 3 retries with exponential backoff
-- Result aggregation: 2 retries with validation
-
-**Latency Budget**: Test setup: P50: 5s, Status check: P50: 200ms
-**Rate Limits**: 2 concurrent shadow tests maximum
-**Data Retention**: Test results kept 365 days
-
-### 2. Regime Detection and Threshold Adjustment Tools
-**Endpoint**: `/discovery/regime-detection`  
-**Authentication**: Internal service key
-**Function Signature**: `detect_market_regime() -> RegimeAnalysis`
-
-**Schema**:
-```json
-{
-  "response": {
-    "current_regime": "HIGH_VOLATILITY",
-    "regime_confidence": 0.89,
-    "regime_duration_days": 12,
-    "adjusted_thresholds": {
-      "volume_spike_min": 15.0,
-      "price_range": [1.0, 30.0],
-      "short_interest_min": 0.10,
-      "compression_max": 0.40
-    },
-    "regime_indicators": {
-      "vix_level": 28.5,
-      "market_breadth": 0.34,
-      "sector_rotation": "high"
-    },
-    "next_adjustment": "2025-08-31T09:30:00Z"
-  }
-}
-```
-
-**Retry Policy**: 
-- Market data collection: 2 retries with 1s delay
-- Regime calculation: 1 retry with fresh data
-- Threshold updates: No retries (applied immediately)
-
-**Latency Budget**: P50: 800ms, P95: 2s, P99: 5s
-**Rate Limits**: Updates every 30 minutes during market hours
-**Cache Strategy**: Current regime cached 15 minutes
-
-### 3. Pattern Confidence Scoring APIs
-**Endpoint**: `/discovery/confidence-scoring`
-**Authentication**: Internal API key  
-**Function Signature**: `calculate_pattern_confidence(pattern_data: PatternData) -> ConfidenceScore`
-
-**Schema**:
-```json
-{
-  "request": {
-    "symbol": "QUBT",
-    "pattern_type": "VIGL_ENHANCED",
-    "market_data": {
-      "volume_spike": 19.8,
-      "price": 12.45,
-      "short_interest": 0.28,
-      "float": 15000000
-    },
-    "historical_context": {...}
-  },
-  "response": {
-    "confidence_score": 0.87,
-    "confidence_tier": "HIGH",
-    "contributing_factors": {
-      "volume_match": 0.94,
-      "price_range_match": 0.82,
-      "float_similarity": 0.88,
-      "timing_factors": 0.79
-    },
-    "risk_adjustments": {
-      "wolf_risk": 0.23,
-      "market_regime": 0.15
-    },
-    "final_adjusted_score": 0.84
-  }
-}
-```
-
-**Retry Policy**:
-- Pattern calculations: 1 retry with validation
-- Historical lookups: 2 retries with cache fallback
-- Score aggregation: No retries (deterministic)
-
-**Latency Budget**: P50: 400ms, P95: 1.2s, P99: 2.5s
-**Rate Limits**: 200 scoring requests per minute
-**Accuracy Target**: 85% correlation with actual outcomes
-
-### 4. Winner Analysis Tools (June-July Focus)
-**Endpoint**: `/analytics/winner-analysis`
-**Authentication**: Research API key
-**Function Signature**: `analyze_period_winners(start_date: str, end_date: str) -> WinnerAnalysis`
-
-**Schema**:
-```json
-{
-  "request": {
-    "start_date": "2024-06-01",
-    "end_date": "2024-07-31", 
-    "min_return_threshold": 0.20,
-    "analysis_types": ["pattern", "timing", "catalysts"]
-  },
-  "response": {
-    "period_summary": {
-      "total_winners": 47,
-      "avg_return": 0.386,
-      "median_return": 0.247,
-      "max_return": 1.245
-    },
-    "pattern_analysis": {
-      "vigl_like": 12,
-      "breakout": 18,
-      "squeeze": 8,
-      "momentum": 9
-    },
-    "common_characteristics": {
-      "avg_volume_spike": 18.2,
-      "avg_price_range": [3.45, 18.90],
-      "avg_float": 22500000,
-      "most_common_sectors": ["Tech", "Biotech", "Energy"]
-    },
-    "actionable_insights": [...],
-    "pattern_updates": {
-      "recommended_thresholds": {...},
-      "new_patterns_identified": [...]
-    }
-  }
-}
-```
-
-**Retry Policy**:
-- Historical data collection: 3 retries with 2s backoff
-- Pattern analysis: 1 retry with validation
-- Insight generation: No retries (computational)
-
-**Latency Budget**: P50: 8s, P95: 25s, P99: 60s
-**Rate Limits**: 5 analyses per hour (computationally expensive)
-**Output**: Automated pattern updates and threshold recommendations
-
----
-
-## API Requirements
-
-### Polygon API Rate Limit Optimization
-**Strategy**: Intelligent request batching and caching
-- **Batch Size**: 50 symbols per grouped request
-- **Cache TTL**: 30s for real-time data, 5min for historical
-- **Rate Limiting**: 5 requests/second with burst allowance
-- **Fallback**: Cached data when rate limited
-- **Monitoring**: Track usage per endpoint, auto-scaling
-
-### Alpaca API Bracket Order Integration  
-**Features**: Native OCO (One-Cancels-Other) support
-- **Order Types**: Market, limit, stop-loss, take-profit
-- **Risk Management**: Automatic position sizing based on account risk
-- **Error Handling**: Graceful degradation, order status validation
-- **Notifications**: Real-time order status via WebSocket
-- **Safety**: Duplicate order prevention, maximum loss limits
-
-### Redis Cache Invalidation Strategies
-**Cache Hierarchies**:
-```
-Level 1: Real-time data (30s TTL)
-├── amc:market:volume_spikes.{timestamp}
-├── amc:market:prices.latest  
-└── amc:discovery:live_candidates
-
-Level 2: Analysis results (10min TTL)  
-├── amc:discovery:contenders.latest
-├── amc:patterns:confidence_scores
-└── amc:analysis:regime_detection
-
-Level 3: Historical data (1hr TTL)
-├── amc:patterns:historical_matches
-├── amc:analytics:winner_analysis  
-└── amc:universe:expanded_symbols
-```
-
-**Invalidation Triggers**:
-- Market open/close events
-- Significant volume spikes (>10x average)
-- Manual cache flush via admin endpoint
-- Failed data quality checks
-
-### Database Migration Requirements for Enhanced Data
-
-**New Tables**:
-```sql
--- Enhanced pattern storage
-CREATE TABLE pattern_matches (
-    id SERIAL PRIMARY KEY,
-    symbol VARCHAR(10) NOT NULL,
-    pattern_type VARCHAR(50) NOT NULL,
-    similarity_score DECIMAL(5,4),
-    matched_date DATE,
-    outcome_7d DECIMAL(6,4),
-    outcome_30d DECIMAL(6,4),
-    created_at TIMESTAMP DEFAULT NOW(),
-    INDEX idx_symbol_pattern (symbol, pattern_type),
-    INDEX idx_similarity (similarity_score DESC)
-);
-
--- Shadow testing results
-CREATE TABLE shadow_tests (
-    id SERIAL PRIMARY KEY,
-    test_name VARCHAR(100) NOT NULL,
-    test_config JSON,
-    status VARCHAR(20) DEFAULT 'running',
-    start_date DATE,
-    end_date DATE,
-    results JSON,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Market regime history
-CREATE TABLE market_regimes (
-    id SERIAL PRIMARY KEY,
-    regime_type VARCHAR(30) NOT NULL,
-    confidence DECIMAL(5,4),
-    start_time TIMESTAMP,
-    end_time TIMESTAMP,
-    indicators JSON,
-    threshold_adjustments JSON
-);
-
--- Enhanced discovery audit trail  
-CREATE TABLE discovery_runs (
-    id SERIAL PRIMARY KEY,
-    run_timestamp TIMESTAMP DEFAULT NOW(),
-    universe_size INTEGER,
-    candidates_found INTEGER,
-    avg_confidence DECIMAL(5,4),
-    regime_type VARCHAR(30),
-    processing_time_ms INTEGER,
-    trace_data JSON
-);
-```
-
-**Migration Strategy**:
-1. **Phase 1**: Add new tables (no downtime)
-2. **Phase 2**: Populate historical data (background job)
-3. **Phase 3**: Update application to use new tables
-4. **Phase 4**: Archive old data after 90-day validation period
-
-**Data Retention**: 
-- Pattern matches: 2 years
-- Shadow tests: 1 year  
-- Market regimes: 5 years
-- Discovery runs: 6 months
-
-**Backup Strategy**:
-- Daily incremental backups
-- Weekly full backups  
-- Cross-region replication for disaster recovery
-- Point-in-time recovery capability (7 days)
-
----
+### Error Rate Monitoring
+- **API Error Thresholds**: > 5% error rate triggers immediate investigation
+- **Data Quality Issues**: Position data inconsistencies flagged and resolved
+- **AI Service Availability**: Claude API failures trigger fallback thesis generation
+- **Cache Performance**: Redis cache hit rates monitored for optimization
 
 ## Performance Requirements
 
 ### Latency Budgets
-- **Real-time alerts**: <200ms end-to-end
-- **Discovery pipeline**: <45s for full universe scan
-- **Pattern matching**: <2s for single symbol
-- **Order execution**: <500ms for bracket orders
-- **API responses**: P95 <2s, P99 <5s
+- **Portfolio Overview**: P50: 200ms, P95: 500ms, P99: 1000ms
+- **Position Details**: P50: 150ms, P95: 300ms, P99: 500ms
+- **AI Thesis Generation**: P50: 800ms, P95: 2000ms, P99: 5000ms
+- **Learning Integration**: P50: 100ms, P95: 200ms, P99: 500ms
 
-### Throughput Requirements  
-- **Market data ingestion**: 1000 updates/second
-- **Pattern detection**: 100 symbols/minute  
-- **Order processing**: 50 orders/minute
-- **API requests**: 500 requests/minute peak
-- **WebSocket connections**: 100 concurrent users
-
-### Concurrency and Connection Pooling
-- **Polygon API**: 5 connections max, connection pooling
-- **Alpaca API**: 3 connections, separate pool for orders  
-- **Redis**: 20 connection pool, cluster-aware
-- **PostgreSQL**: 50 connection pool with pgbouncer
-- **WebSocket**: 100 concurrent connections per instance
+### Throughput Requirements
+- **Peak Trading Hours**: 200 requests/second portfolio data
+- **Market Open Surge**: 500 requests/second for 10 minutes
+- **After Hours**: 50 requests/second steady state
+- **Weekend/Maintenance**: 10 requests/second minimum
 
 ### Resource Utilization Constraints
-- **CPU**: 70% average, 90% peak (auto-scaling trigger)
-- **Memory**: 80% average, 95% peak
-- **Network**: 100 Mbps sustained, 500 Mbps burst
-- **Disk I/O**: 80% utilization threshold
-- **API Rate Limits**: 80% of provider limits maintained
+- **Memory Usage**: < 2GB RAM per service instance
+- **CPU Usage**: < 70% average, < 90% peak during market hours
+- **Database Connections**: < 50 concurrent connections per service
+- **Redis Memory**: < 500MB for portfolio health cache data
 
-## Monitoring and Observability
+## Implementation Phases
 
-### Key Performance Indicators
-```yaml
-discovery_pipeline:
-  - candidates_found_per_run
-  - processing_time_percentiles  
-  - pattern_match_accuracy
-  - false_positive_rate
+### Phase 1: Core Health Scoring (Week 1-2)
+- Implement portfolio and position health calculators
+- Integrate with existing Alpaca position data
+- Basic health score UI integration
+- Unit tests and initial performance optimization
 
-trading_execution:
-  - order_fill_rate
-  - average_slippage
-  - bracket_order_success_rate
-  - risk_management_rejections
+### Phase 2: VIGL Pattern Integration (Week 3-4)
+- Connect health scoring to existing VIGL squeeze detection
+- Pattern-based health score weighting
+- Enhanced thesis status tracking
+- Integration testing with squeeze alert system
 
-system_health:
-  - api_response_times
-  - cache_hit_rates
-  - error_rates_by_endpoint
-  - resource_utilization
-```
+### Phase 3: AI Thesis Enhancement (Week 5-6)
+- Full AI-powered thesis generation integration
+- Learning system decision logging
+- Projected outcome calculations
+- Performance analytics dashboard integration
 
-### Alerting Thresholds
-- **Critical**: Discovery pipeline down >5 minutes
-- **Warning**: Pattern confidence <75% for >1 hour  
-- **Info**: Cache hit rate <80%
-- **Escalation**: Trading API errors >5% in 10 minutes
+### Phase 4: Smart Organization & Analytics (Week 7-8)
+- Risk-based position sorting and grouping
+- Advanced portfolio analytics
+- Learning system feedback loops
+- Production deployment and monitoring
 
-This comprehensive tools specification provides the technical foundation for enhancing AMC-TRADER's monthly profit optimization through improved squeeze detection, expanded discovery capabilities, and robust trading execution tools.
+## Success Metrics
+
+### Portfolio Management Effectiveness
+- **Health Score Accuracy**: 80%+ correlation with actual portfolio performance
+- **Early Warning System**: Identify 90%+ of positions before -15% loss
+- **Thesis Accuracy**: 70%+ of AI thesis predictions achieve targets within timeframe
+- **Risk Management**: Reduce portfolio drawdowns by 25% through health-based alerts
+
+### Learning System Integration
+- **Decision Logging Coverage**: 100% of portfolio health decisions logged
+- **Outcome Tracking**: 95%+ of closed positions tracked for learning
+- **System Improvement**: 10%+ quarterly improvement in recommendation accuracy
+- **Pattern Recognition**: Identify new profitable patterns with 65%+ success rate
+
+### Operational Performance
+- **API Reliability**: 99.9% uptime during market hours
+- **Response Time**: Meet P95 latency targets 98% of time
+- **Data Quality**: < 1% position data inconsistencies
+- **User Engagement**: 40%+ increase in portfolio review frequency
+
+This comprehensive tools specification provides the foundation for implementing a robust portfolio health and thesis tracking system that leverages the existing AMC-TRADER infrastructure while adding sophisticated learning and analysis capabilities.

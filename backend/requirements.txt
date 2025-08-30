@@ -16,3 +16,5 @@ alembic==1.13.0
 python-multipart==0.0.6
 polygon-api-client==1.14.0
 anthropic==0.34.0
+twilio==8.10.0
+aiohttp==3.9.5
