@@ -189,16 +189,28 @@ async def health():
 app.include_router(trades_router)
 app.include_router(polygon_debug, prefix="/debug")
 
-# Include discovery, portfolio, learning, and daily updates routers
+# Include discovery, portfolio, learning, daily updates, thesis, analytics, and pattern memory routers
 from backend.src.routes import discovery as discovery_routes
 from backend.src.routes import portfolio as portfolio_routes
 from backend.src.routes import learning as learning_routes
 from backend.src.routes import daily_updates as daily_updates_routes
+from backend.src.routes import learning_analytics as learning_analytics_routes
+from backend.src.routes import thesis as thesis_routes
+from backend.src.routes import analytics as analytics_routes
+from backend.src.routes import performance_analytics as performance_analytics_routes
+from backend.src.routes import data_quality as data_quality_routes
+from backend.src.routes import pattern_memory as pattern_memory_routes
 
 app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery"])
 app.include_router(portfolio_routes.router, prefix="/portfolio", tags=["portfolio"])
 app.include_router(learning_routes.router, prefix="/learning", tags=["learning"])
+app.include_router(learning_analytics_routes.router, prefix="/learning-analytics", tags=["learning-analytics"])
 app.include_router(daily_updates_routes.router, prefix="/daily-updates", tags=["daily-updates"])
+app.include_router(thesis_routes.router, prefix="/thesis", tags=["thesis"])
+app.include_router(analytics_routes.router, prefix="/analytics", tags=["analytics"])
+app.include_router(performance_analytics_routes.router, prefix="/performance", tags=["performance-analytics"])
+app.include_router(data_quality_routes.router, prefix="/discovery", tags=["data-quality"])
+app.include_router(pattern_memory_routes.router, prefix="/pattern-memory", tags=["pattern-memory"])
 
 # Compatibility routes for old frontend paths
 from starlette.responses import RedirectResponse

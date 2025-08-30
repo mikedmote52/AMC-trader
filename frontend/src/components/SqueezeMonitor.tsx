@@ -59,7 +59,7 @@ export default function SqueezeMonitor({
           pattern_type: item.pattern_type || 'SQUEEZE',
           confidence: item.confidence || item.squeeze_score || 0,
           detected_at: new Date().toISOString()
-        }));
+        })).filter(opp => opp.squeeze_score >= 0.25); // Lower threshold to show early signals
       }
       
       if (watchedSymbols.length > 0) {
@@ -83,6 +83,15 @@ export default function SqueezeMonitor({
     console.log("Trade executed:", result);
     // Refresh opportunities after trade
     setTimeout(loadSqueezeOpportunities, 2000);
+  };
+
+  // Categorize opportunities by squeeze score tiers
+  const categorizeOpportunities = (opportunities: SqueezeOpportunity[]) => {
+    const critical = opportunities.filter(opp => opp.squeeze_score >= 0.70);
+    const developing = opportunities.filter(opp => opp.squeeze_score >= 0.40 && opp.squeeze_score < 0.70);
+    const early = opportunities.filter(opp => opp.squeeze_score >= 0.25 && opp.squeeze_score < 0.40);
+    
+    return { critical, developing, early };
   };
 
   const handleSignificantMove = (symbol: string, changePercent: number) => {
@@ -155,23 +164,68 @@ export default function SqueezeMonitor({
         </div>
       </div>
 
-      {/* Critical Alerts Section */}
-      {squeezeOpportunities.length > 0 && (
-        <div style={alertsSectionStyle}>
-          <div style={sectionTitleStyle}>⚡ Critical Squeeze Alerts</div>
-          
-          <div style={alertsGridStyle}>
-            {squeezeOpportunities.map((opportunity, index) => (
-              <SqueezeAlert
-                key={`${opportunity.symbol}-${index}`}
-                symbol={opportunity.symbol}
-                metrics={opportunity}
-                onTradeExecuted={handleTradeExecuted}
-              />
-            ))}
+      {/* Tiered Alerts Section */}
+      {squeezeOpportunities.length > 0 && (() => {
+        const { critical, developing, early } = categorizeOpportunities(squeezeOpportunities);
+        
+        return (
+          <div style={alertsSectionStyle}>
+            {/* Critical Alerts */}
+            {critical.length > 0 && (
+              <div style={{ marginBottom: '24px' }}>
+                <div style={{ ...sectionTitleStyle, color: '#dc2626' }}>🚨 CRITICAL SQUEEZE ALERTS ({critical.length})</div>
+                <div style={alertsGridStyle}>
+                  {critical.map((opportunity, index) => (
+                    <SqueezeAlert
+                      key={`critical-${opportunity.symbol}-${index}`}
+                      symbol={opportunity.symbol}
+                      metrics={opportunity}
+                      onTradeExecuted={handleTradeExecuted}
+                      alertTier="CRITICAL"
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Developing Alerts */}
+            {developing.length > 0 && (
+              <div style={{ marginBottom: '24px' }}>
+                <div style={{ ...sectionTitleStyle, color: '#f59e0b' }}>⚡ DEVELOPING SQUEEZE ALERTS ({developing.length})</div>
+                <div style={alertsGridStyle}>
+                  {developing.map((opportunity, index) => (
+                    <SqueezeAlert
+                      key={`developing-${opportunity.symbol}-${index}`}
+                      symbol={opportunity.symbol}
+                      metrics={opportunity}
+                      onTradeExecuted={handleTradeExecuted}
+                      alertTier="DEVELOPING"
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Early Signals */}
+            {early.length > 0 && (
+              <div style={{ marginBottom: '24px' }}>
+                <div style={{ ...sectionTitleStyle, color: '#eab308' }}>📊 EARLY SIGNALS ({early.length})</div>
+                <div style={alertsGridStyle}>
+                  {early.map((opportunity, index) => (
+                    <SqueezeAlert
+                      key={`early-${opportunity.symbol}-${index}`}
+                      symbol={opportunity.symbol}
+                      metrics={opportunity}
+                      onTradeExecuted={handleTradeExecuted}
+                      alertTier="EARLY"
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Real-time P&L Section */}
       {squeezeOpportunities.length > 0 && (

@@ -12,6 +12,19 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+def _load_squeeze_calibration():
+    """Load squeeze calibration settings"""
+    try:
+        import json
+        import os
+        calibration_path = os.path.join(os.path.dirname(__file__), "../../calibration/active.json")
+        if os.path.exists(calibration_path):
+            with open(calibration_path, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.warning(f"Could not load squeeze calibration: {e}")
+    return {}
+
 @dataclass
 class SqueezeCandidate:
     """VIGL squeeze candidate with pattern metrics"""
@@ -37,23 +50,30 @@ class SqueezeDetector:
     """
     
     def __init__(self):
-        # VIGL SUCCESS PATTERN CRITERIA - Proven thresholds
+        # Load calibration settings
+        self._calibration = _load_squeeze_calibration()
+        
+        # VIGL SUCCESS PATTERN CRITERIA - Use calibrated thresholds with fallbacks
+        vigl_cal = self._calibration.get('vigl_criteria', {})
         self.VIGL_CRITERIA = {
-            'volume_spike_min': 2.0,         # Minimum 2x volume surge (MORE INCLUSIVE)
-            'volume_spike_target': 20.9,     # VIGL had 20.9x (optimal)
-            'float_max': 50_000_000,         # Under 50M shares (tight float)
-            'short_interest_min': 0.20,      # Over 20% short interest
-            'price_range': (0.10, 100.0),    # UNRESTRICTED - $0.10 to $100 for all explosive opportunities
-            'borrow_rate_min': 0.50,         # High borrow cost (>50%)
-            'market_cap_max': 500_000_000,   # Under $500M market cap
+            'volume_spike_min': vigl_cal.get('volume_spike_min', 1.5),         # CALIBRATED: 1.5 vs 2.0
+            'volume_spike_target': vigl_cal.get('volume_spike_target', 15.0),  # CALIBRATED: 15.0 vs 20.9
+            'float_max': vigl_cal.get('float_max', 75_000_000),               # CALIBRATED: 75M vs 50M
+            'short_interest_min': vigl_cal.get('short_interest_min', 0.15),   # CALIBRATED: 15% vs 20%
+            'short_interest_required': vigl_cal.get('short_interest_required', False),  # CRITICAL: Not required
+            'price_range': tuple(vigl_cal.get('price_range', [0.50, 50.0])),  # CALIBRATED: $0.50-$50
+            'borrow_rate_min': vigl_cal.get('borrow_rate_min', 0.30),         # CALIBRATED: 30% vs 50%
+            'borrow_rate_required': vigl_cal.get('borrow_rate_required', False),  # CRITICAL: Not required
+            'market_cap_max': vigl_cal.get('market_cap_max', 750_000_000),    # CALIBRATED: 750M vs 500M
         }
         
-        # CONFIDENCE THRESHOLDS - AGGRESSIVE for maximum candidates
+        # CONFIDENCE THRESHOLDS - Use calibrated levels
+        conf_cal = self._calibration.get('confidence_levels', {})
         self.CONFIDENCE_LEVELS = {
-            'EXTREME': 0.50,     # Lowered for more extreme picks
-            'HIGH': 0.35,        # More high confidence stocks 
-            'MEDIUM': 0.25,      # Broader medium range
-            'LOW': 0.15,         # Very inclusive low threshold
+            'EXTREME': conf_cal.get('EXTREME', 0.45),     # CALIBRATED: 0.45 vs 0.50
+            'HIGH': conf_cal.get('HIGH', 0.30),           # CALIBRATED: 0.30 vs 0.35
+            'MEDIUM': conf_cal.get('MEDIUM', 0.20),       # CALIBRATED: 0.20 vs 0.25  
+            'LOW': conf_cal.get('LOW', 0.10),             # CALIBRATED: 0.10 vs 0.15
         }
         
     def detect_vigl_pattern(self, symbol: str, data: Dict[str, Any]) -> Optional[SqueezeCandidate]:

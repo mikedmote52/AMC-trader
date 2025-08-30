@@ -3,6 +3,42 @@ import { API_BASE } from "../config";
 import { postJSON } from "../lib/api";
 import "./SqueezeAlert.css";
 
+// 3-Tier Alert System Configuration
+const SQUEEZE_ALERT_TIERS = {
+  CRITICAL: {
+    threshold: 0.70,
+    icon: "🚨",
+    color: "#dc2626",
+    bgColor: "rgba(239, 68, 68, 0.15)",
+    borderColor: "#ef4444",
+    label: "CRITICAL SQUEEZE",
+    animation: "pulse 1.5s infinite",
+    priority: 1
+  },
+  DEVELOPING: {
+    threshold: 0.40,
+    icon: "⚡",
+    color: "#f59e0b", 
+    bgColor: "rgba(245, 158, 11, 0.15)",
+    borderColor: "#f59e0b",
+    label: "DEVELOPING SQUEEZE",
+    animation: "glow 2s infinite alternate",
+    priority: 2
+  },
+  EARLY: {
+    threshold: 0.25,
+    icon: "📊",
+    color: "#eab308",
+    bgColor: "rgba(234, 179, 8, 0.1)", 
+    borderColor: "#eab308",
+    label: "EARLY SIGNALS",
+    animation: "none",
+    priority: 3
+  }
+};
+
+type AlertTier = 'CRITICAL' | 'DEVELOPING' | 'EARLY';
+
 interface SqueezeMetrics {
   squeeze_score: number;
   volume_spike: number;
@@ -16,14 +52,25 @@ interface SqueezeAlertProps {
   symbol: string;
   metrics: SqueezeMetrics;
   onTradeExecuted?: (result: any) => void;
+  alertTier?: AlertTier;
 }
 
-export default function SqueezeAlert({ symbol, metrics, onTradeExecuted }: SqueezeAlertProps) {
+export default function SqueezeAlert({ symbol, metrics, onTradeExecuted, alertTier }: SqueezeAlertProps) {
   const [executing, setExecuting] = useState(false);
   const [lastExecuted, setLastExecuted] = useState<Date | null>(null);
 
-  // Only show alerts for high-confidence squeeze patterns
-  if (metrics.squeeze_score < 0.70) return null;
+  // Determine alert tier if not provided
+  const getAlertTier = (score: number): AlertTier => {
+    if (score >= SQUEEZE_ALERT_TIERS.CRITICAL.threshold) return 'CRITICAL';
+    if (score >= SQUEEZE_ALERT_TIERS.DEVELOPING.threshold) return 'DEVELOPING';
+    return 'EARLY';
+  };
+
+  const currentTier = alertTier || getAlertTier(metrics.squeeze_score);
+  const alert = SQUEEZE_ALERT_TIERS[currentTier];
+
+  // Show all tiers (lowered threshold to include early signals)
+  if (metrics.squeeze_score < SQUEEZE_ALERT_TIERS.EARLY.threshold) return null;
 
   const calculatePositionSize = () => {
     const maxPosition = 100; // $100 max position
@@ -117,23 +164,49 @@ export default function SqueezeAlert({ symbol, metrics, onTradeExecuted }: Squee
   const rewardAmount = amount * 0.10; // 10% reward
   const riskRewardRatio = rewardAmount / riskAmount;
 
-  const alertLevel = metrics.squeeze_score >= 0.90 ? 'critical' : metrics.squeeze_score >= 0.80 ? 'high' : 'medium';
-
   return (
     <div style={{
       ...squeezeAlertStyle,
-      borderColor: alertLevel === 'critical' ? '#ef4444' : alertLevel === 'high' ? '#f59e0b' : '#22c55e',
-      backgroundColor: alertLevel === 'critical' ? 'rgba(239, 68, 68, 0.1)' : alertLevel === 'high' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(34, 197, 94, 0.1)'
+      borderColor: alert.borderColor,
+      backgroundColor: alert.bgColor,
+      animation: alert.animation
     }}>
       
-      {/* Pulse Animation Header */}
+      {/* Tiered Alert Header */}
       <div style={pulseHeaderStyle}>
-        <div style={pulseStyle}>
-          🚨 SQUEEZE DETECTED: {symbol}
+        <div style={{
+          ...pulseStyle,
+          animation: alert.animation,
+          color: alert.color
+        }}>
+          {alert.icon} {alert.label}: {symbol}
         </div>
-        <div style={scoreStyle}>
-          {(metrics.squeeze_score * 100).toFixed(0)}% CONFIDENCE
+        <div style={{
+          ...scoreStyle,
+          backgroundColor: alert.color,
+          color: '#fff',
+          padding: '4px 8px',
+          borderRadius: '4px'
+        }}>
+          {(metrics.squeeze_score * 100).toFixed(1)}% CONFIDENCE
         </div>
+      </div>
+
+      {/* Tier-specific Alert Message */}
+      <div style={{
+        ...alertMessageStyle,
+        color: alert.color,
+        borderLeft: `3px solid ${alert.color}`
+      }}>
+        {currentTier === 'CRITICAL' && (
+          <span>🔥 IMMEDIATE ACTION: High-probability squeeze in progress</span>
+        )}
+        {currentTier === 'DEVELOPING' && (
+          <span>⚡ MONITOR CLOSELY: Squeeze pattern developing, watch for acceleration</span>
+        )}
+        {currentTier === 'EARLY' && (
+          <span>📊 EARLY STAGE: Initial squeeze signals detected, prepare for potential move</span>
+        )}
       </div>
 
       {/* Metrics Grid */}
@@ -353,4 +426,14 @@ const warningStyle: React.CSSProperties = {
   padding: '8px',
   background: 'rgba(245, 158, 11, 0.1)',
   borderRadius: '8px'
+};
+
+const alertMessageStyle: React.CSSProperties = {
+  fontSize: '13px',
+  fontWeight: 600,
+  padding: '8px 12px',
+  marginBottom: '12px',
+  borderRadius: '6px',
+  backgroundColor: 'rgba(0, 0, 0, 0.1)',
+  paddingLeft: '15px'
 };

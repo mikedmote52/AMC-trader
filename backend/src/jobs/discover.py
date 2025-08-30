@@ -30,13 +30,31 @@ from polygon import RESTClient
 import requests
 from services.squeeze_detector import SqueezeDetector, SqueezeCandidate
 
-# Environment variables for live discovery
+def _load_calibration():
+    """Load active calibration settings with fallbacks to environment variables"""
+    try:
+        import json
+        import os
+        calibration_path = os.path.join(os.path.dirname(__file__), "../../../calibration/active.json")
+        if os.path.exists(calibration_path):
+            with open(calibration_path, 'r') as f:
+                cal = json.load(f)
+                return cal
+    except Exception as e:
+        print(f"Warning: Could not load calibration file: {e}")
+    return {}
+
+# Load calibration settings
+_calibration = _load_calibration()
+
+# Environment variables for live discovery with calibration overrides
 POLY_KEY = os.getenv("POLYGON_API_KEY")
-PRICE_CAP = float(os.getenv("AMC_PRICE_CAP", "500"))             # keep ≤ 500 - RAISED for more candidates
-MIN_DOLLAR_VOL = float(os.getenv("AMC_MIN_DOLLAR_VOL", "5000000"))  # $5M - LOWERED for more candidates
+# Apply calibration overrides for critical thresholds
+PRICE_CAP = _calibration.get("discovery_filters", {}).get("price_cap", float(os.getenv("AMC_PRICE_CAP", "500")))
+MIN_DOLLAR_VOL = _calibration.get("discovery_filters", {}).get("dollar_volume_min", float(os.getenv("AMC_MIN_DOLLAR_VOL", "5000000")))  # CALIBRATED: 1M vs 5M
 LOOKBACK_DAYS = int(os.getenv("AMC_COMPRESSION_LOOKBACK", "60"))
-COMPRESSION_PCTL_MAX = float(os.getenv("AMC_COMPRESSION_PCTL_MAX", "0.30"))  # top 30% - MORE INCLUSIVE
-MAX_CANDIDATES = int(os.getenv("AMC_MAX_CANDIDATES", "25"))  # INCREASED from 7 for more opportunities
+COMPRESSION_PCTL_MAX = _calibration.get("discovery_filters", {}).get("compression_percentile_max", float(os.getenv("AMC_COMPRESSION_PCTL_MAX", "0.30")))  # CALIBRATED: 0.50 vs 0.30
+MAX_CANDIDATES = _calibration.get("discovery_filters", {}).get("max_candidates", int(os.getenv("AMC_MAX_CANDIDATES", "25")))  # CALIBRATED: 35 vs 25
 UNIVERSE_FALLBACK = [s.strip().upper() for s in os.getenv("AMC_DISCOVERY_UNIVERSE","AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,AMD,AVGO,PLTR,COIN,CRM,ORCL,ABNB,SNOW,UBER,NFLX,SHOP,INTC,MRVL,SMCI").split(",") if s.strip()]
 EXCLUDE_FUNDS = os.getenv("AMC_EXCLUDE_FUNDS", "false").lower() in ("1", "true", "yes")  # Include ETFs/leveraged funds
 EXCLUDE_ADRS = os.getenv("AMC_EXCLUDE_ADRS", "false").lower() in ("1", "true", "yes")  # Include foreign stocks
@@ -1006,7 +1024,9 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
             
             squeeze_result = squeeze_detector.detect_vigl_pattern(candidate['symbol'], squeeze_data)
             
-            if squeeze_result and squeeze_result.squeeze_score >= 0.25:  # LOWERED threshold for more candidates
+            # Use calibrated squeeze score threshold (0.15 vs 0.25)
+            squeeze_threshold = _calibration.get("discovery_filters", {}).get("squeeze_score_threshold", 0.25)
+            if squeeze_result and squeeze_result.squeeze_score >= squeeze_threshold:
                 # Update candidate with squeeze data
                 candidate['squeeze_score'] = squeeze_result.squeeze_score
                 candidate['squeeze_pattern'] = squeeze_result.pattern_match
