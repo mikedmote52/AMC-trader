@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import TopRecommendations from "./components/TopRecommendations";
 import PortfolioTiles from "./components/PortfolioTiles";
+import SqueezeMonitor from "./components/SqueezeMonitor";
 import UpdatesPage from "./components/UpdatesPage";
 
 export default function App() {
@@ -25,13 +26,23 @@ export default function App() {
       color: "#e7e7e7", 
       background: "#000",
       minHeight: "100vh",
-      padding: "20px"
+      padding: "20px 16px",
+      maxWidth: "1400px",
+      margin: "0 auto"
     }}>
       {/* Navigation */}
       <div style={navStyle}>
         <button onClick={() => setCurrentPage("updates")} style={updatesNavStyle}>
           📱 Daily Updates
         </button>
+      </div>
+
+      {/* Squeeze Monitor Section */}
+      <div style={{ marginBottom: "40px" }}>
+        <SqueezeMonitor 
+          watchedSymbols={["VIGL", "QUBT", "CRWV", "UP", "KSS", "WOOF"]}
+          showPatternHistory={true}
+        />
       </div>
 
       {/* Discovery Section */}
@@ -67,7 +78,7 @@ const navStyle: React.CSSProperties = {
   display: "flex",
   justifyContent: "flex-end",
   marginBottom: "20px",
-  padding: "0 20px"
+  padding: "0 4px"
 };
 
 const navButtonStyle: React.CSSProperties = {

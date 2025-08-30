@@ -45,7 +45,7 @@ export default function SqueezeMonitor({
       setError("");
       
       // Check for current squeeze opportunities
-      const response = await getJSON<SqueezeOpportunity[]>(`${API_BASE}/discovery/squeeze-scan`);
+      const response = await getJSON<SqueezeOpportunity[]>(`${API_BASE}/discovery/squeeze-candidates`);
       
       // Mock data for demonstration if no real data
       const mockOpportunities: SqueezeOpportunity[] = [

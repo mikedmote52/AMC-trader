@@ -52,7 +52,7 @@ export default function Holdings() {
 
   useEffect(() => {
     fetchData();
-    const id = setInterval(fetchData, 15_000);
+    const id = setInterval(fetchData, 45_000); // Refresh every 45 seconds for real-time P&L updates
     return () => clearInterval(id);
   }, []);
 
@@ -66,40 +66,27 @@ export default function Holdings() {
     const suggestion = holding.suggestion?.toLowerCase() || "";
     const confidence = holding.confidence || 0;
     const marketValue = holding.market_value;
-    const symbol = holding.symbol;
     
-    // Position-specific intelligent recommendations based on actual performance
-    // UP: 107% gain - definitely take profits
-    if (symbol === "UP" && plPct > 100) {
-      return { 
-        action: "TRIM", 
-        reason: "💰 Take profits after 107% gain - exceptional performer", 
-        color: "#f59e0b",
-        buttonText: "💰 Take Profits",
-        buttonColor: "#f59e0b"
-      };
-    }
-    
-    // KSS: 15% gain in retail - good momentum
-    if (symbol === "KSS" && plPct > 10) {
-      return { 
-        action: "BUY MORE", 
-        reason: "🚀 Retail recovery thesis working - add on strength", 
-        color: "#16a34a",
-        buttonText: "🚀 Add to Position",
-        buttonColor: "#16a34a"
-      };
-    }
-    
-    // WULF: 10% gain - hold for now
-    if (symbol === "WULF" && plPct > 5) {
-      return { 
-        action: "HOLD", 
-        reason: "🔥 Crypto mining momentum - monitor closely", 
-        color: "#22c55e",
-        buttonText: "📊 Monitor Position",
-        buttonColor: "#6b7280"
-      };
+    // Use API-provided suggestion when available and reliable
+    if (confidence > 0.6 && suggestion) {
+      const apiSuggestion = suggestion.toUpperCase();
+      if (apiSuggestion === "INCREASE" || apiSuggestion === "BUY_MORE") {
+        return { 
+          action: "BUY MORE", 
+          reason: `🎯 AI recommends adding (${(confidence * 100).toFixed(0)}% confidence)`, 
+          color: "#16a34a",
+          buttonText: "🎯 Add Position",
+          buttonColor: "#16a34a"
+        };
+      } else if (apiSuggestion === "REDUCE" || apiSuggestion === "TRIM") {
+        return { 
+          action: "TRIM", 
+          reason: `⚠️ AI recommends reducing (${(confidence * 100).toFixed(0)}% confidence)`, 
+          color: "#f59e0b",
+          buttonText: "⚠️ Reduce Position",
+          buttonColor: "#f59e0b"
+        };
+      }
     }
     
     // Positions with VIGL thesis and confidence
@@ -223,40 +210,84 @@ export default function Holdings() {
                   </div>
                 </div>
                 
-                <div style={{fontSize:14, marginBottom:12, color: recommendation.color, fontWeight:600}}>
-                  {recommendation.reason}
+                {/* Enhanced Action Recommendation */}
+                <div style={{
+                  background: `linear-gradient(135deg, ${recommendation.color}15, ${recommendation.color}05)`,
+                  border: `1px solid ${recommendation.color}40`,
+                  borderRadius: 10,
+                  padding: 12,
+                  marginBottom: 12
+                }}>
+                  <div style={{
+                    fontSize: 14, 
+                    fontWeight: 700, 
+                    color: recommendation.color, 
+                    marginBottom: 6,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px"
+                  }}>
+                    {recommendation.action} • {holding.confidence ? (holding.confidence * 100).toFixed(0) : "0"}% Confidence
+                  </div>
+                  <div style={{fontSize: 13, color: "#ddd", lineHeight: 1.4}}>
+                    {recommendation.reason}
+                  </div>
                 </div>
                 
+                {/* Position Details */}
                 <div style={{fontSize:13, marginBottom:12, lineHeight:1.4}}>
                   <div>Position: {holding.qty} shares @ ${holding.avg_entry_price.toFixed(2)}</div>
                   <div>Current: ${holding.last_price.toFixed(2)} • Value: ${holding.market_value.toFixed(2)}</div>
                   <div style={{color: plColor, fontSize:15, fontWeight:600}}>
                     P&L: ${holding.unrealized_pl.toFixed(2)} ({holding.unrealized_pl_pct.toFixed(1)}%)
                   </div>
+                  {holding.sector && (
+                    <div style={{color: "#888", fontSize: 12, marginTop: 4}}>
+                      Sector: {holding.sector} • Risk: {holding.risk_level || "Moderate"}
+                    </div>
+                  )}
                 </div>
                 
+                {/* Enhanced Investment Thesis Display */}
                 {holding.thesis && (
                   <div style={{
-                    background: "#1a1a1a",
+                    background: "#0f1419",
                     border: "1px solid #2a2a2a",
                     borderRadius: 8,
-                    padding: 12,
+                    padding: 14,
                     marginBottom: 12,
                     fontSize: 12,
-                    lineHeight: 1.4,
-                    color: "#ccc"
+                    lineHeight: 1.5
                   }}>
                     <div style={{
                       fontSize: 11,
                       fontWeight: 600,
                       color: "#888",
-                      marginBottom: 4,
+                      marginBottom: 8,
                       textTransform: "uppercase",
-                      letterSpacing: "0.5px"
+                      letterSpacing: "0.5px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center"
                     }}>
-                      Investment Thesis
+                      <span>📊 Investment Analysis</span>
+                      <span style={{color: holding.confidence > 0.7 ? "#22c55e" : holding.confidence > 0.4 ? "#f59e0b" : "#ef4444"}}>
+                        {holding.thesis_source || "AI"}
+                      </span>
                     </div>
-                    {holding.thesis}
+                    <div style={{color: "#e5e7eb", marginBottom: 10}}>
+                      {holding.thesis}
+                    </div>
+                    {holding.reasoning && (
+                      <div style={{
+                        borderTop: "1px solid #374151",
+                        paddingTop: 8,
+                        fontSize: 11,
+                        color: "#9ca3af",
+                        fontStyle: "italic"
+                      }}>
+                        <strong>Decision Logic:</strong> {holding.reasoning}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

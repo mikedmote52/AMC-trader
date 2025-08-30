@@ -45,44 +45,20 @@ export default function PortfolioTiles() {
       if (response?.success && response?.data?.positions) {
         const positions = response.data.positions;
         
-        // Data validation: Log position data for all 4 critical positions
-        const criticalPositions = ["KSS", "QUBT", "AMDL", "CARS"];
-        
-        console.log("=== CRITICAL POSITIONS DATA UPDATE ===");
-        criticalPositions.forEach(symbol => {
-          const position = positions.find((p: Holding) => p.symbol === symbol);
-          if (position) {
-            console.log(`${symbol} Position:`, {
-              symbol: position.symbol,
-              qty: position.qty,
-              avg_entry_price: position.avg_entry_price,
-              last_price: position.last_price,
-              unrealized_pl: position.unrealized_pl,
-              unrealized_pl_pct: position.unrealized_pl_pct,
-              price_source: position.price_source,
-              timestamp: new Date().toISOString()
-            });
-            
-            // Validate expected values for KSS specifically
-            if (symbol === "KSS") {
+        // Data validation for critical positions (development only)
+        if (import.meta.env.DEV) {
+          const criticalPositions = ["KSS", "QUBT", "AMDL", "CARS"];
+          criticalPositions.forEach(symbol => {
+            const position = positions.find((p: Holding) => p.symbol === symbol);
+            if (position && symbol === "KSS") {
+              // Basic validation for KSS position
               const expectedQty = 8;
-              const expectedEntryPrice = 13.30; // approximately
-              if (position.qty === expectedQty) {
-                console.log("✅ KSS quantity is correct:", position.qty);
-              } else {
-                console.error("❌ KSS quantity mismatch! Expected:", expectedQty, "Got:", position.qty);
-              }
-              
-              if (Math.abs(position.avg_entry_price - expectedEntryPrice) < 0.01) {
-                console.log("✅ KSS entry price is approximately correct:", position.avg_entry_price);
-              } else {
-                console.error("❌ KSS entry price mismatch! Expected ~", expectedEntryPrice, "Got:", position.avg_entry_price);
+              if (position.qty !== expectedQty) {
+                console.warn(`KSS quantity validation: Expected ${expectedQty}, Got ${position.qty}`);
               }
             }
-          } else {
-            console.warn(`${symbol} position not found in data`);
-          }
-        });
+          });
+        }
         
         // Clear existing holdings first to prevent stale data
         setHoldings([]);
@@ -101,7 +77,7 @@ export default function PortfolioTiles() {
 
   useEffect(() => {
     loadHoldings();
-    const interval = setInterval(loadHoldings, 30000); // Refresh every 30 seconds
+    const interval = setInterval(loadHoldings, 45000); // Refresh every 45 seconds for real-time P&L updates
     return () => clearInterval(interval);
   }, []);
 
@@ -464,8 +440,8 @@ export default function PortfolioTiles() {
 
 const containerStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-  gap: "20px"
+  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+  gap: "16px"
 };
 
 const tileStyle: React.CSSProperties = {
@@ -703,14 +679,14 @@ const validationBadgeStyle: React.CSSProperties = {
 const profitActionsStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
-  gap: "8px",
+  gap: "6px",
   marginBottom: "8px"
 };
 
 const standardActionsStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
-  gap: "8px",
+  gap: "6px",
   marginBottom: "8px"
 };
 
