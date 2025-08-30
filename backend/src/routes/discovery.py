@@ -325,6 +325,51 @@ async def get_squeeze_candidates(min_score: float = Query(0.25, ge=0.0, le=1.0))
             'min_score_threshold': min_score
         }
 
+@router.post("/trigger")
+async def trigger_discovery(limit: int = Query(10), relaxed: bool = Query(False)):
+    """
+    Manual discovery trigger for production deployment
+    
+    Runs discovery job and populates Redis with fresh market data
+    """
+    try:
+        import asyncio
+        from backend.src.shared.redis_client import get_redis_client
+        import json
+        import time
+        
+        # Load and run discovery
+        f, mod = _load_selector()
+        if not f:
+            return {"success": False, "error": "select_candidates not found"}
+        
+        # Run discovery with trace
+        res = await f(relaxed=relaxed, limit=limit, with_trace=True)
+        if isinstance(res, tuple) and len(res) == 2:
+            items, trace = res
+        else:
+            items, trace = res, {}
+        
+        # Publish to Redis (same keys as main discovery job)
+        r = get_redis_client()
+        r.set("amc:discovery:contenders.latest", json.dumps(items), ex=600)
+        r.set("amc:discovery:explain.latest", json.dumps({
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "count": len(items),
+            "trace": trace
+        }), ex=600)
+        
+        return {
+            "success": True,
+            "candidates_found": len(items),
+            "published_to_redis": True,
+            "module": mod,
+            "trace": trace
+        }
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @router.get("/squeeze-validation")
 async def validate_squeeze_detector():
     """
