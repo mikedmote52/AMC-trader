@@ -2,7 +2,7 @@ import asyncio
 import asyncpg
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 import json
 import statistics
 from enum import Enum
@@ -41,7 +41,7 @@ class ThesisAccuracyRecord:
     initial_price: float
     initial_pl_pct: float
     
-    # Actual outcomes tracking
+    # Actual outcomes tracking (all optional fields must come after required fields)
     outcome_measured_at: Optional[datetime] = None
     actual_outcome: Optional[str] = None
     final_pl_pct: Optional[float] = None
@@ -62,9 +62,9 @@ class ThesisAccuracyMetrics:
     
     # Overall accuracy
     overall_accuracy: float = 0.0  # 0-100 scale
-    accuracy_by_recommendation: Dict[str, float] = None
-    accuracy_by_sector: Dict[str, float] = None
-    accuracy_by_confidence: Dict[str, float] = None
+    accuracy_by_recommendation: Optional[Dict[str, float]] = field(default=None)
+    accuracy_by_sector: Optional[Dict[str, float]] = field(default=None)
+    accuracy_by_confidence: Optional[Dict[str, float]] = field(default=None)
     
     # Prediction quality
     avg_confidence: float = 0.0
