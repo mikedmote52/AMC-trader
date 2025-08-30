@@ -40,7 +40,7 @@ export default function App() {
       {/* Squeeze Monitor Section */}
       <div style={{ marginBottom: "40px" }}>
         <SqueezeMonitor 
-          watchedSymbols={["VIGL", "QUBT", "CRWV", "UP", "KSS", "WOOF"]}
+          watchedSymbols={[]}
           showPatternHistory={true}
         />
       </div>

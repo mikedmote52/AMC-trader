@@ -47,42 +47,20 @@ export default function SqueezeMonitor({
       // Check for current squeeze opportunities
       const response = await getJSON<SqueezeOpportunity[]>(`${API_BASE}/discovery/squeeze-candidates`);
       
-      // Mock data for demonstration if no real data
-      const mockOpportunities: SqueezeOpportunity[] = [
-        {
-          symbol: "VIGL",
-          squeeze_score: 0.94,
-          volume_spike: 47.2,
-          short_interest: 23.5,
-          price: 7.89,
-          pattern_type: "VIGL",
-          confidence: 0.94,
+      // Only use real API data - no mock data
+      let opportunities: SqueezeOpportunity[] = [];
+      if (Array.isArray(response) && response.length > 0) {
+        opportunities = response.map(item => ({
+          symbol: item.symbol,
+          squeeze_score: item.squeeze_score || 0,
+          volume_spike: item.volume_spike || 0,
+          short_interest: item.short_interest || 0,
+          price: item.price || 0,
+          pattern_type: item.pattern_type || 'SQUEEZE',
+          confidence: item.confidence || item.squeeze_score || 0,
           detected_at: new Date().toISOString()
-        },
-        {
-          symbol: "QUBT", 
-          squeeze_score: 0.85,
-          volume_spike: 12.5,
-          short_interest: 18.7,
-          price: 15.77,
-          pattern_type: "SQUEEZE",
-          confidence: 0.82,
-          detected_at: new Date(Date.now() - 300000).toISOString() // 5 minutes ago
-        },
-        {
-          symbol: "CRWV",
-          squeeze_score: 0.78,
-          volume_spike: 23.1,
-          short_interest: 31.2,
-          price: 0.98,
-          pattern_type: "CRWV",
-          confidence: 0.73,
-          detected_at: new Date(Date.now() - 600000).toISOString() // 10 minutes ago
-        }
-      ];
-      
-      // Filter for watched symbols if specified
-      let opportunities = Array.isArray(response) && response.length > 0 ? response : mockOpportunities;
+        }));
+      }
       
       if (watchedSymbols.length > 0) {
         opportunities = opportunities.filter(opp => watchedSymbols.includes(opp.symbol));
