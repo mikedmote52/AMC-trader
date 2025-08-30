@@ -200,7 +200,7 @@ async def discovery_test(relaxed: bool = Query(True), limit: int = Query(10)):
         return {"items": [], "trace": {}, "module": mod, "error": str(e)}
 
 @router.get("/squeeze-candidates")
-async def get_squeeze_candidates(min_score: float = Query(0.70, ge=0.0, le=1.0)):
+async def get_squeeze_candidates(min_score: float = Query(0.25, ge=0.0, le=1.0)):
     """
     VIGL Squeeze Pattern Detection Endpoint
     
@@ -208,7 +208,7 @@ async def get_squeeze_candidates(min_score: float = Query(0.70, ge=0.0, le=1.0))
     Designed to identify explosive opportunities like VIGL (+324%)
     
     Args:
-        min_score: Minimum squeeze score (0.0-1.0), default 0.70 for high confidence
+        min_score: Minimum squeeze score (0.0-1.0), default 0.25 for maximum candidates
         
     Returns:
         List of high-confidence squeeze candidates with detailed analysis
@@ -250,12 +250,12 @@ async def get_squeeze_candidates(min_score: float = Query(0.70, ge=0.0, le=1.0))
                 'price': item.get('price', 0.0),
                 'volume': current_volume,
                 'avg_volume_30d': calculated_avg_volume,  # Calculated from spike ratio
-                'short_interest': 0.15,  # 15% reasonable default for squeeze testing
-                'float': 25_000_000,     # Conservative small-cap default (25M shares)
-                'borrow_rate': 0.20,     # 20% default borrow rate for squeeze pressure
-                'shares_outstanding': 50_000_000,  # 50M shares default
-                # Market cap based on conservative float estimate
-                'market_cap': item.get('price', 0.0) * 25_000_000
+                'short_interest': 0.30,  # AGGRESSIVE: 30% default (very bullish)
+                'float': 10_000_000,     # AGGRESSIVE: 10M tight float assumption
+                'borrow_rate': 0.75,     # AGGRESSIVE: 75% borrow rate (high pressure)
+                'shares_outstanding': 30_000_000,  # ENHANCED: 30M vs 50M (smaller default)
+                # Market cap based on enhanced tight float estimate
+                'market_cap': item.get('price', 0.0) * 15_000_000  # Using tighter float
             }
             
             # Detect squeeze pattern

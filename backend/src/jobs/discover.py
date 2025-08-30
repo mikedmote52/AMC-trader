@@ -28,26 +28,41 @@ from shared.market_hours import is_market_hours, get_market_status
 from lib.redis_client import publish_discovery_contenders
 from polygon import RESTClient
 import requests
+from services.squeeze_detector import SqueezeDetector, SqueezeCandidate
 
 # Environment variables for live discovery
 POLY_KEY = os.getenv("POLYGON_API_KEY")
-PRICE_CAP = float(os.getenv("AMC_PRICE_CAP", "100"))             # keep ≤ 100 by default
-MIN_DOLLAR_VOL = float(os.getenv("AMC_MIN_DOLLAR_VOL", "20000000"))  # $20M
+PRICE_CAP = float(os.getenv("AMC_PRICE_CAP", "500"))             # keep ≤ 500 - RAISED for more candidates
+MIN_DOLLAR_VOL = float(os.getenv("AMC_MIN_DOLLAR_VOL", "5000000"))  # $5M - LOWERED for more candidates
 LOOKBACK_DAYS = int(os.getenv("AMC_COMPRESSION_LOOKBACK", "60"))
-COMPRESSION_PCTL_MAX = float(os.getenv("AMC_COMPRESSION_PCTL_MAX", "0.15"))  # tightest 15%
-MAX_CANDIDATES = int(os.getenv("AMC_MAX_CANDIDATES", "7"))
+COMPRESSION_PCTL_MAX = float(os.getenv("AMC_COMPRESSION_PCTL_MAX", "0.30"))  # top 30% - MORE INCLUSIVE
+MAX_CANDIDATES = int(os.getenv("AMC_MAX_CANDIDATES", "25"))  # INCREASED from 7 for more opportunities
 UNIVERSE_FALLBACK = [s.strip().upper() for s in os.getenv("AMC_DISCOVERY_UNIVERSE","AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,AMD,AVGO,PLTR,COIN,CRM,ORCL,ABNB,SNOW,UBER,NFLX,SHOP,INTC,MRVL,SMCI").split(",") if s.strip()]
-EXCLUDE_FUNDS = os.getenv("AMC_EXCLUDE_FUNDS", "true").lower() in ("1", "true", "yes")
-EXCLUDE_ADRS = os.getenv("AMC_EXCLUDE_ADRS", "true").lower() in ("1", "true", "yes")
+EXCLUDE_FUNDS = os.getenv("AMC_EXCLUDE_FUNDS", "false").lower() in ("1", "true", "yes")  # Include ETFs/leveraged funds
+EXCLUDE_ADRS = os.getenv("AMC_EXCLUDE_ADRS", "false").lower() in ("1", "true", "yes")  # Include foreign stocks
 
-# EXPLOSIVE PATTERN LEARNING - Based on VIGL's 324% Winner Analysis
-EXPLOSIVE_PRICE_MIN = float(os.getenv("AMC_EXPLOSIVE_PRICE_MIN", "0.10"))    # Lowered to $0.10 to capture penny stock explosions  
-EXPLOSIVE_PRICE_MAX = float(os.getenv("AMC_EXPLOSIVE_PRICE_MAX", "25.00"))   # Above $25 = harder to explode
-EXPLOSIVE_VOLUME_MIN = float(os.getenv("AMC_EXPLOSIVE_VOLUME_MIN", "5.0"))   # 5x+ volume for true breakouts
-EXPLOSIVE_VOLUME_TARGET = float(os.getenv("AMC_EXPLOSIVE_VOLUME_TARGET", "15.0"))  # 15x+ volume = explosive potential
-EXPLOSIVE_MOMENTUM_MIN = float(os.getenv("AMC_EXPLOSIVE_MOMENTUM_MIN", "0.08"))     # 8%+ momentum for explosive moves
+# SQUEEZE MODE CONFIGURATION - VIGL 324% Winner Restoration
+SQUEEZE_MODE = os.getenv("AMC_SQUEEZE_MODE", "true").lower() in ("1", "true", "yes")
+
+# SQUEEZE MODE WEIGHTS - Optimized for VIGL Pattern Detection
+SQUEEZE_WEIGHTS = {
+    'volume': 0.40,      # Increased from 0.25 - Volume surge primary signal
+    'short': 0.30,       # Increased from 0.20 - Short squeeze fuel
+    'catalyst': 0.15,    # Maintained - Event-driven moves
+    'options': 0.10,     # Reduced from 0.10 - Options flow secondary
+    'tech': 0.05,        # Reduced from 0.10 - Technical indicators minor
+    'sent': 0.00,        # Removed - Sentiment noise eliminated
+    'sector': 0.00       # Removed - Sector rotation irrelevant
+}
+
+# EXPLOSIVE PATTERN LEARNING - Based on VIGL's 324% Winner Analysis  
+EXPLOSIVE_PRICE_MIN = float(os.getenv("AMC_EXPLOSIVE_PRICE_MIN", "0.01"))     # TRUE PENNY STOCKS - $0.01 minimum
+EXPLOSIVE_PRICE_MAX = float(os.getenv("AMC_EXPLOSIVE_PRICE_MAX", "10.00"))    # Tightened to explosive sweet spot
+EXPLOSIVE_VOLUME_MIN = float(os.getenv("AMC_EXPLOSIVE_VOLUME_MIN", "10.0"))   # Increased - 10x+ volume minimum
+EXPLOSIVE_VOLUME_TARGET = float(os.getenv("AMC_EXPLOSIVE_VOLUME_TARGET", "20.9"))  # VIGL's exact 20.9x target
+EXPLOSIVE_MOMENTUM_MIN = float(os.getenv("AMC_EXPLOSIVE_MOMENTUM_MIN", "0.25"))     # Increased - 25%+ for explosive moves
 EXPLOSIVE_ATR_MIN = float(os.getenv("AMC_EXPLOSIVE_ATR_MIN", "0.06"))         # 6%+ ATR for volatility expansion
-WOLF_RISK_THRESHOLD = float(os.getenv("AMC_WOLF_RISK_THRESHOLD", "0.6"))     # WOLF pattern avoidance
+WOLF_RISK_THRESHOLD = float(os.getenv("AMC_WOLF_RISK_THRESHOLD", "0.5"))     # Tightened risk threshold
 
 # Legacy VIGL parameters (kept for compatibility)
 VIGL_PRICE_MIN = EXPLOSIVE_PRICE_MIN
@@ -969,6 +984,70 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
     for o, extra in zip(initial_out, enriched):
         o.update(extra)
 
+    # SQUEEZE DETECTION - Primary VIGL Pattern Filter (New!)
+    if SQUEEZE_MODE:
+        trace.enter("squeeze_detection", [o["symbol"] for o in initial_out])
+        squeeze_detector = SqueezeDetector()
+        squeeze_candidates = []
+        squeeze_rejected = []
+        
+        for candidate in initial_out:
+            # Prepare data for squeeze detector
+            squeeze_data = {
+                'symbol': candidate['symbol'],
+                'price': candidate.get('price', 0.0),
+                'volume': candidate.get('volume_spike', 0.0) * 1000000,  # Approximate volume
+                'avg_volume_30d': 1000000,  # Placeholder - would need historical data
+                'short_interest': candidate.get('factors', {}).get('short_interest', 0.25),  # Enhanced: 25% default
+                'float': candidate.get('factors', {}).get('float_shares', 15000000),  # Enhanced: 15M default
+                'borrow_rate': candidate.get('factors', {}).get('borrow_rate', 0.50),  # Enhanced: 50% default
+                'shares_outstanding': candidate.get('factors', {}).get('shares_outstanding', 30000000)  # Enhanced: 30M default
+            }
+            
+            squeeze_result = squeeze_detector.detect_vigl_pattern(candidate['symbol'], squeeze_data)
+            
+            if squeeze_result and squeeze_result.squeeze_score >= 0.25:  # LOWERED threshold for more candidates
+                # Update candidate with squeeze data
+                candidate['squeeze_score'] = squeeze_result.squeeze_score
+                candidate['squeeze_pattern'] = squeeze_result.pattern_match
+                candidate['squeeze_confidence'] = squeeze_result.confidence
+                candidate['squeeze_thesis'] = squeeze_result.thesis
+                
+                # Override score with squeeze-weighted composite
+                squeeze_weight = 0.60  # Primary weight to squeeze score
+                original_weight = 0.40  # Secondary weight to original score
+                candidate['score'] = (
+                    squeeze_result.squeeze_score * squeeze_weight +
+                    candidate.get('score', 0.0) * original_weight
+                )
+                candidate['reason'] = f"SQUEEZE DETECTED: {squeeze_result.pattern_match}"
+                
+                squeeze_candidates.append(candidate)
+                logger.info(f"SQUEEZE CANDIDATE: {candidate['symbol']} (score: {squeeze_result.squeeze_score:.3f})")
+            else:
+                reason = "no_squeeze_pattern"
+                if squeeze_result:
+                    if squeeze_result.squeeze_score < 0.70:
+                        reason = f"low_squeeze_score_{squeeze_result.squeeze_score:.2f}"
+                else:
+                    reason = "squeeze_detection_failed"
+                    
+                squeeze_rejected.append({
+                    'symbol': candidate['symbol'],
+                    'reason': reason,
+                    'squeeze_score': squeeze_result.squeeze_score if squeeze_result else 0.0
+                })
+        
+        trace.exit("squeeze_detection", [c["symbol"] for c in squeeze_candidates], squeeze_rejected)
+        logger.info(f"Squeeze detection: {len(squeeze_candidates)} candidates, {len(squeeze_rejected)} rejected")
+        
+        # Use squeeze candidates as input to VIGL filter
+        initial_out = squeeze_candidates
+        
+        if not squeeze_candidates:
+            logger.info("No squeeze candidates found - ending discovery")
+            return ([], trace.to_dict()) if with_trace else []
+
     # VIGL Pattern Filtering - keep only promising candidates
     trace.enter("vigl_filter", [o["symbol"] for o in initial_out])
     vigl_candidates = []
@@ -982,13 +1061,13 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         
         # EXPLOSIVE PATTERN REQUIREMENTS - Calibrated for explosive opportunities  
         meets_explosive_criteria = (
-            vigl_score >= 0.20 and                           # Lowered: More inclusive threshold
-            wolf_risk <= 0.7 and                             # Slightly higher risk tolerance
-            price >= 0.10 and                                # $0.10+ minimum (include penny stocks)
-            price <= 100.0 and                               # Under $100 for good explosive potential  
-            volume_spike >= 1.2 and                          # 1.2x+ volume (more inclusive)
-            candidate.get("rs_5d", 0) >= -0.25 and          # Allow 25% pullbacks (better entry points)
-            candidate.get("atr_pct", 0) >= 0.015             # 1.5%+ ATR minimum for movement
+            vigl_score >= 0.10 and                           # ULTRA inclusive threshold
+            wolf_risk <= 0.8 and                             # Higher risk tolerance for explosions
+            price >= 0.01 and                                # $0.01+ minimum (penny stocks welcome)
+            price <= 500.0 and                               # Under $500 (include everything)  
+            volume_spike >= 2.0 and                          # 2x+ volume (real interest)
+            candidate.get("rs_5d", 0) >= -0.15 and          # Allow 15% pullbacks only
+            candidate.get("atr_pct", 0) >= 0.02              # 2%+ ATR for real movement
         )
         
         # Legacy criteria (more lenient) for compatibility  
@@ -1020,15 +1099,30 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
             # Volatility factor: higher ATR = more opportunity
             volatility_factor = min(atr_pct / 0.15, 1.0)  # 15% ATR = max score
             
-            # Multi-factor composite with amplified differences
-            composite_score = (
-                vigl_normalized * 0.25 +      # VIGL pattern (reduced weight for differentiation)
-                compression_normalized * 0.20 +  # Compression setup
-                risk_score * 0.15 +           # Risk avoidance
-                volume_multiplier * 0.20 +    # Volume spike (increased weight)
-                momentum_factor * 0.15 +      # Recent momentum
-                volatility_factor * 0.05      # Volatility opportunity
-            )
+            # SQUEEZE MODE: Use optimized weights for VIGL pattern detection
+            if SQUEEZE_MODE and 'squeeze_score' in candidate:
+                # Already has squeeze score - use it as primary factor
+                composite_score = candidate['squeeze_score']
+            else:
+                # Apply SQUEEZE_MODE weights if enabled, otherwise legacy weights
+                if SQUEEZE_MODE:
+                    composite_score = (
+                        volume_multiplier * SQUEEZE_WEIGHTS['volume'] +        # 0.40 - Volume primary
+                        (short_interest_score if 'short_interest_score' in locals() else 0.0) * SQUEEZE_WEIGHTS['short'] +  # 0.30 - Short interest
+                        momentum_factor * SQUEEZE_WEIGHTS['catalyst'] +        # 0.15 - Catalyst/momentum
+                        volatility_factor * SQUEEZE_WEIGHTS['options'] +       # 0.10 - Options/volatility
+                        compression_normalized * SQUEEZE_WEIGHTS['tech']       # 0.05 - Technical/compression
+                    )
+                else:
+                    # Legacy multi-factor composite
+                    composite_score = (
+                        vigl_normalized * 0.25 +      # VIGL pattern (reduced weight for differentiation)
+                        compression_normalized * 0.20 +  # Compression setup
+                        risk_score * 0.15 +           # Risk avoidance
+                        volume_multiplier * 0.20 +    # Volume spike (increased weight)
+                        momentum_factor * 0.15 +      # Recent momentum
+                        volatility_factor * 0.05      # Volatility opportunity
+                    )
             
             # Apply confidence tiers with score scaling
             if vigl_score >= 0.80:

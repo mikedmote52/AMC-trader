@@ -39,21 +39,21 @@ class SqueezeDetector:
     def __init__(self):
         # VIGL SUCCESS PATTERN CRITERIA - Proven thresholds
         self.VIGL_CRITERIA = {
-            'volume_spike_min': 3.0,         # Minimum 3x volume surge (lowered for testing)
+            'volume_spike_min': 2.0,         # Minimum 2x volume surge (MORE INCLUSIVE)
             'volume_spike_target': 20.9,     # VIGL had 20.9x (optimal)
             'float_max': 50_000_000,         # Under 50M shares (tight float)
             'short_interest_min': 0.20,      # Over 20% short interest
-            'price_range': (2.0, 10.0),      # Sweet spot $2-10 for explosions
+            'price_range': (0.10, 100.0),    # UNRESTRICTED - $0.10 to $100 for all explosive opportunities
             'borrow_rate_min': 0.50,         # High borrow cost (>50%)
             'market_cap_max': 500_000_000,   # Under $500M market cap
         }
         
-        # CONFIDENCE THRESHOLDS
+        # CONFIDENCE THRESHOLDS - AGGRESSIVE for maximum candidates
         self.CONFIDENCE_LEVELS = {
-            'EXTREME': 0.85,     # Rare, explosive potential
-            'HIGH': 0.75,        # Strong squeeze setup
-            'MEDIUM': 0.60,      # Developing pattern
-            'LOW': 0.45,         # Early indicators
+            'EXTREME': 0.50,     # Lowered for more extreme picks
+            'HIGH': 0.35,        # More high confidence stocks 
+            'MEDIUM': 0.25,      # Broader medium range
+            'LOW': 0.15,         # Very inclusive low threshold
         }
         
     def detect_vigl_pattern(self, symbol: str, data: Dict[str, Any]) -> Optional[SqueezeCandidate]:
@@ -159,24 +159,24 @@ class SqueezeDetector:
     
     def _calculate_squeeze_score(self, volume_ratio: float, short_interest: float, 
                                float_shares: int, borrow_rate: float, market_cap: float) -> float:
-        """Calculate VIGL squeeze score (0-1) based on proven factors"""
+        """Calculate VIGL squeeze score (0-1) based on proven factors - PRODUCTION OPTIMIZED"""
         
-        # VOLUME COMPONENT: Most critical factor (40% weight)
+        # VOLUME COMPONENT: Most critical factor (INCREASED to 50% weight)
         volume_score = min(volume_ratio / self.VIGL_CRITERIA['volume_spike_target'], 1.0)
         
-        # SHORT INTEREST COMPONENT: Squeeze fuel (30% weight)
+        # SHORT INTEREST COMPONENT: Squeeze fuel (REDUCED to 20% weight)  
         si_score = min(short_interest / 0.50, 1.0)  # 50% SI = max score
         
-        # FLOAT COMPONENT: Tight float advantage (20% weight) 
+        # FLOAT COMPONENT: Tight float advantage (20% weight)
         float_score = max(0, 1.0 - (float_shares / self.VIGL_CRITERIA['float_max']))
         
         # BORROW RATE COMPONENT: Squeeze pressure (10% weight)
         borrow_score = min(borrow_rate / 2.0, 1.0)  # 200% borrow rate = max score
         
-        # WEIGHTED COMPOSITE - VIGL proven formula
+        # VOLUME-FOCUSED COMPOSITE - Optimized for available data quality
         squeeze_score = (
-            volume_score * 0.40 +      # Volume surge (primary signal)
-            si_score * 0.30 +          # Short interest (squeeze fuel)
+            volume_score * 0.50 +      # Volume surge (INCREASED - primary reliable signal)
+            si_score * 0.20 +          # Short interest (REDUCED - often estimated)
             float_score * 0.20 +       # Float tightness (supply constraint)
             borrow_score * 0.10        # Borrow pressure (cost to short)
         )
