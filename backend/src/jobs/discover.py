@@ -352,11 +352,30 @@ class DiscoveryPipeline:
     def read_universe(self) -> List[str]:
         """Read symbols from universe file"""
         try:
-            universe_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', self.universe_file)
-            with open(universe_path, 'r') as f:
-                symbols = [line.strip().upper() for line in f if line.strip()]
-            logger.info(f"Loaded {len(symbols)} symbols from universe file")
-            return symbols
+            # Try multiple possible paths for universe file
+            possible_paths = [
+                # Production path (Docker /app directory)
+                f"/app/{self.universe_file}",
+                # Development path (relative to project root)
+                os.path.join(os.path.dirname(__file__), '..', '..', '..', self.universe_file),
+                # Current working directory
+                os.path.join(os.getcwd(), self.universe_file),
+                # Absolute path if provided
+                self.universe_file if os.path.isabs(self.universe_file) else None
+            ]
+            
+            for path in filter(None, possible_paths):
+                if os.path.exists(path) and os.path.isfile(path):
+                    with open(path, 'r') as f:
+                        symbols = [line.strip().upper() for line in f 
+                                 if line.strip() and not line.strip().startswith('#')]
+                    logger.info(f"Loaded {len(symbols)} symbols from universe file: {path}")
+                    return symbols
+                    
+            # If no file found, log all attempted paths
+            logger.error(f"Failed to find universe file. Tried paths: {possible_paths}")
+            return []
+            
         except Exception as e:
             logger.error(f"Failed to read universe file: {e}")
             return []
