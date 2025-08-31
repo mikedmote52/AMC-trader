@@ -9,6 +9,7 @@ Mission: Create seamless feedback loops to maintain explosive growth edge.
 import os
 import json
 import asyncio
+import hashlib
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict

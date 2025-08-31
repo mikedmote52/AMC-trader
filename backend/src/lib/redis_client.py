@@ -7,6 +7,7 @@ import os
 import redis
 from typing import Optional
 import structlog
+from datetime import datetime
 
 logger = structlog.get_logger()
 
