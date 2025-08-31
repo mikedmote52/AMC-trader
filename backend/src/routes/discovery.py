@@ -45,6 +45,79 @@ async def get_contenders():
                 it["confidence"] = it["score"] / 100.0
     return items
 
+@router.get("/diagnostics")
+async def get_discovery_diagnostics():
+    """Get detailed diagnostic status of the discovery pipeline"""
+    r = get_redis_client()
+    
+    # Get the latest discovery trace/explain data
+    trace_data = _get_json(r, V2_TRACE) or _get_json(r, V1_TRACE) or {}
+    status_data = _get_json(r, STATUS) or {}
+    
+    # Get current contenders count
+    contenders = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
+    
+    # Build diagnostic response
+    return {
+        "discovery_status": {
+            "last_run": status_data.get("last_run"),
+            "status": status_data.get("status", "unknown"),
+            "total_stocks_scanned": trace_data.get("total_stocks", 0),
+            "candidates_found": len(contenders),
+            "processing_time": status_data.get("processing_time"),
+            "error": status_data.get("error"),
+        },
+        "filtering_breakdown": {
+            "initial_universe": trace_data.get("initial_count", 0),
+            "after_price_filter": trace_data.get("price_filtered", 0),
+            "after_volume_filter": trace_data.get("volume_filtered", 0),
+            "after_momentum_filter": trace_data.get("momentum_filtered", 0),
+            "after_pattern_matching": trace_data.get("pattern_matched", 0),
+            "after_confidence_filter": trace_data.get("confidence_filtered", 0),
+            "final_candidates": len(contenders)
+        },
+        "current_thresholds": {
+            "min_price": trace_data.get("min_price", 1.0),
+            "max_price": trace_data.get("max_price", 100.0),
+            "min_volume": trace_data.get("min_volume", 1000000),
+            "min_confidence": trace_data.get("min_confidence", 0.75),
+            "min_score": trace_data.get("min_score", 50)
+        },
+        "pipeline_stage_results": trace_data.get("stages", []),
+        "reasons_for_no_results": _analyze_no_results(trace_data, contenders)
+    }
+
+def _analyze_no_results(trace_data: dict, contenders: list) -> list:
+    """Analyze why no results were found"""
+    reasons = []
+    
+    if not trace_data:
+        reasons.append("No discovery trace data available - discovery may not have run recently")
+        return reasons
+    
+    initial = trace_data.get("initial_count", 0)
+    if initial == 0:
+        reasons.append("No stocks in initial universe - data source issue")
+        return reasons
+    
+    # Check each filtering stage
+    if trace_data.get("price_filtered", 0) < initial * 0.1:
+        reasons.append(f"Price filter too restrictive: eliminated {initial - trace_data.get('price_filtered', 0)} stocks")
+    
+    if trace_data.get("volume_filtered", 0) < trace_data.get("price_filtered", 0) * 0.1:
+        reasons.append(f"Volume filter too restrictive: need >{trace_data.get('min_volume', 1000000):,} volume")
+    
+    if trace_data.get("pattern_matched", 0) < trace_data.get("volume_filtered", 0) * 0.05:
+        reasons.append("Few stocks matching VIGL/squeeze patterns - market conditions not favorable")
+    
+    if len(contenders) < trace_data.get("pattern_matched", 0):
+        reasons.append(f"Confidence threshold too high: {trace_data.get('min_confidence', 0.75):.0%} required")
+    
+    if not reasons:
+        reasons.append("All filtering stages working normally - market simply has no high-quality opportunities right now")
+    
+    return reasons
+
 @router.get("/explain")
 async def explain():
     r = get_redis_client()
