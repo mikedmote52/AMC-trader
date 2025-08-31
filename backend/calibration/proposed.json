@@ -1,0 +1,187 @@
+{
+  "metadata": {
+    "version": "1.1.0",
+    "created": "2025-08-31T03:07:21Z",
+    "validation_report": "validation_report.md",
+    "critical_fix_required": true,
+    "priority": "P0_IMMEDIATE",
+    "description": "Critical weekend date logic fix and reliability improvements"
+  },
+  
+  "discovery_filters": {
+    "weekend_date_fix": {
+      "description": "CRITICAL: Fix weekend date calculation that causes 0 stock universe",
+      "implementation_required": true,
+      "estimated_fix_time": "1-2 hours"
+    },
+    
+    "date_logic_improvements": {
+      "weekend_handling": true,
+      "multi_day_fallback": true,
+      "max_days_lookback": 7,
+      "trading_day_validation": true
+    },
+    
+    "data_validation_thresholds": {
+      "min_universe_size": 1000,
+      "min_candidate_threshold": 5,
+      "enable_data_quality_checks": true,
+      "polygon_response_validation": true
+    },
+    
+    "existing_filters_unchanged": {
+      "price_cap": 500,
+      "dollar_volume_min": 5000000,
+      "compression_percentile_max": 0.30,
+      "max_candidates": 25,
+      "squeeze_score_threshold": 0.25
+    }
+  },
+  
+  "reliability_improvements": {
+    "polygon_api": {
+      "timeout_seconds": 30,
+      "retry_attempts": 3,
+      "rate_limit_respect": true,
+      "connection_pooling": true
+    },
+    
+    "fallback_mechanisms": {
+      "universe_file_backup": [
+        "AAPL", "MSFT", "NVDA", "TSLA", "AMD", "GOOGL", "META", "AMZN", 
+        "PLTR", "COIN", "CRM", "ORCL", "ABNB", "SNOW", "UBER", "NFLX",
+        "SHOP", "INTC", "MRVL", "SMCI", "AVGO", "QQQ", "SPY", "IWM"
+      ],
+      "enable_fallback_on_api_failure": true,
+      "min_fallback_universe_size": 20
+    },
+    
+    "health_monitoring": {
+      "health_check_interval": 300,
+      "data_freshness_check": true,
+      "weekend_behavior_validation": true,
+      "performance_tracking": true
+    }
+  },
+  
+  "scoring_system_validation": {
+    "vigl_pattern_weights": {
+      "volume_surge": 0.40,
+      "short_interest": 0.30,
+      "catalyst_momentum": 0.15,
+      "options_activity": 0.10,
+      "technical_compression": 0.05
+    },
+    
+    "confidence_thresholds": {
+      "high_confidence": 0.80,
+      "medium_confidence": 0.65,
+      "minimum_viable": 0.50
+    },
+    
+    "risk_management": {
+      "wolf_risk_threshold": 0.50,
+      "max_position_risk": 0.02,
+      "diversification_required": true
+    }
+  },
+  
+  "testing_validation": {
+    "required_tests": [
+      "weekend_date_logic",
+      "polygon_api_connectivity", 
+      "data_volume_validation",
+      "redis_integration",
+      "pipeline_flow_complete"
+    ],
+    
+    "success_criteria": {
+      "weekend_discovery": "returns >0 candidates",
+      "data_volume": "initial_universe >1000 stocks",
+      "pipeline_stages": "all stages process data",
+      "processing_time": "<30 seconds",
+      "success_rate": ">95%"
+    }
+  },
+  
+  "deployment_plan": {
+    "phase_1_immediate": {
+      "tasks": [
+        "Deploy weekend date logic fix",
+        "Add data validation checks",
+        "Implement multi-day fallback",
+        "Test with current weekend scenario"
+      ],
+      "estimated_time": "2 hours",
+      "priority": "P0"
+    },
+    
+    "phase_2_next_week": {
+      "tasks": [
+        "Create universe file backup",
+        "Add enhanced diagnostics",
+        "Implement market hours intelligence",
+        "Add performance monitoring"
+      ],
+      "estimated_time": "4 hours", 
+      "priority": "P1"
+    },
+    
+    "phase_3_following_week": {
+      "tasks": [
+        "Add historical data validation",
+        "Implement automated health checks",
+        "Create calibration drift monitoring",
+        "Build performance dashboard"
+      ],
+      "estimated_time": "6 hours",
+      "priority": "P2"
+    }
+  },
+  
+  "statistical_validation": {
+    "confidence_intervals": {
+      "discovery_success_rate": [0.90, 0.98],
+      "candidate_quality_score": [0.65, 0.85],
+      "processing_time_seconds": [15, 45]
+    },
+    
+    "performance_baselines": {
+      "initial_universe_size": {
+        "target": 8000,
+        "acceptable_range": [1000, 15000],
+        "current": 0,
+        "status": "CRITICAL_FAILURE"
+      },
+      "final_candidates": {
+        "target": 15,
+        "acceptable_range": [5, 25],
+        "current": 0,
+        "status": "CRITICAL_FAILURE"
+      }
+    }
+  },
+  
+  "implementation_notes": {
+    "critical_path": [
+      "Weekend date calculation is blocking all discovery",
+      "Polygon API returns 11,351 results for valid trading days",
+      "System architecture is sound - only date logic needs fix",
+      "All other integrations (Redis, API endpoints) are functional"
+    ],
+    
+    "risk_mitigation": [
+      "Test fix with both weekend and weekday scenarios",
+      "Validate against multiple historical dates",
+      "Ensure fallback mechanisms work during API outages",
+      "Monitor performance after deployment"
+    ],
+    
+    "success_validation": [
+      "Run discovery during weekend - should return >0 candidates",
+      "Verify data volume matches expectations (1000+ initial stocks)",
+      "Confirm all pipeline stages execute successfully",
+      "Check Redis keys are populated with valid data"
+    ]
+  }
+}

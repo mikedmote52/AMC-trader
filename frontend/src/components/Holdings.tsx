@@ -31,8 +31,8 @@ export default function Holdings() {
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradePreset, setTradePreset] = useState<{symbol: string; action: "BUY" | "SELL"; qty?: number} | null>(null);
   
-  // New filtering and sorting state
-  const [sortBy, setSortBy] = useState<"pl_pct" | "pl_amount" | "confidence" | "value" | "symbol">("pl_pct");
+  // New filtering and sorting state - default to highest P&L amount first
+  const [sortBy, setSortBy] = useState<"pl_pct" | "pl_amount" | "confidence" | "value" | "symbol">("pl_amount");
   const [filterBy, setFilterBy] = useState<"all" | "winners" | "losers" | "action_needed">("all");
   const [groupBy, setGroupBy] = useState<"none" | "sector" | "recommendation">("none");
 
@@ -259,11 +259,11 @@ export default function Holdings() {
         <div style={controlGroupStyle}>
           <label style={labelStyle}>Sort by:</label>
           <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} style={selectStyle}>
-            <option value="pl_pct">📊 P&L %</option>
-            <option value="pl_amount">💰 P&L $</option>
-            <option value="confidence">🎯 AI Confidence</option>
-            <option value="value">💵 Position Value</option>
-            <option value="symbol">🔤 Symbol</option>
+            <option value="pl_amount">💰 Profit/Loss $ (Highest First)</option>
+            <option value="pl_pct">📊 Profit/Loss % (Highest First)</option>
+            <option value="confidence">🎯 AI Confidence (Highest First)</option>
+            <option value="value">💵 Position Value (Largest First)</option>
+            <option value="symbol">🔤 Symbol (A-Z)</option>
           </select>
         </div>
         
@@ -583,12 +583,13 @@ const actionBtn: React.CSSProperties = {
 // New styles for enhanced controls
 const controlsStyle: React.CSSProperties = {
   display: "flex",
-  gap: "16px",
-  marginBottom: "20px",
-  padding: "16px",
-  background: "linear-gradient(135deg, #1a1a1a 0%, #111 100%)",
+  gap: "20px",
+  marginBottom: "24px",
+  padding: "20px",
+  background: "linear-gradient(135deg, #22c55e15 0%, #16a34a10 100%)",
   borderRadius: "12px",
-  border: "1px solid #333",
+  border: "2px solid #22c55e40",
+  boxShadow: "0 4px 12px rgba(34, 197, 94, 0.1)",
   flexWrap: "wrap",
   alignItems: "center"
 };
