@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import TopRecommendations from "./components/TopRecommendations";
-import PortfolioTiles from "./components/PortfolioTiles";
+import Holdings from "./components/Holdings";
 import SqueezeMonitor from "./components/SqueezeMonitor";
 import UpdatesPage from "./components/UpdatesPage";
 
@@ -68,7 +68,7 @@ export default function App() {
         }}>
           📊 Current Holdings
         </h1>
-        <PortfolioTiles />
+        <Holdings />
       </div>
     </div>
   );
