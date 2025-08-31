@@ -472,6 +472,8 @@ async def trigger_discovery(limit: int = Query(10), relaxed: bool = Query(False)
         import json
         import time
         
+        start_time = time.time()
+        
         # Load and run discovery
         f, mod = _load_selector()
         if not f:
@@ -486,12 +488,40 @@ async def trigger_discovery(limit: int = Query(10), relaxed: bool = Query(False)
         
         # Publish to Redis (same keys as main discovery job)
         r = get_redis_client()
-        r.set("amc:discovery:contenders.latest", json.dumps(items), ex=600)
-        r.set("amc:discovery:explain.latest", json.dumps({
+        r.set(V1_CONT, json.dumps(items), ex=600)
+        r.set(V2_CONT, json.dumps(items), ex=600)  # Store in both v1 and v2 keys
+        
+        # Store trace data for diagnostics
+        trace_data = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "count": len(items),
-            "trace": trace
-        }), ex=600)
+            "total_stocks": trace.get("total_stocks", 0),
+            "initial_count": trace.get("initial_universe", 0),
+            "price_filtered": trace.get("after_price_filter", 0),
+            "volume_filtered": trace.get("after_volume_filter", 0),
+            "momentum_filtered": trace.get("after_momentum_filter", 0),
+            "pattern_matched": trace.get("after_pattern_matching", 0),
+            "confidence_filtered": trace.get("after_confidence_filter", 0),
+            "min_price": 1.0,
+            "max_price": 100.0,
+            "min_volume": 1000000,
+            "min_confidence": 0.75,
+            "min_score": 50,
+            "stages": trace.get("stages", [])
+        }
+        r.set(V1_TRACE, json.dumps(trace_data), ex=600)
+        r.set(V2_TRACE, json.dumps(trace_data), ex=600)
+        
+        # Store status for diagnostics
+        status_data = {
+            "last_run": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "status": "completed",
+            "total_stocks_scanned": trace.get("total_stocks", 0),
+            "candidates_found": len(items),
+            "processing_time": f"{time.time() - start_time:.2f}s",
+            "error": None
+        }
+        r.set(STATUS, json.dumps(status_data), ex=600)
         
         return {
             "success": True,
