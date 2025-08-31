@@ -51,20 +51,23 @@ class ThesisAccuracyRecord:
 @dataclass 
 class ThesisAccuracyMetrics:
     """Aggregate thesis accuracy metrics"""
+    # ALL required fields (no defaults) must come first
     period_start: datetime
     period_end: datetime
     total_predictions: int
     
+    # Prediction quality metrics (required fields)
+    avg_confidence: float
+    high_confidence_accuracy: float  # Accuracy when confidence >80%
+    low_confidence_accuracy: float   # Accuracy when confidence <50%
+    recent_accuracy: float
+    
+    # ALL optional fields (with defaults) must come after required fields
     # Overall accuracy
     overall_accuracy: float = 0.0  # 0-100 scale
     accuracy_by_recommendation: Optional[Dict[str, float]] = field(default=None)
     accuracy_by_sector: Optional[Dict[str, float]] = field(default=None)
     accuracy_by_confidence: Optional[Dict[str, float]] = field(default=None)
-    
-    # Prediction quality
-    avg_confidence: float = 0.0
-    high_confidence_accuracy: float = 0.0  # Accuracy when confidence >80%
-    low_confidence_accuracy: float = 0.0   # Accuracy when confidence <50%
     
     # Performance insights
     best_sector_predictions: Optional[str] = None
@@ -74,7 +77,6 @@ class ThesisAccuracyMetrics:
     
     # Trend analysis
     accuracy_trend: str = "stable"  # improving, declining, stable
-    recent_accuracy: float = 0.0
     
     def __post_init__(self):
         if self.accuracy_by_recommendation is None:
@@ -336,14 +338,31 @@ class ThesisAccuracyTracker:
                 if not records:
                     return self._empty_metrics(start_date, end_date)
                 
+                # Pre-calculate required fields
+                confidence_scores = [r['confidence_score'] for r in records]
+                avg_confidence = statistics.mean(confidence_scores)
+                
+                high_conf_records = [r for r in records if r['confidence_score'] > 0.8]
+                high_confidence_accuracy = statistics.mean([r['prediction_accuracy'] for r in high_conf_records]) if high_conf_records else 0.0
+                
+                low_conf_records = [r for r in records if r['confidence_score'] < 0.5]
+                low_confidence_accuracy = statistics.mean([r['prediction_accuracy'] for r in low_conf_records]) if low_conf_records else 0.0
+                
+                # Initial recent_accuracy (will be updated later in trend analysis)
+                accuracy_scores = [r['prediction_accuracy'] for r in records]
+                recent_accuracy = statistics.mean(accuracy_scores)
+                
                 metrics = ThesisAccuracyMetrics(
                     period_start=start_date,
                     period_end=end_date,
-                    total_predictions=len(records)
+                    total_predictions=len(records),
+                    avg_confidence=avg_confidence,
+                    high_confidence_accuracy=high_confidence_accuracy,
+                    low_confidence_accuracy=low_confidence_accuracy,
+                    recent_accuracy=recent_accuracy
                 )
                 
                 # Calculate overall accuracy
-                accuracy_scores = [r['prediction_accuracy'] for r in records]
                 metrics.overall_accuracy = statistics.mean(accuracy_scores)
                 
                 # Calculate accuracy by recommendation type
@@ -422,6 +441,10 @@ class ThesisAccuracyTracker:
             period_start=start_date,
             period_end=end_date,
             total_predictions=0,
+            avg_confidence=0.5,  # Neutral baseline
+            high_confidence_accuracy=0.0,
+            low_confidence_accuracy=0.0,
+            recent_accuracy=50.0,  # Neutral baseline
             overall_accuracy=50.0,  # Neutral baseline
             accuracy_trend="insufficient_data"
         )

@@ -25,6 +25,7 @@ class PositionSizeCategory(Enum):
 @dataclass
 class RiskAssessment:
     """Individual position risk assessment"""
+    # ALL required fields (no defaults) must come first
     symbol: str
     assessment_date: datetime
     position_date: datetime
@@ -39,7 +40,6 @@ class RiskAssessment:
     current_pl_pct: float
     max_drawdown: float
     risk_level: str  # LOW, MODERATE, ELEVATED, HIGH, CRITICAL
-    stop_loss_recommended: Optional[float] = None
     
     # Concentration risk
     sector: str
@@ -62,6 +62,9 @@ class RiskAssessment:
     # Recommendations
     position_action: str  # HOLD, TRIM, ADD, LIQUIDATE
     risk_management_notes: str
+    
+    # ALL optional fields (with defaults) must come after required fields
+    stop_loss_recommended: Optional[float] = None
 
 @dataclass
 class PortfolioRiskMetrics:
