@@ -17,3 +17,12 @@ python-multipart==0.0.6
 polygon-api-client==1.14.0
 anthropic==0.34.0
 twilio==8.10.0
+
+# Missing dependencies identified from code analysis
+psutil>=6.0.0
+numpy>=1.24.0,<2.4.0
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+aiohttp>=3.9.0
+pytz>=2024.1
+lxml>=5.0.0
