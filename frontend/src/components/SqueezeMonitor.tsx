@@ -48,17 +48,19 @@ export default function SqueezeMonitor({
       const contendersResponse = await getJSON<any[]>(`${API_BASE}/discovery/contenders`);
       
       // Transform contenders to squeeze opportunities format
-      const response: SqueezeOpportunity[] = contendersResponse.map(contender => ({
-        symbol: contender.symbol,
-        squeeze_score: contender.squeeze_score || contender.score || 0,
-        volume_spike: contender.volume_spike || contender.factors?.volume_spike_ratio || 0,
-        short_interest: 0.15, // Default reasonable estimate
-        price: contender.price || 0,
-        pattern_type: contender.squeeze_pattern || 'SQUEEZE',
-        confidence: contender.squeeze_confidence === 'HIGH' ? 0.8 : 
-                   contender.squeeze_confidence === 'MEDIUM' ? 0.6 : 0.4,
-        detected_at: new Date().toISOString()
-      }));
+      const response: SqueezeOpportunity[] = Array.isArray(contendersResponse) 
+        ? contendersResponse.map(contender => ({
+            symbol: contender.symbol,
+            squeeze_score: contender.squeeze_score || contender.score || 0,
+            volume_spike: contender.volume_spike || contender.factors?.volume_spike_ratio || 0,
+            short_interest: 0.15, // Default reasonable estimate
+            price: contender.price || 0,
+            pattern_type: contender.squeeze_pattern || 'SQUEEZE',
+            confidence: contender.squeeze_confidence === 'HIGH' ? 0.8 : 
+                       contender.squeeze_confidence === 'MEDIUM' ? 0.6 : 0.4,
+            detected_at: new Date().toISOString()
+          }))
+        : [];
       
       // Only use real API data - no mock data
       let opportunities: SqueezeOpportunity[] = [];
