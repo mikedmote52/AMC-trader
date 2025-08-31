@@ -24,31 +24,26 @@ class ActualOutcome(Enum):
 @dataclass
 class ThesisAccuracyRecord:
     """Track accuracy of individual thesis predictions"""
+    # Required fields first
     symbol: str
     position_date: datetime
     thesis_generated_at: datetime
-    
-    # Original thesis data
     original_thesis: str
     predicted_recommendation: str  # BUY_MORE, HOLD, TRIM, LIQUIDATE
     confidence_score: float
     reasoning: str
     sector: str
     risk_level: str
-    
-    # Market context at thesis generation
     market_context: Dict
     initial_price: float
     initial_pl_pct: float
     
-    # Actual outcomes tracking (all optional fields must come after required fields)
+    # Optional fields after all required fields
     outcome_measured_at: Optional[datetime] = None
     actual_outcome: Optional[str] = None
     final_pl_pct: Optional[float] = None
     peak_pl_pct: Optional[float] = None
     days_to_peak: Optional[int] = None
-    
-    # Accuracy assessment
     prediction_accuracy: Optional[float] = None  # 0-100 score
     accuracy_category: Optional[str] = None  # excellent, good, fair, poor, wrong
     lessons_learned: Optional[str] = None
