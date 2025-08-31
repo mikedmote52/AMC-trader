@@ -30,6 +30,11 @@ export default function Holdings() {
   const [err, setErr] = useState<string>("");
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradePreset, setTradePreset] = useState<{symbol: string; action: "BUY" | "SELL"; qty?: number} | null>(null);
+  
+  // New filtering and sorting state
+  const [sortBy, setSortBy] = useState<"pl_pct" | "pl_amount" | "confidence" | "value" | "symbol">("pl_pct");
+  const [filterBy, setFilterBy] = useState<"all" | "winners" | "losers" | "action_needed">("all");
+  const [groupBy, setGroupBy] = useState<"none" | "sector" | "recommendation">("none");
 
   async function fetchData() {
     try {
@@ -59,6 +64,65 @@ export default function Holdings() {
   const handleTrade = (symbol: string, action: "BUY" | "SELL", qty?: number) => {
     setTradePreset({ symbol, action, qty });
     setShowTradeModal(true);
+  };
+
+  // Filter and sort holdings
+  const getFilteredAndSortedHoldings = () => {
+    let filtered = [...holdings];
+    
+    // Apply filters
+    switch (filterBy) {
+      case "winners":
+        filtered = filtered.filter(h => h.unrealized_pl_pct >= 5);
+        break;
+      case "losers":
+        filtered = filtered.filter(h => h.unrealized_pl_pct <= -2);
+        break;
+      case "action_needed":
+        filtered = filtered.filter(h => {
+          const rec = getRecommendation(h);
+          return rec.action !== "HOLD";
+        });
+        break;
+    }
+    
+    // Apply sorting
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case "pl_pct":
+          return b.unrealized_pl_pct - a.unrealized_pl_pct;
+        case "pl_amount":
+          return b.unrealized_pl - a.unrealized_pl;
+        case "confidence":
+          return (b.confidence || 0) - (a.confidence || 0);
+        case "value":
+          return b.market_value - a.market_value;
+        case "symbol":
+          return a.symbol.localeCompare(b.symbol);
+        default:
+          return 0;
+      }
+    });
+    
+    // Group if needed
+    if (groupBy === "none") {
+      return { ungrouped: filtered };
+    }
+    
+    return filtered.reduce((groups: {[key: string]: Holding[]}, holding) => {
+      let key: string;
+      if (groupBy === "sector") {
+        key = holding.sector || "Unknown";
+      } else if (groupBy === "recommendation") {
+        key = getRecommendation(holding).action;
+      } else {
+        key = "All";
+      }
+      
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(holding);
+      return groups;
+    }, {});
   };
 
   const getRecommendation = (holding: Holding) => {
@@ -184,13 +248,61 @@ export default function Holdings() {
   if (err) return <div style={{padding:12, color:"#c00"}}>Error loading holdings: {err}</div>;
   if (!holdings.length) return <div style={{padding:12, color:"#888"}}>No holdings found.</div>;
 
+  const groupedHoldings = getFilteredAndSortedHoldings();
+
   return (
     <>
       <PortfolioSummary holdings={holdings} isLoading={!holdings.length && !err} />
-      <div className="grid-responsive">
-        {holdings.map((holding) => {
-          const plColor = holding.unrealized_pl >= 0 ? "#22c55e" : "#ef4444";
-          const recommendation = getRecommendation(holding);
+      
+      {/* Enhanced Controls */}
+      <div style={controlsStyle}>
+        <div style={controlGroupStyle}>
+          <label style={labelStyle}>Sort by:</label>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} style={selectStyle}>
+            <option value="pl_pct">📊 P&L %</option>
+            <option value="pl_amount">💰 P&L $</option>
+            <option value="confidence">🎯 AI Confidence</option>
+            <option value="value">💵 Position Value</option>
+            <option value="symbol">🔤 Symbol</option>
+          </select>
+        </div>
+        
+        <div style={controlGroupStyle}>
+          <label style={labelStyle}>Filter:</label>
+          <select value={filterBy} onChange={(e) => setFilterBy(e.target.value as any)} style={selectStyle}>
+            <option value="all">🎯 All Positions ({holdings.length})</option>
+            <option value="winners">📈 Winners ({holdings.filter(h => h.unrealized_pl_pct >= 5).length})</option>
+            <option value="losers">📉 Losers ({holdings.filter(h => h.unrealized_pl_pct <= -2).length})</option>
+            <option value="action_needed">⚡ Action Needed ({holdings.filter(h => getRecommendation(h).action !== "HOLD").length})</option>
+          </select>
+        </div>
+        
+        <div style={controlGroupStyle}>
+          <label style={labelStyle}>Group by:</label>
+          <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as any)} style={selectStyle}>
+            <option value="none">📋 No Grouping</option>
+            <option value="sector">🏢 Sector</option>
+            <option value="recommendation">⚡ Recommendation</option>
+          </select>
+        </div>
+        
+        <button onClick={fetchData} style={refreshButtonStyle}>
+          🔄 Refresh Data
+        </button>
+      </div>
+
+      {/* Render grouped holdings */}
+      {Object.entries(groupedHoldings).map(([groupName, groupHoldings]) => (
+        <div key={groupName}>
+          {groupName !== "ungrouped" && (
+            <div style={groupHeaderStyle}>
+              <h3>{groupName} ({groupHoldings.length})</h3>
+            </div>
+          )}
+          <div className="grid-responsive">
+            {groupHoldings.map((holding) => {
+              const plColor = holding.unrealized_pl >= 0 ? "#22c55e" : "#ef4444";
+              const recommendation = getRecommendation(holding);
           
           return (
             <div key={holding.symbol} style={cardStyle}>
@@ -399,8 +511,10 @@ export default function Holdings() {
               </div>
             </div>
           );
-        })}
-      </div>
+            })}
+          </div>
+        </div>
+      ))}
 
       {showTradeModal && tradePreset && (
         <TradeModal
@@ -464,4 +578,66 @@ const actionBtn: React.CSSProperties = {
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis"
+};
+
+// New styles for enhanced controls
+const controlsStyle: React.CSSProperties = {
+  display: "flex",
+  gap: "16px",
+  marginBottom: "20px",
+  padding: "16px",
+  background: "linear-gradient(135deg, #1a1a1a 0%, #111 100%)",
+  borderRadius: "12px",
+  border: "1px solid #333",
+  flexWrap: "wrap",
+  alignItems: "center"
+};
+
+const controlGroupStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "6px",
+  minWidth: "150px"
+};
+
+const labelStyle: React.CSSProperties = {
+  fontSize: "12px",
+  fontWeight: 600,
+  color: "#888",
+  textTransform: "uppercase",
+  letterSpacing: "0.5px"
+};
+
+const selectStyle: React.CSSProperties = {
+  padding: "8px 12px",
+  borderRadius: "8px",
+  border: "1px solid #444",
+  background: "#222",
+  color: "#fff",
+  fontSize: "14px",
+  fontWeight: 500,
+  cursor: "pointer",
+  outline: "none"
+};
+
+const refreshButtonStyle: React.CSSProperties = {
+  padding: "8px 16px",
+  borderRadius: "8px",
+  border: "1px solid #22c55e",
+  background: "transparent",
+  color: "#22c55e",
+  fontSize: "14px",
+  fontWeight: 600,
+  cursor: "pointer",
+  transition: "all 0.2s ease",
+  marginTop: "20px"
+};
+
+const groupHeaderStyle: React.CSSProperties = {
+  marginTop: "24px",
+  marginBottom: "12px",
+  padding: "12px 16px",
+  background: "rgba(34, 197, 94, 0.1)",
+  borderRadius: "8px",
+  border: "1px solid rgba(34, 197, 94, 0.3)"
 };

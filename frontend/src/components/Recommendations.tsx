@@ -44,7 +44,17 @@ export default function Recommendations() {
 
   if (loading) return <div style={{padding:12}}>Loading recommendations…</div>;
   if (err) return <div style={{padding:12, color:"#c00"}}>Error: {err}</div>;
-  if (!items.length) return <div style={{padding:12}}>No recommendations yet. The discovery job may still be running.</div>;
+  if (!items.length) return (
+    <div style={{padding:12}}>
+      No high-confidence opportunities found. 
+      <button 
+        onClick={() => window.location.reload()} 
+        style={{marginLeft: 8, padding: '4px 8px', background: '#22c55e', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer'}}
+      >
+        Refresh
+      </button>
+    </div>
+  );
 
   return (
     <div className="grid-responsive">
