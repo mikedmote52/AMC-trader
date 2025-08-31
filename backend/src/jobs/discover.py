@@ -260,8 +260,22 @@ class StageTrace:
         }
 
 def _last_trading_date_yyyymmdd_approx():
-    # simple "yesterday" in UTC; Polygon accepts previous session
-    return (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    """Get last trading day, accounting for weekends and holidays"""
+    date = datetime.now(timezone.utc)
+    
+    # Go back until we find a weekday (Mon-Fri)
+    while date.weekday() >= 5:  # Saturday=5, Sunday=6
+        date -= timedelta(days=1)
+    
+    # Always use previous trading day
+    date -= timedelta(days=1)
+    
+    # Ensure it's still a weekday
+    while date.weekday() >= 5:
+        date -= timedelta(days=1)
+    
+    logger.info(f"Using trading date: {date.strftime('%Y-%m-%d')} (weekday: {date.strftime('%A')})")
+    return date.strftime("%Y-%m-%d")
 
 async def _poly_get(client, path, params=None, timeout=20):
     p = {"apiKey": POLY_KEY}
