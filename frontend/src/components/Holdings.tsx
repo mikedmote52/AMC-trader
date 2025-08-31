@@ -254,17 +254,42 @@ export default function Holdings() {
     <>
       <PortfolioSummary holdings={holdings} isLoading={!holdings.length && !err} />
       
-      {/* Enhanced Controls */}
+      {/* Enhanced Controls with Toggle Buttons */}
       <div style={controlsStyle}>
         <div style={controlGroupStyle}>
           <label style={labelStyle}>Sort by:</label>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} style={selectStyle}>
-            <option value="pl_amount">💰 Profit/Loss $ (Highest First)</option>
-            <option value="pl_pct">📊 Profit/Loss % (Highest First)</option>
-            <option value="confidence">🎯 AI Confidence (Highest First)</option>
-            <option value="value">💵 Position Value (Largest First)</option>
-            <option value="symbol">🔤 Symbol (A-Z)</option>
-          </select>
+          <div style={toggleGroupStyle}>
+            <button 
+              onClick={() => setSortBy("pl_amount")} 
+              style={sortBy === "pl_amount" ? activeToggleStyle : inactiveToggleStyle}
+            >
+              💰 $ P&L
+            </button>
+            <button 
+              onClick={() => setSortBy("pl_pct")} 
+              style={sortBy === "pl_pct" ? activeToggleStyle : inactiveToggleStyle}
+            >
+              📊 % P&L
+            </button>
+            <button 
+              onClick={() => setSortBy("confidence")} 
+              style={sortBy === "confidence" ? activeToggleStyle : inactiveToggleStyle}
+            >
+              🎯 AI Score
+            </button>
+            <button 
+              onClick={() => setSortBy("value")} 
+              style={sortBy === "value" ? activeToggleStyle : inactiveToggleStyle}
+            >
+              💵 Value
+            </button>
+            <button 
+              onClick={() => setSortBy("symbol")} 
+              style={sortBy === "symbol" ? activeToggleStyle : inactiveToggleStyle}
+            >
+              🔤 A-Z
+            </button>
+          </div>
         </div>
         
         <div style={controlGroupStyle}>
@@ -641,4 +666,39 @@ const groupHeaderStyle: React.CSSProperties = {
   background: "rgba(34, 197, 94, 0.1)",
   borderRadius: "8px",
   border: "1px solid rgba(34, 197, 94, 0.3)"
+};
+
+// Toggle button styles
+const toggleGroupStyle: React.CSSProperties = {
+  display: "flex",
+  gap: "4px",
+  flexWrap: "wrap"
+};
+
+const activeToggleStyle: React.CSSProperties = {
+  padding: "8px 12px",
+  borderRadius: "8px",
+  border: "2px solid #22c55e",
+  background: "#22c55e",
+  color: "white",
+  fontSize: "12px",
+  fontWeight: 700,
+  cursor: "pointer",
+  transition: "all 0.2s ease",
+  textTransform: "uppercase",
+  letterSpacing: "0.5px"
+};
+
+const inactiveToggleStyle: React.CSSProperties = {
+  padding: "8px 12px",
+  borderRadius: "8px",
+  border: "1px solid #444",
+  background: "#222",
+  color: "#888",
+  fontSize: "12px",
+  fontWeight: 500,
+  cursor: "pointer",
+  transition: "all 0.2s ease",
+  textTransform: "uppercase",
+  letterSpacing: "0.5px"
 };
