@@ -1,6 +1,6 @@
 import asyncio
 import asyncpg
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict, field
 import json
@@ -34,7 +34,7 @@ class ThesisAccuracyRecord:
     reasoning: str
     sector: str
     risk_level: str
-    market_context: Dict
+    market_context: Dict[str, Any]
     initial_price: float
     initial_pl_pct: float
     
