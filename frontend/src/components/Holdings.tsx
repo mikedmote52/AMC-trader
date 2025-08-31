@@ -616,7 +616,10 @@ const controlsStyle: React.CSSProperties = {
   border: "2px solid #22c55e40",
   boxShadow: "0 4px 12px rgba(34, 197, 94, 0.1)",
   flexWrap: "wrap",
-  alignItems: "center"
+  alignItems: "flex-start",
+  minHeight: "80px",
+  position: "relative",
+  zIndex: 10
 };
 
 const controlGroupStyle: React.CSSProperties = {
@@ -676,29 +679,35 @@ const toggleGroupStyle: React.CSSProperties = {
 };
 
 const activeToggleStyle: React.CSSProperties = {
-  padding: "8px 12px",
+  padding: "10px 16px",
   borderRadius: "8px",
   border: "2px solid #22c55e",
   background: "#22c55e",
   color: "white",
-  fontSize: "12px",
+  fontSize: "14px",
   fontWeight: 700,
   cursor: "pointer",
   transition: "all 0.2s ease",
   textTransform: "uppercase",
-  letterSpacing: "0.5px"
+  letterSpacing: "0.5px",
+  minWidth: "90px",
+  textAlign: "center",
+  boxShadow: "0 2px 8px rgba(34, 197, 94, 0.3)"
 };
 
 const inactiveToggleStyle: React.CSSProperties = {
-  padding: "8px 12px",
+  padding: "10px 16px",
   borderRadius: "8px",
-  border: "1px solid #444",
-  background: "#222",
-  color: "#888",
-  fontSize: "12px",
+  border: "2px solid #444",
+  background: "#1a1a1a",
+  color: "#ccc",
+  fontSize: "14px",
   fontWeight: 500,
   cursor: "pointer",
   transition: "all 0.2s ease",
   textTransform: "uppercase",
-  letterSpacing: "0.5px"
+  letterSpacing: "0.5px",
+  minWidth: "90px",
+  textAlign: "center",
+  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.3)"
 };
