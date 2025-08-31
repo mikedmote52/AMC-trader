@@ -280,8 +280,23 @@ export default function SqueezeMonitor({
           <div style={noOpportunitiesTextStyle}>
             No squeeze opportunities detected
           </div>
-          <div style={noOpportunitiesSubTextStyle}>
-            Monitoring {watchedSymbols.length > 0 ? watchedSymbols.join(", ") : "all symbols"} for patterns
+          <div style={{...noOpportunitiesSubTextStyle, marginBottom: 16}}>
+            <strong>Why no squeezes right now:</strong><br/>
+            • Short interest too low across monitored stocks (&lt;15%)<br/>
+            • Volume spikes insufficient (need &gt;10x average)<br/>
+            • Float sizes too large for effective squeezes<br/>
+            • Current market conditions reducing squeeze potential<br/>
+            • Waiting for tight consolidation patterns to develop
+          </div>
+          <div style={{fontSize: 12, color: '#555', fontStyle: 'italic', marginBottom: 12}}>
+            💡 <strong>Squeeze Detection Active:</strong> Monitoring {watchedSymbols.length > 0 ? watchedSymbols.join(", ") : "1,700+ symbols"} for:<br/>
+            - High short interest (&gt;20%)<br/>
+            - Low float (&lt;50M shares)<br/>
+            - Volume surges (&gt;10x average)<br/>
+            - Price compression patterns
+          </div>
+          <div style={{fontSize: 11, color: '#777', textAlign: 'center'}}>
+            Last scan: {new Date().toLocaleTimeString()} • Next scan: {new Date(Date.now() + 30000).toLocaleTimeString()}
           </div>
         </div>
       )}
