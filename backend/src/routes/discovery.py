@@ -45,6 +45,50 @@ async def get_contenders():
                 it["confidence"] = it["score"] / 100.0
     return items
 
+@router.get("/debug-universe")
+async def debug_universe():
+    """Debug universe file loading"""
+    import os
+    try:
+        # Try different possible paths
+        paths_to_try = [
+            'data/universe.txt',
+            '../data/universe.txt', 
+            '../../data/universe.txt',
+            '../../../data/universe.txt',
+            '/app/data/universe.txt',
+            os.path.join(os.path.dirname(__file__), '..', '..', '..', 'data/universe.txt'),
+            os.path.join(os.getcwd(), 'data/universe.txt')
+        ]
+        
+        results = {}
+        for path in paths_to_try:
+            try:
+                full_path = os.path.abspath(path)
+                exists = os.path.exists(full_path)
+                results[path] = {
+                    "full_path": full_path,
+                    "exists": exists,
+                    "is_file": os.path.isfile(full_path) if exists else False,
+                    "size": os.path.getsize(full_path) if exists and os.path.isfile(full_path) else 0
+                }
+                if exists and os.path.isfile(full_path):
+                    with open(full_path, 'r') as f:
+                        lines = f.readlines()[:5]  # First 5 lines
+                        results[path]["sample_lines"] = [line.strip() for line in lines]
+                        results[path]["total_lines"] = len(f.readlines()) + 5
+            except Exception as e:
+                results[path] = {"error": str(e)}
+        
+        return {
+            "current_working_directory": os.getcwd(),
+            "script_directory": os.path.dirname(__file__),
+            "universe_paths_tested": results,
+            "environment_universe_file": os.getenv('UNIVERSE_FILE', 'data/universe.txt')
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 @router.get("/diagnostics")
 async def get_discovery_diagnostics():
     """Get detailed diagnostic status of the discovery pipeline"""
