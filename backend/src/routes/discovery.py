@@ -22,13 +22,14 @@ def _get_json(r, key):
 
 def _load_selector():
     """Load select_candidates function from available jobs modules"""
-    for mod in ("src.jobs.discovery", "src.jobs.discover"):
+    for mod in ("backend.src.jobs.discover", "backend.src.jobs.discovery", "src.jobs.discover", "src.jobs.discovery"):
         try:
             m = importlib.import_module(mod)
             f = getattr(m, "select_candidates", None)
             if callable(f):
                 return f, mod
-        except Exception:
+        except Exception as e:
+            print(f"Failed to import {mod}: {e}")  # Debug logging
             continue
     return None, None
 
@@ -50,6 +51,19 @@ async def debug_universe():
     """Debug universe file loading"""
     import os
     try:
+        # List actual files and directories
+        app_contents = []
+        try:
+            app_contents = os.listdir('/app')
+        except:
+            pass
+            
+        data_contents = []
+        try:
+            data_contents = os.listdir('/app/data') if os.path.exists('/app/data') else []
+        except:
+            pass
+        
         # Try different possible paths
         paths_to_try = [
             'data/universe.txt',
@@ -83,6 +97,9 @@ async def debug_universe():
         return {
             "current_working_directory": os.getcwd(),
             "script_directory": os.path.dirname(__file__),
+            "app_directory_contents": app_contents,
+            "data_directory_exists": os.path.exists('/app/data'),
+            "data_directory_contents": data_contents,
             "universe_paths_tested": results,
             "environment_universe_file": os.getenv('UNIVERSE_FILE', 'data/universe.txt')
         }
