@@ -1,0 +1,224 @@
+# AMC-TRADER Installation Dependencies
+# These are the system-level dependencies needed to install AMC-TRADER
+
+# =============================================================================
+# SYSTEM REQUIREMENTS
+# =============================================================================
+
+# Operating System Support:
+# - macOS 10.15 (Catalina) or higher
+# - Windows 10/11 or Windows Server 2019/2022
+# - Ubuntu 18.04 LTS or higher
+# - CentOS 7 or higher
+# - Debian 9 or higher
+
+# Hardware Requirements:
+# - RAM: 4GB minimum, 8GB recommended
+# - Storage: 2GB free space minimum
+# - Network: Internet connection required for API access
+
+# =============================================================================
+# CORE SOFTWARE DEPENDENCIES
+# =============================================================================
+
+# Python 3.9 or higher (required)
+# - Download: https://www.python.org/downloads/
+# - Include pip (Python package installer)
+# - Include venv (virtual environment support)
+
+# Node.js 18.0 or higher (required)
+# - Download: https://nodejs.org/
+# - Include npm (Node package manager)
+
+# Git (required)
+# - Download: https://git-scm.com/downloads/
+# - Used for cloning repository and version control
+
+# =============================================================================
+# DATABASE AND CACHING (AUTO-INSTALLED)
+# =============================================================================
+
+# PostgreSQL 12 or higher
+# - Automatically installed by setup scripts
+# - Used for storing trading data and analysis results
+# - Alternative: Use Docker with provided docker-compose.yml
+
+# Redis 6 or higher  
+# - Automatically installed by setup scripts
+# - Used for caching and job locking
+# - Alternative: Use Docker with provided docker-compose.yml
+
+# =============================================================================
+# PLATFORM-SPECIFIC DEPENDENCIES
+# =============================================================================
+
+# macOS:
+# - Xcode Command Line Tools (auto-prompted during installation)
+# - Homebrew (auto-installed if not present)
+# - Dependencies installed via: brew install postgresql redis
+
+# Windows:
+# - Microsoft Visual C++ Build Tools (for Python package compilation)
+# - Windows Subsystem for Linux (WSL2) - optional but recommended
+# - Dependencies: Manual installation or use Docker Desktop
+
+# Linux (Ubuntu/Debian):
+# - build-essential package
+# - python3-dev, python3-venv
+# - postgresql, postgresql-contrib
+# - redis-server
+# - Install via: apt-get install build-essential python3-dev python3-venv postgresql redis-server
+
+# Linux (CentOS/RHEL):
+# - Development Tools group
+# - python3-devel
+# - postgresql-server, redis
+# - Install via: yum groupinstall "Development Tools" && yum install python3-devel postgresql-server redis
+
+# =============================================================================
+# API ACCOUNT REQUIREMENTS (USER MUST OBTAIN)
+# =============================================================================
+
+# Alpaca Trading API (REQUIRED)
+# - Sign up: https://alpaca.markets/
+# - Get API key and secret from dashboard
+# - Choose paper trading for testing, live trading for real money
+# - Free tier available
+
+# Polygon API (REQUIRED)  
+# - Sign up: https://polygon.io/
+# - Get API key from dashboard
+# - Free tier available with rate limits
+# - Paid tiers for higher limits and more features
+
+# Claude API (OPTIONAL)
+# - Sign up: https://console.anthropic.com/
+# - Get API key from dashboard
+# - Used for advanced AI analysis features
+# - Pay-per-use pricing
+
+# Twilio API (OPTIONAL)
+# - Sign up: https://www.twilio.com/
+# - Get Account SID, Auth Token, and phone number
+# - Used for SMS notifications
+# - Pay-per-message pricing
+
+# =============================================================================
+# NETWORK REQUIREMENTS
+# =============================================================================
+
+# Outbound HTTP/HTTPS access required for:
+# - api.alpaca.markets (trading API)
+# - polygon.io (market data API)
+# - api.anthropic.com (Claude AI API)
+# - api.twilio.com (SMS notifications)
+# - github.com (code repository)
+# - pypi.org (Python packages)
+# - npmjs.com (Node.js packages)
+
+# Ports used locally:
+# - 3000: Frontend development server
+# - 8000: Backend API server
+# - 5432: PostgreSQL database
+# - 6379: Redis cache
+
+# =============================================================================
+# DOCKER ALTERNATIVE (SIMPLIFIED SETUP)
+# =============================================================================
+
+# If you prefer Docker over native installation:
+# - Docker Desktop 20.10 or higher
+# - Docker Compose 2.0 or higher
+# - 4GB RAM allocated to Docker
+# - Run: docker-compose up -d
+# - All dependencies handled automatically
+
+# =============================================================================
+# DEVELOPMENT DEPENDENCIES (OPTIONAL)
+# =============================================================================
+
+# For contributors or advanced users:
+# - VS Code or PyCharm (code editor)
+# - Postman or curl (API testing)
+# - pgAdmin (PostgreSQL administration)
+# - Redis Commander (Redis administration)
+
+# =============================================================================
+# INSTALLATION VERIFICATION
+# =============================================================================
+
+# After installation, verify these commands work:
+# python3 --version      (should show 3.9+)
+# node --version          (should show v18+)
+# npm --version           (should show 8+)
+# git --version           (should show 2.0+)
+# psql --version          (should show 12+)
+# redis-server --version  (should show 6+)
+
+# Test API connectivity:
+# curl https://paper-api.alpaca.markets/v2/account
+# curl https://api.polygon.io/v1/marketstatus/now
+
+# =============================================================================
+# TROUBLESHOOTING COMMON ISSUES
+# =============================================================================
+
+# Python SSL Certificate Error:
+# - macOS: Run "Install Certificates.command" in Python folder
+# - Windows: Update certificates or use --trusted-host pip option
+
+# Node.js Permission Error:
+# - Don't use sudo with npm
+# - Configure npm properly: npm config set prefix ~/.npm-global
+# - Add to PATH: export PATH=~/.npm-global/bin:$PATH
+
+# PostgreSQL Connection Error:
+# - Check service is running: brew services list | grep postgresql
+# - Verify port 5432 is not in use: lsof -i :5432
+# - Reset database: dropdb amc_trader && createdb amc_trader
+
+# Redis Connection Error:
+# - Check service is running: brew services list | grep redis
+# - Verify port 6379 is not in use: lsof -i :6379
+# - Restart service: brew services restart redis
+
+# Build Tools Missing:
+# - macOS: xcode-select --install
+# - Windows: Install Visual Studio Build Tools
+# - Linux: apt-get install build-essential
+
+# =============================================================================
+# SECURITY CONSIDERATIONS
+# =============================================================================
+
+# File Permissions:
+# - .env file should be chmod 600 (owner read/write only)
+# - API keys should never be committed to version control
+# - Use paper trading first before live trading
+
+# Firewall:
+# - Ensure outbound HTTPS is allowed
+# - Local ports (3000, 8000, 5432, 6379) should not be exposed externally
+# - Consider VPN for additional security
+
+# API Keys:
+# - Rotate keys regularly
+# - Use separate keys for development/production
+# - Enable IP restrictions where supported
+# - Monitor API usage for unusual activity
+
+# =============================================================================
+# SUPPORT AND DOCUMENTATION
+# =============================================================================
+
+# Installation Issues:
+# - Check README_INSTALL.md for detailed instructions
+# - Verify system requirements are met
+# - Check GitHub Issues for common problems
+# - Ensure all API keys are properly configured
+
+# Runtime Issues:
+# - Check logs in backend/logs/ directory
+# - Verify database and Redis are running
+# - Check API key permissions and limits
+# - Monitor network connectivity

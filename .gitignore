@@ -1,0 +1,368 @@
+# AMC-TRADER .gitignore
+# This file ensures sensitive data and unnecessary files are not committed to version control
+
+# =============================================================================
+# SENSITIVE CONFIGURATION FILES
+# =============================================================================
+.env
+.env.local
+.env.production
+.env.production.local
+.env.development.local
+.env.test.local
+
+# Backup environment files
+.env.backup
+.env.bak
+.env.old
+
+# =============================================================================
+# API KEYS AND SECRETS (EXTRA PROTECTION)
+# =============================================================================
+**/api_keys.txt
+**/secrets.json
+**/credentials.json
+**/*secret*
+**/*key*.txt
+**/*token*.txt
+
+# =============================================================================
+# PYTHON
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.ENV/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# =============================================================================
+# NODE.JS / FRONTEND
+# =============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Dependency directories
+jspm_packages/
+
+# TypeScript v1 declaration files
+typings/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+.env.test
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Gatsby files
+.cache/
+public
+
+# Storybook build outputs
+.out
+.storybook-out
+
+# Temporary folders
+tmp/
+temp/
+
+# =============================================================================
+# DATABASE FILES
+# =============================================================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# PostgreSQL
+*.pgsql
+*.dump
+
+# =============================================================================
+# LOG FILES
+# =============================================================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime logs
+*.log.*
+log-*.txt
+debug.log
+
+# =============================================================================
+# SYSTEM FILES
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Windows
+*.lnk
+
+# Linux
+*~
+
+# =============================================================================
+# IDEs and EDITORS
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sublime Text
+*.tmlanguage.cache
+*.tmPreferences.cache
+*.stTheme.cache
+*.sublime-workspace
+*.sublime-project
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# =============================================================================
+# DOCKER
+# =============================================================================
+.docker/
+
+# =============================================================================
+# DATA AND CACHE FILES
+# =============================================================================
+data/cache/
+data/temp/
+data/backup/
+cache/
+*.cache
+
+# CSV data files that might contain sensitive information
+data/*.csv
+data/portfolio/*.csv
+data/trades/*.csv
+
+# =============================================================================
+# BACKUP FILES
+# =============================================================================
+*.bak
+*.backup
+*.old
+*~
+
+# =============================================================================
+# TRADING SPECIFIC FILES (POTENTIALLY SENSITIVE)
+# =============================================================================
+# Position files
+positions/
+portfolio_data/
+trade_history/
+
+# Strategy configuration files that might contain sensitive parameters
+strategy_configs/
+trading_configs/
+
+# Historical data dumps
+historical_data/
+market_data_dump/
+
+# Performance reports that might contain account information
+reports/
+performance/
+backtest_results/
+
+# =============================================================================
+# RUNTIME FILES
+# =============================================================================
+*.pid
+*.lock
+
+# =============================================================================
+# SSL/TLS CERTIFICATES
+# =============================================================================
+*.pem
+*.key
+*.crt
+*.cert
+*.ca-bundle
+
+# =============================================================================
+# TEMPORARY FILES
+# =============================================================================
+*.tmp
+*.temp
+.temporary/
+
+# =============================================================================
+# COMPRESSED FILES (potentially containing sensitive data)
+# =============================================================================
+*.zip
+*.tar.gz
+*.rar
+*.7z
+*.tar
+
+# =============================================================================
+# CONFIGURATION OVERRIDES
+# =============================================================================
+local_config.py
+local_settings.py
+config_override.json
+settings_local.json
+
+# =============================================================================
+# MONITORING AND METRICS DATA
+# =============================================================================
+metrics/
+monitoring/
+alerts/
+
+# =============================================================================
+# AI/ML MODEL FILES (can be large)
+# =============================================================================
+*.model
+*.pkl
+*.pickle
+models/
+weights/
+
+# =============================================================================
+# ADDITIONAL SAFETY PATTERNS
+# =============================================================================
+# Any file with 'secret', 'key', 'password', 'token', or 'auth' in the name
+*secret*
+*key*
+*password*
+*token*
+*auth*
+*credential*
+
+# Any .txt file in a secrets directory
+secrets/
+credentials/
+auth/
+
+# =============================================================================
+# LOCAL DEVELOPMENT OVERRIDES
+# =============================================================================
+.local/
+local/
+dev/
+development/
+
+# Keep these patterns at the end to catch any missed sensitive files
+**/.*secret*
+**/.*key*
+**/.*token*
+**/.*auth*
+**/.*credential*
