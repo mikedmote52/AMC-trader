@@ -119,15 +119,40 @@ def _return(rows, n):
     return float((c1-c0)/c0)
 
 def _volume_spike_ratio(bars):
-    """Calculate volume spike ratio vs 30-day average"""
-    if len(bars) < 31: return 0.0
+    """Enhanced volume analysis with multiple timeframes for early detection"""
+    if len(bars) < 31: 
+        return {'early': 0.0, 'confirmation': 0.0, 'traditional': 0.0, 'best': 0.0}
+    
     current_volume = bars[-1].get("v", 0)
-    avg_volumes = [float(bar.get("v", 0)) for bar in bars[-31:-1]]  # Last 30 days
-    avg_volume = sum(avg_volumes) / len(avg_volumes) if avg_volumes else 1
-    return current_volume / avg_volume if avg_volume > 0 else 0.0
+    
+    # Early signal detection (vs 5-day average) - Catches building momentum
+    avg_5d = sum(float(bar.get("v", 0)) for bar in bars[-6:-1]) / 5
+    early_signal = current_volume / avg_5d if avg_5d > 0 else 0
+    
+    # Confirmation signal (vs 10-day average) - Stronger validation
+    avg_10d = sum(float(bar.get("v", 0)) for bar in bars[-11:-1]) / 10
+    confirmation_signal = current_volume / avg_10d if avg_10d > 0 else 0
+    
+    # Traditional signal (vs 30-day average) - Original method
+    avg_30d = sum(float(bar.get("v", 0)) for bar in bars[-31:-1]) / 30
+    traditional_signal = current_volume / avg_30d if avg_30d > 0 else 0
+    
+    # Best signal with weighted importance (early detection prioritized)
+    best_signal = max(
+        early_signal * 0.8,      # 80% weight for early detection
+        confirmation_signal * 0.9, # 90% weight for confirmed moves
+        traditional_signal        # 100% weight for traditional signal
+    )
+    
+    return {
+        'early': early_signal,
+        'confirmation': confirmation_signal,
+        'traditional': traditional_signal,
+        'best': best_signal
+    }
 
 def _calculate_explosive_potential(price, volume_spike, momentum, atr_pct):
-    """Calculate EXPLOSIVE potential score (0-1) - Learning from 324% VIGL winner patterns"""
+    """Enhanced predictive scoring - Catch opportunities BEFORE they explode"""
     
     # EXPLOSIVE PRICE SCORING - Based on historical explosive winners
     if EXPLOSIVE_PRICE_MIN <= price <= EXPLOSIVE_PRICE_MAX:
@@ -147,19 +172,22 @@ def _calculate_explosive_potential(price, volume_spike, momentum, atr_pct):
     else:
         price_score = 0.1  # Very large caps or sub-penny
     
-    # EXPLOSIVE VOLUME SCORING - Critical for breakouts
-    if volume_spike >= EXPLOSIVE_VOLUME_TARGET:  # 15x+ volume
-        volume_score = 1.0   # TRUE explosive volume
+    # ENHANCED VOLUME SCORING - Early detection prioritized
+    # CRITICAL CHANGE: Lower thresholds to catch moves BEFORE they explode
+    if volume_spike >= EXPLOSIVE_VOLUME_TARGET:  # 15x+ volume (often too late)
+        volume_score = 0.95   # Already exploding - might be late
     elif volume_spike >= 10.0:
-        volume_score = 0.9   # Very high explosive potential
-    elif volume_spike >= EXPLOSIVE_VOLUME_MIN:  # 5x+ volume
-        volume_score = 0.8   # Good explosive potential
-    elif volume_spike >= 3.0:
-        volume_score = 0.6   # Moderate interest
+        volume_score = 0.90   # Strong confirmation
+    elif volume_spike >= 5.0:  # Sweet spot for early detection
+        volume_score = 0.85   # OPTIMAL ENTRY ZONE
+    elif volume_spike >= 3.0:  # Early accumulation signal
+        volume_score = 0.75   # HIGH PRIORITY - Early detection
+    elif volume_spike >= 2.0:  # Building interest
+        volume_score = 0.65   # WATCH CLOSELY - Potential breakout
     elif volume_spike >= 1.5:
-        volume_score = 0.4   # Some interest
+        volume_score = 0.50   # Initial interest building
     else:
-        volume_score = 0.1   # No real interest
+        volume_score = 0.20   # No significant interest yet
     
     # EXPLOSIVE MOMENTUM SCORING - Recent breakout strength
     momentum_abs = abs(momentum)
@@ -947,19 +975,30 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 r5 = _return(rows, 5) or 0.0
                 r1 = _return(rows, 1) or 0.0  # 1-day momentum
                 
-                # Calculate volume spike ratio
-                volume_spike = _volume_spike_ratio(rows)
+                # Calculate volume spike ratio with multi-timeframe analysis
+                volume_data = _volume_spike_ratio(rows)
+                volume_spike = volume_data['best'] if isinstance(volume_data, dict) else volume_data
+                
+                # Early detection flag - Catch opportunities before they explode
+                early_detection = False
+                if isinstance(volume_data, dict):
+                    # Flag early opportunities: 2.5x+ on 5-day or 5x+ on 10-day
+                    if volume_data['early'] >= 2.5 or volume_data['confirmation'] >= 5.0:
+                        early_detection = True
                 
                 # Get compression_pct from existing out data
                 compression_pct = next((t["compression_pct"] for t in tight if t["symbol"] == sym), 0.0)
                 
-                # VIGL Pattern Analysis
+                # VIGL Pattern Analysis - Use best volume signal
                 vigl_score = _calculate_vigl_score(price, volume_spike, r1, atrp)
                 wolf_risk = _calculate_wolf_risk_score(price, volume_spike, r1, atrp, r5)
                 
                 # Factor breakdown for analysis
                 factors = {
                     "volume_spike_ratio": round(volume_spike, 2),
+                    "volume_early_signal": round(volume_data.get('early', 0), 2) if isinstance(volume_data, dict) else 0,
+                    "volume_confirmation": round(volume_data.get('confirmation', 0), 2) if isinstance(volume_data, dict) else 0,
+                    "early_detection": early_detection,
                     "price_momentum_1d": round(r1 * 100, 2),  # 1-day % change
                     "atr_percent": round(atrp * 100, 2),
                     "compression_percentile": round(compression_pct * 100, 2),
