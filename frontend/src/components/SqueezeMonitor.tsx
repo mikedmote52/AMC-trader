@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import SqueezeAlert from "./SqueezeAlert";
-import RealTimePnL from "./RealTimePnL";
 import PatternHistory from "./PatternHistory";
 import { API_BASE } from "../config";
 import { getJSON } from "../lib/api";
@@ -242,21 +241,36 @@ export default function SqueezeMonitor({
         );
       })()}
 
-      {/* Real-time P&L Section */}
+      {/* Quick Summary Section */}
       {squeezeOpportunities.length > 0 && (
         <div style={pnlSectionStyle}>
-          <div style={sectionTitleStyle}>📊 Real-time Monitoring</div>
+          <div style={sectionTitleStyle}>📊 Active Monitoring ({squeezeOpportunities.length} symbols)</div>
           
-          <div style={pnlGridStyle}>
-            {squeezeOpportunities.map((opportunity, index) => (
-              <RealTimePnL
-                key={`pnl-${opportunity.symbol}-${index}`}
-                symbol={opportunity.symbol}
-                initialPrice={opportunity.price}
-                onSignificantMove={handleSignificantMove}
-              />
+          <div style={summaryGridStyle}>
+            {squeezeOpportunities.slice(0, 6).map((opportunity, index) => (
+              <div key={`summary-${opportunity.symbol}-${index}`} style={summaryCardStyle}>
+                <div style={symbolHeaderStyle}>
+                  <span style={symbolTextStyle}>{opportunity.symbol}</span>
+                  <span style={priceTextStyle}>${opportunity.price.toFixed(2)}</span>
+                </div>
+                <div style={scoreRowStyle}>
+                  <span style={scoreTextStyle}>Score: {(opportunity.squeeze_score * 100).toFixed(0)}%</span>
+                  <span style={{
+                    ...confidenceTextStyle,
+                    color: opportunity.confidence >= 0.7 ? '#22c55e' : opportunity.confidence >= 0.5 ? '#f59e0b' : '#ef4444'
+                  }}>
+                    {opportunity.confidence >= 0.7 ? 'HIGH' : opportunity.confidence >= 0.5 ? 'MED' : 'LOW'}
+                  </span>
+                </div>
+              </div>
             ))}
           </div>
+          
+          {squeezeOpportunities.length > 6 && (
+            <div style={moreCountStyle}>
+              +{squeezeOpportunities.length - 6} more symbols being monitored
+            </div>
+          )}
         </div>
       )}
 
@@ -395,10 +409,63 @@ const pnlSectionStyle: React.CSSProperties = {
   marginBottom: "32px"
 };
 
-const pnlGridStyle: React.CSSProperties = {
+const summaryGridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
-  gap: "16px"
+  gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+  gap: "12px",
+  marginBottom: "16px"
+};
+
+const summaryCardStyle: React.CSSProperties = {
+  background: "#111",
+  border: "1px solid #333",
+  borderRadius: "8px",
+  padding: "12px"
+};
+
+const symbolHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: "8px"
+};
+
+const symbolTextStyle: React.CSSProperties = {
+  fontSize: "16px",
+  fontWeight: 700,
+  color: "#fff"
+};
+
+const priceTextStyle: React.CSSProperties = {
+  fontSize: "14px",
+  color: "#22c55e",
+  fontWeight: 600
+};
+
+const scoreRowStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center"
+};
+
+const scoreTextStyle: React.CSSProperties = {
+  fontSize: "12px",
+  color: "#ccc"
+};
+
+const confidenceTextStyle: React.CSSProperties = {
+  fontSize: "12px",
+  fontWeight: 700,
+  padding: "2px 6px",
+  borderRadius: "4px",
+  backgroundColor: "rgba(255,255,255,0.1)"
+};
+
+const moreCountStyle: React.CSSProperties = {
+  fontSize: "12px",
+  color: "#999",
+  textAlign: "center",
+  fontStyle: "italic"
 };
 
 const historySectionStyle: React.CSSProperties = {

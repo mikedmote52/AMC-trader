@@ -87,18 +87,20 @@ export default function HomePage() {
         </Link>
       </div>
 
-      <div style={statsStyle}>
-        <div style={statItemStyle}>
-          <div style={statValueStyle}>324%</div>
-          <div style={statLabelStyle}>VIGL Pattern Winner</div>
+      <div style={focusedStatsStyle}>
+        <div style={focusedStatItemStyle}>
+          <div style={focusedStatIconStyle}>🎯</div>
+          <div>
+            <div style={focusedStatValueStyle}>3 Core Objectives</div>
+            <div style={focusedStatLabelStyle}>Find • Optimize • Learn</div>
+          </div>
         </div>
-        <div style={statItemStyle}>
-          <div style={statValueStyle}>Real-time</div>
-          <div style={statLabelStyle}>Market Data</div>
-        </div>
-        <div style={statItemStyle}>
-          <div style={statValueStyle}>AI-Powered</div>
-          <div style={statLabelStyle}>Analysis Engine</div>
+        <div style={focusedStatItemStyle}>
+          <div style={focusedStatIconStyle}>🚀</div>
+          <div>
+            <div style={focusedStatValueStyle}>324% Winner</div>
+            <div style={focusedStatLabelStyle}>VIGL Pattern Success</div>
+          </div>
         </div>
       </div>
     </div>
@@ -199,26 +201,37 @@ const cardFeatureStyle: React.CSSProperties = {
   marginBottom: "8px"
 };
 
-const statsStyle: React.CSSProperties = {
+const focusedStatsStyle: React.CSSProperties = {
   display: "flex",
   justifyContent: "center",
-  gap: "60px",
-  flexWrap: "wrap"
+  gap: "40px",
+  flexWrap: "wrap",
+  marginTop: "20px"
 };
 
-const statItemStyle: React.CSSProperties = {
-  textAlign: "center"
+const focusedStatItemStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "16px",
+  background: "#111",
+  border: "1px solid #333",
+  borderRadius: "12px",
+  padding: "20px 24px"
 };
 
-const statValueStyle: React.CSSProperties = {
-  fontSize: "32px",
-  fontWeight: 900,
+const focusedStatIconStyle: React.CSSProperties = {
+  fontSize: "32px"
+};
+
+const focusedStatValueStyle: React.CSSProperties = {
+  fontSize: "18px",
+  fontWeight: 700,
   color: "#22c55e",
-  marginBottom: "8px"
+  marginBottom: "4px"
 };
 
-const statLabelStyle: React.CSSProperties = {
-  fontSize: "14px",
+const focusedStatLabelStyle: React.CSSProperties = {
+  fontSize: "12px",
   color: "#999",
   fontWeight: 600
 };

@@ -1,9 +1,48 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Holdings from "../components/Holdings";
+import { API_BASE } from "../config";
+import { getJSON } from "../lib/api";
 
 export default function PortfolioPage() {
   const [isPaused, setIsPaused] = useState(false);
   const [viewMode, setViewMode] = useState<"detailed" | "compact">("detailed");
+  const [portfolioStats, setPortfolioStats] = useState({
+    totalValue: 0,
+    todayPL: 0,
+    todayPLPercent: 0,
+    activePositions: 0
+  });
+
+  useEffect(() => {
+    const fetchPortfolioStats = async () => {
+      try {
+        const holdingsResponse = await getJSON(`${API_BASE}/portfolio/holdings`);
+        const positions = holdingsResponse?.data?.positions || [];
+        
+        if (positions.length > 0) {
+          const totalValue = positions.reduce((sum: number, pos: any) => sum + (pos.market_value || 0), 0);
+          const totalUnrealizedPL = positions.reduce((sum: number, pos: any) => sum + (pos.unrealized_pl || 0), 0);
+          const totalCostBasis = positions.reduce((sum: number, pos: any) => sum + (pos.cost_basis || 0), 0);
+          const todayPLPercent = totalCostBasis > 0 ? (totalUnrealizedPL / totalCostBasis) * 100 : 0;
+          
+          setPortfolioStats({
+            totalValue,
+            todayPL: totalUnrealizedPL,
+            todayPLPercent,
+            activePositions: positions.length
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch portfolio stats:', error);
+      }
+    };
+
+    if (!isPaused) {
+      fetchPortfolioStats();
+      const interval = setInterval(fetchPortfolioStats, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [isPaused]);
 
   return (
     <div style={containerStyle}>
@@ -40,17 +79,24 @@ export default function PortfolioPage() {
       <div style={statsContainerStyle}>
         <div style={statCardStyle}>
           <div style={statIconStyle}>💰</div>
-          <div style={statValueStyle}>$0.00</div>
+          <div style={statValueStyle}>
+            ${portfolioStats.totalValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+          </div>
           <div style={statLabelStyle}>Total Portfolio Value</div>
         </div>
         <div style={statCardStyle}>
           <div style={statIconStyle}>📈</div>
-          <div style={statValueStyle}>+0.00%</div>
+          <div style={{
+            ...statValueStyle,
+            color: portfolioStats.todayPLPercent >= 0 ? "#22c55e" : "#ef4444"
+          }}>
+            {portfolioStats.todayPLPercent >= 0 ? "+" : ""}{portfolioStats.todayPLPercent.toFixed(2)}%
+          </div>
           <div style={statLabelStyle}>Today's P&L</div>
         </div>
         <div style={statCardStyle}>
           <div style={statIconStyle}>🎯</div>
-          <div style={statValueStyle}>0</div>
+          <div style={statValueStyle}>{portfolioStats.activePositions}</div>
           <div style={statLabelStyle}>Active Positions</div>
         </div>
         <div style={statCardStyle}>
