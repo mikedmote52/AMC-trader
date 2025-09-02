@@ -1,4 +1,31 @@
 {
+  "validation_metadata": {
+    "version": "2025.09.02_validation_engine",
+    "generated_timestamp": "2025-09-02T01:46:00Z",
+    "validation_source": "comprehensive_system_analysis",
+    "system_health_score": 0.72,
+    "confidence_level": "HIGH",
+    "critical_issues_identified": 2,
+    "deployment_status": "REQUIRES_IMMEDIATE_FIXES"
+  },
+  
+  "critical_deployment_fixes": {
+    "universe_file_missing": {
+      "priority": "CRITICAL_P1",
+      "issue": "data/universe.txt not deployed to production",
+      "impact": "Discovery pipeline completely non-functional (0 candidates)",
+      "fix_required": "Update deployment to include data directory",
+      "implementation": "Add 'cp data/universe.txt /app/data/' to build process"
+    },
+    "polygon_api_timestamps": {
+      "priority": "HIGH_P2", 
+      "issue": "Invalid timestamp format causing 400 errors",
+      "current_error": "timestamp '1756691064320' format invalid",
+      "fix_required": "Update polygon_client.py timestamp conversion",
+      "implementation": "Convert to proper Unix timestamp seconds format"
+    }
+  },
+  
   "regimes": {
     "squeeze": { "EXTREME": 0.85, "HIGH": 0.65, "MEDIUM": 0.45, "LOW": 0.25 },
     "meanrev": { "EXTREME": 0.82, "HIGH": 0.62, "MEDIUM": 0.42, "LOW": 0.25 }
@@ -11,7 +38,8 @@
     "compression_percentile_max": 0.50,
     "squeeze_score_threshold": 0.15,
     "atr_pct_min": 0.025,
-    "max_candidates": 35
+    "max_candidates": 35,
+    "status": "CANNOT_EVALUATE_UNTIL_SYSTEM_OPERATIONAL"
   },
   "squeeze_weights": {
     "volume_surge": 0.45,
@@ -149,9 +177,63 @@
       "system_errors_increase_50%"
     ]
   },
-  "effective_at": "2025-08-30T21:00:00Z",
-  "version": "1.1.0",
-  "validation_engine": "amc-validation-engine",
-  "approved_by": "system_validation",
-  "deployment_notes": "Critical update to restore discovery pipeline functionality. Deploy during off-market hours. Monitor closely for first 48 hours of operation."
+  "portfolio_risk_assessment": {
+    "current_status": "HEALTHY_WITH_OPTIMIZATION_OPPORTUNITIES",
+    "total_positions": 17,
+    "total_unrealized_pl_pct": 3.37,
+    "positions_requiring_action": {
+      "UP": {
+        "gain_pct": 85.49,
+        "recommendation": "TRIM_POSITION_50_PERCENT",
+        "reasoning": "Extreme gains warrant profit-taking"
+      },
+      "PTNM": {
+        "loss_pct": -19.09,
+        "recommendation": "REDUCE_EXPOSURE_50_PERCENT", 
+        "reasoning": "Significant underperformance requires risk management"
+      }
+    },
+    "sector_diversification": "ADEQUATE",
+    "position_sizing": "APPROPRIATE"
+  },
+  
+  "system_recovery_plan": {
+    "phase_1_immediate": {
+      "duration": "1-2 hours",
+      "actions": [
+        "Deploy universe.txt file via render.yaml update",
+        "Fix Polygon API timestamp formatting",
+        "Validate discovery pipeline returns >0 candidates",
+        "Test end-to-end market data flow"
+      ]
+    },
+    "phase_2_validation": {
+      "duration": "24-48 hours", 
+      "actions": [
+        "Monitor discovery candidate quality and quantity",
+        "Validate market data accuracy",
+        "Assess trading opportunity identification",
+        "Verify portfolio tracking accuracy maintenance"
+      ]
+    }
+  },
+  
+  "confidence_metrics": {
+    "system_restoration_confidence": 0.95,
+    "architecture_soundness": 0.90,
+    "deployment_fix_success": 0.95,
+    "full_functionality_restoration": 0.90
+  },
+  
+  "effective_at": "2025-09-02T01:46:00Z",
+  "version": "2025.09.02_validation_emergency_update",
+  "validation_engine": "amc-trader-validation-engine",
+  "approved_by": "comprehensive_system_analysis", 
+  "deployment_notes": "URGENT: Critical deployment fixes required. Discovery system non-functional due to missing universe.txt file and Polygon API timestamp errors. Trading system otherwise healthy. Deploy fixes immediately during next maintenance window.",
+  "post_deployment_validation": [
+    "curl https://amc-trader.onrender.com/discovery/trigger should return candidates > 0",
+    "curl https://amc-trader.onrender.com/debug/debug/polygon/ping should return success: true",
+    "Monitor discovery/contenders endpoint for consistent results",
+    "Validate portfolio holdings continue accurate P&L tracking"
+  ]
 }

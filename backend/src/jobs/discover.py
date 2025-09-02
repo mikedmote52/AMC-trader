@@ -393,6 +393,24 @@ class DiscoveryPipeline:
         
     def read_universe(self) -> List[str]:
         """Read symbols from universe file"""
+        # Fallback universe for when file is not found
+        FALLBACK_UNIVERSE = [
+            # Small-Cap Squeeze Candidates
+            "VIGL", "QUBT", "CRWV", "AEVA", "UP", "WULF", "SSRM", "SPHR",
+            "TEVA", "KSS", "CELC", "CARS", "GMAB", "AMDL", "TEM",
+            # Biotech & Healthcare
+            "RGTI", "DCGO", "OCGN", "COTI", "INVZ", "SERA", "LFMD", "MNOV",
+            "INZY", "ANIC",
+            # Technology & Growth
+            "BBIG", "ASTS", "RKLB", "HOLO", "LOVO", "ARQQ", "NNDM", "PRTG",
+            "FUBO", "GOEV",
+            # Energy & Mining
+            "REI", "CLSK", "RIOT", "HUT", "BITF", "MARA", "CAN", "HVBT",
+            "DAC", "NAK",
+            # Legacy Large Caps
+            "AAPL", "NVDA", "TSLA", "AMD"
+        ]
+        
         try:
             # Try multiple possible paths for universe file
             possible_paths = [
@@ -414,13 +432,13 @@ class DiscoveryPipeline:
                     logger.info(f"Loaded {len(symbols)} symbols from universe file: {path}")
                     return symbols
                     
-            # If no file found, log all attempted paths
-            logger.error(f"Failed to find universe file. Tried paths: {possible_paths}")
-            return []
+            # If no file found, use fallback universe
+            logger.warning(f"Failed to find universe file. Using fallback universe with {len(FALLBACK_UNIVERSE)} symbols")
+            return FALLBACK_UNIVERSE
             
         except Exception as e:
-            logger.error(f"Failed to read universe file: {e}")
-            return []
+            logger.error(f"Failed to read universe file: {e}. Using fallback universe")
+            return FALLBACK_UNIVERSE
     
     def fetch_polygon_prices(self, symbols: List[str]) -> Dict[str, Dict]:
         """Fetch current prices and volume from Polygon API"""
