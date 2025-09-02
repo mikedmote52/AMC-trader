@@ -132,8 +132,9 @@ class ShortInterestService:
             if short_percent is None:
                 return None
             
-            # Convert percentage to decimal
-            short_percent_decimal = float(short_percent) / 100.0 if short_percent else 0.0
+            # Yahoo Finance already returns decimal format (0.0934 = 9.34%)
+            # DO NOT divide by 100 - the value is already in decimal format
+            short_percent_decimal = float(short_percent) if short_percent else 0.0
             
             # Data quality scoring
             confidence = self._calculate_confidence(info)
