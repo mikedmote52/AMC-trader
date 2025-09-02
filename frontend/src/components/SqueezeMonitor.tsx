@@ -52,7 +52,9 @@ export default function SqueezeMonitor({
             symbol: contender.symbol,
             squeeze_score: contender.squeeze_score || contender.score || 0,
             volume_spike: contender.volume_spike || contender.factors?.volume_spike_ratio || 0,
-            short_interest: 0.15, // Default reasonable estimate
+            short_interest: contender.short_interest_data?.percent ? 
+              (contender.short_interest_data.percent * 100) : // Convert decimal (0.0934) to percentage (9.34)
+              (contender.short_interest || 15), // Fallback to legacy field or default 15%
             price: contender.price || 0,
             pattern_type: contender.squeeze_pattern || 'SQUEEZE',
             confidence: contender.squeeze_confidence === 'HIGH' ? 0.8 : 
