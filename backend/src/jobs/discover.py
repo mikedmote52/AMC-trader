@@ -60,7 +60,7 @@ MAX_CANDIDATES = _calibration.get("discovery_filters", {}).get("max_candidates",
 _DEFAULT_FALLBACK = "VIGL,QUBT,CRWV,AEVA,UP,WULF,SSRM,SPHR,TEVA,KSS,CELC,CARS,GMAB,AMDL,TEM,RGTI,DCGO,OCGN,COTI,INVZ,SERA,LFMD,MNOV,INZY,ANIC,BBIG,ASTS,RKLB,HOLO,LOVO,ARQQ,NNDM,PRTG,FUBO,GOEV,REI,CLSK,RIOT,HUT,BITF,MARA,CAN,HVBT,DAC,NAK,AAPL,NVDA,TSLA,AMD,ANTE"
 UNIVERSE_FALLBACK = [s.strip().upper() for s in os.getenv("AMC_DISCOVERY_UNIVERSE", _DEFAULT_FALLBACK).split(",") if s.strip()]
 EXCLUDE_FUNDS = os.getenv("AMC_EXCLUDE_FUNDS", "false").lower() in ("1", "true", "yes")  # Include ETFs/leveraged funds
-EXCLUDE_ADRS = os.getenv("AMC_EXCLUDE_ADRS", "false").lower() in ("1", "true", "yes")  # Include foreign stocks
+EXCLUDE_ADRS = False  # NEVER exclude ADRs - they contain valuable opportunities like ANTE
 
 # SQUEEZE MODE CONFIGURATION - VIGL 324% Winner Restoration
 SQUEEZE_MODE = os.getenv("AMC_SQUEEZE_MODE", "true").lower() in ("1", "true", "yes")
