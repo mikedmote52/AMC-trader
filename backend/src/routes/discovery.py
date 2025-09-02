@@ -7,6 +7,7 @@ import os
 from backend.src.shared.redis_client import get_redis_client
 from backend.src.services.squeeze_detector import SqueezeDetector
 from ..services.short_interest_service import get_short_interest_service
+from ..services.short_interest_validator import get_short_interest_validator
 
 router = APIRouter()
 
@@ -119,6 +120,57 @@ async def refresh_short_interest(symbols: str = Query("", description="Comma-sep
             "success": False,
             "error": str(e),
             "results": {}
+        }
+
+@router.get("/validate-short-interest")
+async def validate_short_interest(symbol: str = Query("UP", description="Symbol to validate")):
+    """Debug and validate short interest data accuracy for a specific symbol"""
+    try:
+        validator = await get_short_interest_validator()
+        
+        # Run comprehensive validation
+        validation_result = await validator.validate_against_known_values(symbol)
+        alternative_calc = await validator.test_alternative_calculation(symbol)
+        
+        return {
+            "success": True,
+            "symbol": symbol,
+            "validation_result": validation_result,
+            "alternative_calculations": alternative_calc,
+            "recommendation": alternative_calc.get("recommendation", "Unknown"),
+            "timestamp": validation_result.get("timestamp")
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "symbol": symbol
+        }
+
+@router.post("/run-short-interest-diagnostics")
+async def run_short_interest_diagnostics():
+    """Run comprehensive short interest validation across multiple symbols"""
+    try:
+        validator = await get_short_interest_validator()
+        results = await validator.run_comprehensive_validation()
+        
+        return {
+            "success": True,
+            "comprehensive_validation": results,
+            "data_quality_assessment": results["summary"]["data_quality"],
+            "match_rate": f"{results['summary']['match_rate']:.1%}",
+            "recommendations": {
+                "immediate_action": "Review individual symbol results for data discrepancies",
+                "data_quality": results["summary"]["data_quality"],
+                "next_steps": "Consider alternative data sources if match rate < 80%"
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
         }
 
 @router.get("/debug-universe")
