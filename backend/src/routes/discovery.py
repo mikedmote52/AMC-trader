@@ -6,7 +6,7 @@ import math
 import os
 from backend.src.shared.redis_client import get_redis_client
 from backend.src.services.squeeze_detector import SqueezeDetector
-from backend.src.services.short_interest_service import get_short_interest_service
+from ..services.short_interest_service import get_short_interest_service
 
 router = APIRouter()
 

@@ -29,7 +29,7 @@ from lib.redis_client import publish_discovery_contenders
 from polygon import RESTClient
 import requests
 from services.squeeze_detector import SqueezeDetector, SqueezeCandidate
-from services.short_interest_service import get_short_interest_service
+from ..services.short_interest_service import get_short_interest_service
 
 def _load_calibration():
     """Load active calibration settings with fallbacks to environment variables"""
