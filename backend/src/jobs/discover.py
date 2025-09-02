@@ -395,35 +395,44 @@ class DiscoveryPipeline:
         self.polygon_client = RESTClient(self.polygon_api_key)
         
     def read_universe(self) -> List[str]:
-        """Read symbols from universe file"""
-        # Fallback universe for when file is not found
-        FALLBACK_UNIVERSE = [
-            # Small-Cap Squeeze Candidates
-            "VIGL", "QUBT", "CRWV", "AEVA", "UP", "WULF", "SSRM", "SPHR",
-            "TEVA", "KSS", "CELC", "CARS", "GMAB", "AMDL", "TEM",
-            # Biotech & Healthcare
-            "RGTI", "DCGO", "OCGN", "COTI", "INVZ", "SERA", "LFMD", "MNOV",
-            "INZY", "ANIC",
+        """Dynamically fetch full stock universe from Polygon API"""
+        
+        # Check if we should use dynamic universe fetching
+        USE_DYNAMIC_UNIVERSE = os.getenv("AMC_DYNAMIC_UNIVERSE", "true").lower() in ("1", "true", "yes")
+        
+        if USE_DYNAMIC_UNIVERSE:
+            logger.info("🌍 Fetching full stock universe from Polygon API...")
+            try:
+                symbols = self._fetch_polygon_universe()
+                if symbols:
+                    logger.info(f"✅ Dynamic universe loaded: {len(symbols)} symbols from Polygon API")
+                    return symbols
+                else:
+                    logger.warning("❌ Dynamic universe fetch failed, falling back to file/static")
+            except Exception as e:
+                logger.error(f"❌ Dynamic universe error: {e}, falling back to file/static")
+        
+        # Static fallback universe (only used if dynamic fails or disabled)
+        STATIC_FALLBACK = [
+            # Core squeeze candidates with confirmed data
+            "VIGL", "QUBT", "UP", "NAK", "SPHR", "ANTE", "AEVA", "WULF", "SSRM",
+            "TEVA", "KSS", "CELC", "CARS", "GMAB", "AMDL", "TEM", "SNDL", "AMC", "GME",
+            # Biotech & Healthcare  
+            "RGTI", "DCGO", "OCGN", "COTI", "INVZ", "SERA", "LFMD", "MNOV", "INZY", "ANIC",
             # Technology & Growth
-            "BBIG", "ASTS", "RKLB", "HOLO", "LOVO", "ARQQ", "NNDM", "PRTG",
-            "FUBO", "GOEV",
+            "BBIG", "ASTS", "RKLB", "HOLO", "LOVO", "ARQQ", "NNDM", "PRTG", "FUBO", "GOEV",
             # Energy & Mining
-            "REI", "CLSK", "RIOT", "HUT", "BITF", "MARA", "CAN", "HVBT",
-            "DAC", "NAK",
-            # Legacy Large Caps
+            "REI", "CLSK", "RIOT", "HUT", "BITF", "MARA", "CAN", "HVBT", "DAC",
+            # Reference Large Caps
             "AAPL", "NVDA", "TSLA", "AMD"
         ]
         
         try:
-            # Try multiple possible paths for universe file
+            # Try universe file as backup
             possible_paths = [
-                # Production path (Docker /app directory)
                 f"/app/{self.universe_file}",
-                # Development path (relative to project root)
                 os.path.join(os.path.dirname(__file__), '..', '..', '..', self.universe_file),
-                # Current working directory
                 os.path.join(os.getcwd(), self.universe_file),
-                # Absolute path if provided
                 self.universe_file if os.path.isabs(self.universe_file) else None
             ]
             
@@ -432,16 +441,76 @@ class DiscoveryPipeline:
                     with open(path, 'r') as f:
                         symbols = [line.strip().upper() for line in f 
                                  if line.strip() and not line.strip().startswith('#')]
-                    logger.info(f"Loaded {len(symbols)} symbols from universe file: {path}")
+                    logger.info(f"📁 Loaded {len(symbols)} symbols from universe file: {path}")
                     return symbols
                     
-            # If no file found, use fallback universe
-            logger.warning(f"Failed to find universe file. Using fallback universe with {len(FALLBACK_UNIVERSE)} symbols")
-            return FALLBACK_UNIVERSE
+            # Final fallback to static list
+            logger.warning(f"⚠️  Using static fallback universe with {len(STATIC_FALLBACK)} symbols")
+            return STATIC_FALLBACK
             
         except Exception as e:
-            logger.error(f"Failed to read universe file: {e}. Using fallback universe")
-            return FALLBACK_UNIVERSE
+            logger.error(f"❌ Universe loading failed: {e}. Using static fallback")
+            return STATIC_FALLBACK
+    
+    def _fetch_polygon_universe(self) -> List[str]:
+        """Fetch complete stock universe from Polygon API"""
+        all_symbols = []
+        next_url = None
+        page = 1
+        max_pages = 50  # Limit to prevent runaway
+        
+        try:
+            import requests
+            
+            while page <= max_pages:
+                if next_url:
+                    # Use pagination URL
+                    url = f"https://api.polygon.io{next_url}&apikey={self.polygon_api_key}"
+                else:
+                    # Initial request - get ALL active stocks including ADRC
+                    url = f"https://api.polygon.io/v3/reference/tickers?market=stocks&active=true&limit=1000&apikey={self.polygon_api_key}"
+                
+                logger.info(f"🔄 Fetching universe page {page}...")
+                response = requests.get(url, timeout=30)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    results = data.get('results', [])
+                    
+                    # Filter for tradeable stocks
+                    for stock in results:
+                        ticker = stock.get('ticker')
+                        stock_type = stock.get('type', '')
+                        exchange = stock.get('primary_exchange', '')
+                        
+                        # Include common stocks AND ADRCs (like ANTE)
+                        if (ticker and 
+                            stock_type in ['CS', 'ADRC'] and  # Common Stock + American Depositary Receipt
+                            exchange in ['XNYS', 'XNAS', 'ARCX', 'BATS', 'XASE'] and  # Major exchanges
+                            len(ticker) <= 6 and  # Reasonable ticker length
+                            ticker.replace('.', '').isalpha()):  # Letters only (allow dots for some tickers)
+                            
+                            all_symbols.append(ticker)
+                    
+                    logger.info(f"📊 Page {page}: {len(results)} stocks, {len(all_symbols)} total collected")
+                    
+                    # Check for next page
+                    next_url = data.get('next_url')
+                    if not next_url:
+                        break
+                    page += 1
+                else:
+                    logger.error(f"❌ Polygon API error on page {page}: {response.status_code}")
+                    break
+                    
+            # Deduplicate and sort
+            unique_symbols = sorted(list(set(all_symbols)))
+            logger.info(f"✅ Polygon universe complete: {len(unique_symbols)} unique symbols")
+            return unique_symbols
+            
+        except Exception as e:
+            logger.error(f"❌ Polygon universe fetch failed: {e}")
+            return []
     
     def fetch_polygon_prices(self, symbols: List[str]) -> Dict[str, Dict]:
         """Fetch current prices and volume from Polygon API"""
