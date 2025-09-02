@@ -57,7 +57,7 @@ LOOKBACK_DAYS = int(os.getenv("AMC_COMPRESSION_LOOKBACK", "60"))
 COMPRESSION_PCTL_MAX = _calibration.get("discovery_filters", {}).get("compression_percentile_max", float(os.getenv("AMC_COMPRESSION_PCTL_MAX", "0.30")))  # CALIBRATED: 0.50 vs 0.30
 MAX_CANDIDATES = _calibration.get("discovery_filters", {}).get("max_candidates", int(os.getenv("AMC_MAX_CANDIDATES", "25")))  # CALIBRATED: 35 vs 25
 # Enhanced fallback universe - expanded from small default to comprehensive squeeze candidates
-_DEFAULT_FALLBACK = "VIGL,QUBT,CRWV,AEVA,UP,WULF,SSRM,SPHR,TEVA,KSS,CELC,CARS,GMAB,AMDL,TEM,RGTI,DCGO,OCGN,COTI,INVZ,SERA,LFMD,MNOV,INZY,ANIC,BBIG,ASTS,RKLB,HOLO,LOVO,ARQQ,NNDM,PRTG,FUBO,GOEV,REI,CLSK,RIOT,HUT,BITF,MARA,CAN,HVBT,DAC,NAK,AAPL,NVDA,TSLA,AMD"
+_DEFAULT_FALLBACK = "VIGL,QUBT,CRWV,AEVA,UP,WULF,SSRM,SPHR,TEVA,KSS,CELC,CARS,GMAB,AMDL,TEM,RGTI,DCGO,OCGN,COTI,INVZ,SERA,LFMD,MNOV,INZY,ANIC,BBIG,ASTS,RKLB,HOLO,LOVO,ARQQ,NNDM,PRTG,FUBO,GOEV,REI,CLSK,RIOT,HUT,BITF,MARA,CAN,HVBT,DAC,NAK,AAPL,NVDA,TSLA,AMD,ANTE"
 UNIVERSE_FALLBACK = [s.strip().upper() for s in os.getenv("AMC_DISCOVERY_UNIVERSE", _DEFAULT_FALLBACK).split(",") if s.strip()]
 EXCLUDE_FUNDS = os.getenv("AMC_EXCLUDE_FUNDS", "false").lower() in ("1", "true", "yes")  # Include ETFs/leveraged funds
 EXCLUDE_ADRS = os.getenv("AMC_EXCLUDE_ADRS", "false").lower() in ("1", "true", "yes")  # Include foreign stocks
