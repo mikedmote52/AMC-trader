@@ -6,6 +6,7 @@ import math
 import os
 from backend.src.shared.redis_client import get_redis_client
 from backend.src.services.squeeze_detector import SqueezeDetector
+from backend.src.services.short_interest_service import get_short_interest_service
 
 router = APIRouter()
 
@@ -45,6 +46,80 @@ async def get_contenders():
             if "confidence" not in it:
                 it["confidence"] = it["score"] / 100.0
     return items
+
+@router.get("/short-interest")
+async def get_short_interest(symbols: str = Query("UP,SPHR,NAK", description="Comma-separated symbols")):
+    """Get real short interest data for specified symbols"""
+    try:
+        symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+        short_interest_service = await get_short_interest_service()
+        
+        results = await short_interest_service.get_bulk_short_interest(symbol_list)
+        
+        response_data = {}
+        for symbol, si_data in results.items():
+            if si_data:
+                response_data[symbol] = {
+                    "short_percent_float": si_data.short_percent_float,
+                    "short_percent_display": f"{si_data.short_percent_float:.1%}",
+                    "short_ratio": si_data.short_ratio,
+                    "shares_short": si_data.shares_short,
+                    "source": si_data.source,
+                    "confidence": si_data.confidence,
+                    "last_updated": si_data.last_updated.isoformat(),
+                    "settlement_date": si_data.settlement_date.isoformat() if si_data.settlement_date else None
+                }
+            else:
+                response_data[symbol] = {
+                    "error": "No short interest data available",
+                    "source": "error"
+                }
+        
+        return {
+            "success": True,
+            "data": response_data,
+            "symbols_requested": len(symbol_list),
+            "symbols_found": len([k for k, v in response_data.items() if "error" not in v])
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "data": {}
+        }
+
+@router.post("/refresh-short-interest")
+async def refresh_short_interest(symbols: str = Query("", description="Comma-separated symbols, empty for all")):
+    """Force refresh short interest data"""
+    try:
+        short_interest_service = await get_short_interest_service()
+        
+        if symbols.strip():
+            symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+        else:
+            # Use discovery fallback universe if no symbols specified
+            from backend.src.jobs.discover import UNIVERSE_FALLBACK
+            symbol_list = UNIVERSE_FALLBACK[:20]  # Limit to first 20 to avoid rate limits
+        
+        results = await short_interest_service.refresh_all_short_interest(symbol_list)
+        
+        success_count = sum(results.values())
+        total_count = len(results)
+        
+        return {
+            "success": True,
+            "message": f"Short interest refresh complete: {success_count}/{total_count} successful",
+            "results": results,
+            "success_rate": success_count / total_count if total_count > 0 else 0.0
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "results": {}
+        }
 
 @router.get("/debug-universe")
 async def debug_universe():

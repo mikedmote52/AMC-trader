@@ -29,6 +29,7 @@ from lib.redis_client import publish_discovery_contenders
 from polygon import RESTClient
 import requests
 from services.squeeze_detector import SqueezeDetector, SqueezeCandidate
+from services.short_interest_service import get_short_interest_service
 
 def _load_calibration():
     """Load active calibration settings with fallbacks to environment variables"""
@@ -1100,24 +1101,45 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
     for o, extra in zip(initial_out, enriched):
         o.update(extra)
 
-    # SQUEEZE DETECTION - Primary VIGL Pattern Filter (New!)
+    # SQUEEZE DETECTION - Primary VIGL Pattern Filter (Enhanced with Real Short Interest!)
     if SQUEEZE_MODE:
         trace.enter("squeeze_detection", [o["symbol"] for o in initial_out])
         squeeze_detector = SqueezeDetector()
         squeeze_candidates = []
         squeeze_rejected = []
         
+        # Get real short interest data for all candidates
+        short_interest_service = await get_short_interest_service()
+        symbols = [candidate['symbol'] for candidate in initial_out]
+        short_interest_data = await short_interest_service.get_bulk_short_interest(symbols)
+        
         for candidate in initial_out:
-            # Prepare data for squeeze detector
+            symbol = candidate['symbol']
+            si_data = short_interest_data.get(symbol)
+            
+            # Use real short interest data instead of placeholders
+            real_short_interest = si_data.short_percent_float if si_data else 0.15
+            si_confidence = si_data.confidence if si_data else 0.1
+            si_source = si_data.source if si_data else 'fallback'
+            
+            # Prepare data for squeeze detector with real short interest
             squeeze_data = {
-                'symbol': candidate['symbol'],
+                'symbol': symbol,
                 'price': candidate.get('price', 0.0),
                 'volume': candidate.get('volume_spike', 0.0) * 1000000,  # Approximate volume
                 'avg_volume_30d': 1000000,  # Placeholder - would need historical data
-                'short_interest': candidate.get('factors', {}).get('short_interest', 0.25),  # Enhanced: 25% default
-                'float': candidate.get('factors', {}).get('float_shares', 15000000),  # Enhanced: 15M default
-                'borrow_rate': candidate.get('factors', {}).get('borrow_rate', 0.50),  # Enhanced: 50% default
-                'shares_outstanding': candidate.get('factors', {}).get('shares_outstanding', 30000000)  # Enhanced: 30M default
+                'short_interest': real_short_interest,  # REAL SHORT INTEREST DATA!
+                'float': candidate.get('factors', {}).get('float_shares', 15000000),  # 15M default
+                'borrow_rate': candidate.get('factors', {}).get('borrow_rate', 0.50),  # 50% default
+                'shares_outstanding': candidate.get('factors', {}).get('shares_outstanding', 30000000)  # 30M default
+            }
+            
+            # Add short interest metadata to candidate
+            candidate['short_interest_data'] = {
+                'percent': real_short_interest,
+                'confidence': si_confidence,
+                'source': si_source,
+                'last_updated': si_data.last_updated.isoformat() if si_data else None
             }
             
             squeeze_result = squeeze_detector.detect_vigl_pattern(candidate['symbol'], squeeze_data)

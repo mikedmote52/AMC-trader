@@ -1,8 +1,125 @@
-# AMC-TRADER Portfolio Health & Thesis Tracking Tools Specification
+# AMC-TRADER Tools Specification
 
 ## Executive Summary
 
-This specification defines a comprehensive portfolio health and thesis tracking system for AMC-TRADER that integrates with existing VIGL pattern detection, squeeze analysis, and thesis generation capabilities. The system focuses on portfolio-level health metrics, position-level health scoring with intelligent thesis tracking, projected outcome calculations for learning system optimization, and smart risk-based organization.
+This specification defines comprehensive tools for AMC-TRADER including short interest data integration, portfolio health tracking, and thesis management systems. The architecture integrates real FINRA short interest data to replace placeholder values, while maintaining existing VIGL pattern detection, squeeze analysis, and learning system capabilities.
+
+## Short Interest Data Integration System
+
+### ShortInterestService API
+- **Endpoint**: `/data/short-interest/{symbol}`
+- **Authentication**: Internal service (no external auth required)
+- **Function Signature**: `get_short_interest(symbol: str, use_cache: bool = True) -> Optional[ShortInterestData]`
+- **Schema**:
+```json
+{
+  "symbol": "VIGL",
+  "short_interest_ratio": 0.245,
+  "short_interest_shares": 1500000,
+  "shares_outstanding": 15000000,
+  "float_shares": 8500000,
+  "settlement_date": "2025-01-15",
+  "data_source": "yahoo_finance",
+  "confidence_level": "high",
+  "last_updated": "2025-01-17T14:30:00Z",
+  "ttl_expires": "2025-02-16T14:30:00Z"
+}
+```
+- **Retry Policy**: Exponential backoff: 1s, 2s, 4s, 8s (max 4 retries)
+- **Latency Budget**: P50: 500ms, P95: 1500ms, P99: 3000ms
+- **Rate Limits**: 10 requests/second, 10,000 daily limit
+
+### Bulk Short Interest API
+- **Endpoint**: `/data/short-interest/bulk`
+- **Authentication**: Internal service
+- **Function Signature**: `get_bulk_short_interest(symbols: List[str]) -> Dict[str, ShortInterestData]`
+- **Schema**:
+```json
+{
+  "symbols_requested": ["VIGL", "QUBT", "CRWV"],
+  "symbols_found": 3,
+  "symbols_cached": 2,
+  "symbols_fresh": 1,
+  "processing_time_ms": 1247,
+  "data": {
+    "VIGL": { /* ShortInterestData object */ },
+    "QUBT": { /* ShortInterestData object */ },
+    "CRWV": { /* ShortInterestData object */ }
+  },
+  "errors": [],
+  "cache_performance": {
+    "hit_rate": 0.67,
+    "avg_age_days": 3.2
+  }
+}
+```
+- **Retry Policy**: Circuit breaker pattern with 5-failure threshold, 5-minute cooldown
+- **Latency Budget**: P50: 2000ms, P95: 5000ms, P99: 10000ms (50 symbols)
+- **Rate Limits**: 25 symbols per request maximum
+
+### FINRA Schedule Service
+- **Endpoint**: `/data/finra/schedule`
+- **Authentication**: Internal service
+- **Function Signature**: `get_finra_schedule() -> FINRAScheduleData`
+- **Schema**:
+```json
+{
+  "next_reporting_date": "2025-01-31",
+  "next_settlement_date": "2025-02-04",
+  "days_until_refresh": 14,
+  "is_reporting_day": false,
+  "should_refresh_today": true,
+  "last_refresh_date": "2025-01-17",
+  "refresh_schedule": {
+    "mandatory_days": ["monday", "wednesday", "friday"],
+    "finra_days": [15, "end_of_month"],
+    "grace_period_hours": 6
+  }
+}
+```
+- **Retry Policy**: 2 attempts with 1-second delay
+- **Latency Budget**: P50: 50ms, P95: 100ms, P99: 200ms
+- **Rate Limits**: 60 requests/minute
+
+## Short Interest Data Enrichers
+
+### Yahoo Finance Data Fetcher
+- **Purpose**: Primary data source for real-time short interest information
+- **Dependencies**: [yfinance library, Redis cache, HTTP connection pool]
+- **Processing Pipeline**:
+  1. Validate symbol format and check cache
+  2. Establish HTTP connection with timeout controls
+  3. Parse Yahoo Finance stock info for short interest metrics  
+  4. Validate and normalize data (convert percentages to decimals)
+  5. Calculate implied values (shares short from percentage * float)
+  6. Store in Redis with appropriate TTL based on data freshness
+- **Error Handling**: 
+  - Network timeouts: Exponential backoff retry
+  - Rate limits: Circuit breaker with cooldown
+  - Invalid data: Log error and use fallback methodology
+  - Symbol not found: Cache negative result to prevent repeated lookups
+
+### Historical Average Calculator
+- **Purpose**: Generate reliable fallback short interest estimates using historical patterns
+- **Dependencies**: [PostgreSQL historical data, Redis cache, Symbol classification service]
+- **Processing Pipeline**:
+  1. Query historical short interest data for symbol (last 90 days)
+  2. Calculate weighted moving average (recent data weighted higher)
+  3. Apply sector-based adjustments for missing symbols
+  4. Generate confidence score based on data availability and volatility
+  5. Store computed averages with moderate TTL (7 days)
+- **Error Handling**: Fall back to sector averages if insufficient historical data
+
+### Sector Average Fallback
+- **Purpose**: Tertiary fallback using industry classification and sector short interest norms
+- **Dependencies**: [Polygon sector classification, Industry short interest benchmarks]
+- **Processing Pipeline**:
+  1. Classify symbol by sector using Polygon reference data
+  2. Retrieve current sector short interest averages
+  3. Apply size-based adjustments (small-cap vs large-cap variations)
+  4. Generate conservative confidence score for estimated data
+  5. Cache sector averages with daily refresh cycle
+- **Error Handling**: Use conservative 15% default if all classification fails
 
 ## Core Trading APIs
 
@@ -202,6 +319,137 @@ This specification defines a comprehensive portfolio health and thesis tracking 
   5. Generate organization metadata
 - **Error Handling**: Fall back to simple P&L sorting if advanced metrics fail
 
+## Short Interest Signal Generators
+
+### Real-Time Short Interest Validator
+- **Calculation Method**:
+```python
+confidence_score = {
+    "high": data_age < 7 and source == "yahoo_finance" and shares_data_complete,
+    "medium": data_age < 14 and source in ["yahoo_finance", "historical_avg"],
+    "low": data_age < 30 or source == "sector_average",
+    "unreliable": data_age > 30 or source == "fallback_default"
+}
+
+validation_score = (
+    data_freshness_factor * 0.40 +    # Recent data weighted heavily
+    source_reliability_factor * 0.30 + # Yahoo Finance > Historical > Sector
+    data_completeness_factor * 0.20 +  # All fields present and valid
+    cross_reference_factor * 0.10      # Matches expected sector patterns
+)
+```
+- **Input Requirements**: [Raw short interest data, Data source, Timestamp, Sector classification]
+- **Update Frequency**: On every data fetch (real-time validation)
+- **Validation Rules**: Must validate against sector norms, flag extreme outliers (>3 standard deviations)
+
+### Discovery Pipeline SI Enricher  
+- **Calculation Method**:
+```python
+# Enhanced squeeze scoring with real SI data
+def calculate_enhanced_squeeze_score(volume_ratio, real_short_interest, float_shares, confidence_level):
+    base_score = calculate_original_squeeze_score(volume_ratio, real_short_interest, float_shares)
+    
+    # Confidence multiplier based on data quality
+    confidence_multiplier = {
+        "high": 1.10,     # 10% boost for high-confidence data
+        "medium": 1.05,   # 5% boost for medium-confidence data
+        "low": 1.00,      # No adjustment for low-confidence data
+        "unreliable": 0.90  # 10% penalty for unreliable data
+    }
+    
+    # Real data available bonus (vs placeholder estimates)
+    real_data_bonus = 0.05 if confidence_level in ["high", "medium"] else 0.00
+    
+    enhanced_score = (base_score * confidence_multiplier[confidence_level]) + real_data_bonus
+    return min(enhanced_score, 1.0)  # Cap at 1.0
+```
+- **Input Requirements**: [VIGL pattern data, Real short interest ratio, Float data, Data confidence level]
+- **Update Frequency**: During discovery pipeline execution (every 5 minutes during market hours)
+- **Validation Rules**: Score enhancement must not exceed 15% of base score, validate SI ratio is 0.0-1.0
+
+### Short Interest Alert Generator
+- **Calculation Method**:
+```python
+# Generate alerts for significant short interest changes
+def generate_si_alerts(symbol, current_si, historical_si, volume_spike):
+    alerts = []
+    
+    # Significant increase in short interest (squeeze setup)
+    if current_si > historical_si * 1.20:  # 20% increase
+        alerts.append({
+            "type": "SHORT_INTEREST_SPIKE",
+            "severity": "HIGH" if current_si > 0.25 else "MEDIUM",
+            "message": f"{symbol}: SI increased to {current_si*100:.1f}% (+{(current_si-historical_si)*100:.1f}%)"
+        })
+    
+    # High SI with volume surge (potential squeeze trigger)
+    if current_si > 0.20 and volume_spike > 5.0:  # >20% SI + >5x volume
+        alerts.append({
+            "type": "SQUEEZE_TRIGGER_DETECTED", 
+            "severity": "EXTREME",
+            "message": f"{symbol}: {current_si*100:.1f}% SI + {volume_spike:.1f}x volume = SQUEEZE RISK"
+        })
+    
+    return alerts
+```
+- **Input Requirements**: [Current short interest, Historical baseline, Volume surge ratio, Market context]
+- **Update Frequency**: Real-time during market hours when SI data updates
+- **Validation Rules**: Alerts must include severity level, validate against false positive patterns
+
+### Cache Performance Optimizer
+- **Calculation Method**:
+```python
+# Dynamic TTL calculation based on data quality and market conditions
+def calculate_optimal_ttl(data_source, data_age, symbol_volatility, market_conditions):
+    base_ttl = {
+        "yahoo_finance": 2592000,    # 30 days for fresh Yahoo data
+        "historical_avg": 1209600,   # 14 days for computed averages  
+        "sector_average": 604800,    # 7 days for sector estimates
+        "fallback_default": 3600     # 1 hour for emergency defaults
+    }
+    
+    # Adjust for data staleness
+    staleness_factor = max(0.1, 1.0 - (data_age / 30))  # Reduce TTL for stale data
+    
+    # Adjust for symbol volatility (high volatility = shorter cache)
+    volatility_factor = max(0.5, 1.0 - symbol_volatility)
+    
+    # Market condition adjustment (volatile markets = shorter cache)
+    market_factor = 0.7 if market_conditions == "high_volatility" else 1.0
+    
+    optimal_ttl = base_ttl[data_source] * staleness_factor * volatility_factor * market_factor
+    return int(optimal_ttl)
+```
+- **Input Requirements**: [Data source type, Data age in days, Symbol volatility score, Market conditions]
+- **Update Frequency**: On every cache store operation
+- **Validation Rules**: TTL must be between 1 hour and 30 days, validate market conditions enum
+
+## Enhanced Integration Architecture  
+
+### Discovery Pipeline Integration
+- **Integration Point**: `backend/src/jobs/discover.py` lines 1112-1121
+- **Data Flow**: Discovery job → ShortInterestService → Real SI data → Enhanced squeeze scoring
+- **Performance Impact**: < 2 seconds additional latency, >95% cache hit rate target
+- **Fallback Strategy**: Continue with conservative 15% default if service unavailable
+
+### SqueezeDetector Enhancement  
+- **Integration Point**: `backend/src/services/squeeze_detector.py` lines 118-124
+- **Enhanced Logic**: Real short interest data replaces hardcoded 25-30% defaults
+- **Confidence Scoring**: Data quality impacts final squeeze score (±15% adjustment)
+- **Pattern Validation**: Cross-reference SI data with historical squeeze patterns
+
+### Frontend Data Pipeline
+- **API Updates**: `/discovery/squeeze-candidates` returns real SI data with metadata
+- **Response Enhancement**: Include data source, confidence level, settlement date
+- **UI Integration**: Replace "25.0% short interest" placeholders with dynamic values
+- **Error Handling**: Graceful fallback display when real data unavailable
+
+### Redis Caching Integration
+- **Cache Strategy**: Hierarchical caching with dynamic TTL based on data quality
+- **Key Namespace**: `amc:short_interest:*` for all SI-related cache data
+- **Memory Management**: Target <100MB total cache size for 5000 symbols
+- **Performance Monitoring**: Track hit rates, latency, memory usage
+
 ## Signal Generators
 
 ### Portfolio Health Score Generator
@@ -337,7 +585,37 @@ decision_value = {
 
 ## Testing Requirements
 
-### Unit Test Specifications
+### Short Interest Service Testing Specifications
+- **Data Fetcher Tests**:
+  ```python
+  test_yahoo_finance_data_fetch_success()
+  test_yahoo_finance_timeout_retry_logic()
+  test_yahoo_finance_rate_limit_handling() 
+  test_data_validation_and_normalization()
+  test_cache_hit_miss_scenarios()
+  test_fallback_chain_execution()
+  test_historical_average_calculation()
+  test_sector_average_fallback()
+  ```
+- **Integration Tests**:
+  ```python
+  test_discovery_pipeline_si_integration()
+  test_squeeze_detector_enhanced_scoring()
+  test_redis_cache_performance_requirements()
+  test_finra_schedule_date_calculation()
+  test_bulk_request_processing()
+  test_circuit_breaker_functionality()
+  test_error_handling_and_graceful_degradation()
+  ```
+- **Load Tests**:
+  ```python
+  test_concurrent_api_calls_under_load()
+  test_cache_memory_usage_under_stress()
+  test_api_latency_under_sustained_load() 
+  test_discovery_pipeline_performance_impact()
+  ```
+
+### Unit Test Specifications  
 - **Health Calculator Tests**:
   ```python
   test_portfolio_health_calculation()
@@ -366,6 +644,39 @@ decision_value = {
 - **Mock Learning System**: Outcome tracking and decision logging simulation
 
 ## Monitoring and Observability
+
+### Short Interest Data Monitoring
+
+#### Key Performance Indicators
+- **Data Quality Metrics**:
+  - Short interest cache hit rate: Target >90%
+  - Data freshness average: Target <7 days
+  - API success rate: Target >95%
+  - Confidence level distribution: Monitor "high"/"medium" vs "low"/"unreliable"
+  
+- **Performance Metrics**:
+  - API response latency: P95 <1500ms
+  - Discovery pipeline SI coverage: Target >80% of symbols with real data
+  - Cache memory usage: Target <100MB
+  - Fallback usage rate: Target <20%
+
+#### Alert Configuration
+```python
+ALERT_THRESHOLDS = {
+    "cache_hit_rate_low": {"threshold": 0.85, "duration": "5m"},
+    "api_success_rate_low": {"threshold": 0.90, "duration": "2m"}, 
+    "data_freshness_high": {"threshold": 10.0, "duration": "1d"},  # days
+    "circuit_breaker_open": {"threshold": 1, "duration": "1m"},
+    "fallback_usage_high": {"threshold": 0.30, "duration": "10m"},
+    "discovery_si_coverage_low": {"threshold": 0.70, "duration": "15m"}
+}
+```
+
+#### Operational Dashboards
+- **Short Interest Data Health**: Real-time cache performance, API status, data quality scores
+- **Discovery Pipeline Enhancement**: SI data coverage per discovery run, squeeze score improvements
+- **Service Reliability**: Error rates, circuit breaker status, fallback activation frequency
+- **Data Source Performance**: Yahoo Finance API latency/success, historical vs fresh data usage
 
 ### Health Score Monitoring
 - **Portfolio Health Alerts**: < 70 score triggers review, < 50 triggers intervention
@@ -431,7 +742,37 @@ decision_value = {
 - Learning system feedback loops
 - Production deployment and monitoring
 
+## Implementation Phases
+
+### Phase 0: Short Interest Data Integration (Week 1-2)
+- Implement ShortInterestService with Yahoo Finance integration
+- Deploy Redis caching with hierarchical fallback strategy
+- Integrate real SI data into discovery pipeline
+- Replace hardcoded 30% defaults with dynamic data
+- Comprehensive testing and performance validation
+
+### Phase 0.5: Discovery Enhancement (Week 2-3)  
+- Enhanced SqueezeDetector with real SI confidence scoring
+- Frontend API updates to display real short interest percentages
+- FINRA schedule integration for optimal refresh timing
+- Monitoring dashboard deployment for SI data quality
+- Production rollout with feature flags and rollback capability
+
 ## Success Metrics
+
+### Short Interest Data Quality Improvements
+- **Data Accuracy**: >80% of discovery candidates use real FINRA data (vs 0% placeholder)
+- **Cache Performance**: >90% cache hit rate during market hours  
+- **Data Freshness**: <7 days average age for short interest data
+- **Service Reliability**: >99% uptime during market hours with <1500ms P95 latency
+- **Discovery Enhancement**: >15% improvement in squeeze detection accuracy
+
+### Business Impact Validation
+- **User Experience**: Eliminate "placeholder short interest" complaints
+- **Squeeze Detection Quality**: More accurate ranking based on real SI data
+- **System Performance**: <10% discovery pipeline latency increase
+- **Data Confidence**: 70%+ of displayed short interest marked as "high confidence"
+- **Frontend Integration**: Real-time SI data displayed with source attribution
 
 ### Portfolio Management Effectiveness
 - **Health Score Accuracy**: 80%+ correlation with actual portfolio performance
