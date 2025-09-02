@@ -775,6 +775,12 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
             }
             g = await _poly_get(client, f"/v2/aggs/grouped/locale/us/market/stocks/{date}", params=params)
         rows = g.get("results") or []
+        
+        # If Polygon returns no data, raise exception to trigger fallback
+        if not rows:
+            logger.warning(f"Polygon API returned no results for date {date}, triggering fallback")
+            raise Exception("No data from Polygon grouped API")
+            
         # BULK FILTERING: Apply all cheap filters at once to eliminate 90%+ of universe
         pcap = PRICE_CAP * (1.2 if relaxed else 1.0)  # allow slight slack in relaxed mode
         dvmin = MIN_DOLLAR_VOL * (0.5 if relaxed else 1.0)
