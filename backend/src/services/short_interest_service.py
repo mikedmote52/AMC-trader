@@ -113,7 +113,7 @@ class ShortInterestService:
         
         # Fill remaining gaps with fallbacks
         for symbol in symbols:
-            if symbol not in cached_results:
+            if symbol not in cached_results or cached_results[symbol] is None:
                 cached_results[symbol] = await self._get_fallback_short_interest(symbol)
         
         return cached_results
