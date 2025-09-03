@@ -4,12 +4,15 @@ import json
 import importlib
 import math
 import os
+import logging
+from datetime import datetime, timezone
 from backend.src.shared.redis_client import get_redis_client
 from backend.src.services.squeeze_detector import SqueezeDetector
 from ..services.short_interest_service import get_short_interest_service
 from ..services.short_interest_validator import get_short_interest_validator
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Redis keys
 V2_CONT = "amc:discovery:v2:contenders.latest"
@@ -37,8 +40,58 @@ def _load_selector():
 
 @router.get("/contenders")
 async def get_contenders():
+    """
+    CRITICAL: Returns fresh discovery data ONLY
+    Fails with empty list if data is stale (>5 minutes old)
+    """
     r = get_redis_client()
-    items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
+    
+    # Check data freshness FIRST
+    status = _get_json(r, STATUS)
+    if status:
+        last_run = status.get('last_run')
+        if last_run:
+            try:
+                from datetime import datetime
+                last_run_time = datetime.fromisoformat(last_run.replace('Z', '+00:00'))
+                age_seconds = (datetime.now(timezone.utc) - last_run_time).total_seconds()
+                
+                # CRITICAL: Reject data older than 5 minutes
+                if age_seconds > 300:
+                    logger.warning(f"❌ Discovery data is {age_seconds:.0f}s old - TOO STALE! Returning empty.")
+                    return []
+            except:
+                pass
+    
+    # Get candidates but validate freshness
+    items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT)
+    
+    if not items:
+        logger.error("❌ No discovery data available - returning empty list")
+        return []
+    
+    # Validate we have real data, not stale fallback
+    if len(items) == 33:  # Suspicious - likely stale fallback data
+        logger.warning("⚠️ Detected possible stale fallback data (exactly 33 items) - verifying...")
+        # Check if any item has a timestamp
+        has_fresh_timestamp = False
+        for item in items:
+            if isinstance(item, dict) and item.get('timestamp'):
+                try:
+                    from datetime import datetime
+                    item_time = datetime.fromisoformat(item['timestamp'])
+                    age = (datetime.now() - item_time).total_seconds()
+                    if age < 300:  # Less than 5 minutes old
+                        has_fresh_timestamp = True
+                        break
+                except:
+                    pass
+        
+        if not has_fresh_timestamp:
+            logger.error("❌ Data appears to be stale fallback - returning empty!")
+            return []
+    
+    # Process items
     for it in items:
         if isinstance(it, dict):
             # Ensure score exists (0..100) and set confidence = score/100 if missing
@@ -46,6 +99,7 @@ async def get_contenders():
                 it["score"] = 0
             if "confidence" not in it:
                 it["confidence"] = it["score"] / 100.0
+    
     return items
 
 @router.get("/short-interest")
@@ -637,6 +691,28 @@ async def trigger_discovery(limit: int = Query(10), relaxed: bool = Query(False)
             "stages": trace.get("stages", [])
         }
         r.set(V1_TRACE, json.dumps(trace_data), ex=600)
+        
+        # MONITORING INTEGRATION - Zero disruption monitoring
+        try:
+            from ..services.discovery_monitor import get_discovery_monitor
+            from ..services.recommendation_tracker import get_recommendation_tracker
+            
+            # Track discovery pipeline flow (non-blocking)
+            monitor = get_discovery_monitor()
+            flow_stats = await monitor.track_discovery_run(trace, items)
+            
+            # Track all recommendations for learning (non-blocking)
+            tracker = get_recommendation_tracker()
+            for item in items:
+                if isinstance(item, dict) and item.get('symbol'):
+                    await tracker.save_recommendation(item, from_portfolio=False)
+                    
+        except Exception as monitor_error:
+            # Monitoring errors don't break discovery - just log them
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Discovery monitoring error (non-critical): {monitor_error}")
+        # END MONITORING INTEGRATION
         r.set(V2_TRACE, json.dumps(trace_data), ex=600)
         
         # Store status for diagnostics
