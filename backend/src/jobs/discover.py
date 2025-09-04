@@ -1861,7 +1861,7 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         # Strategy-specific processing
         if current_strategy == 'hybrid_v1':
             # Hybrid V1 strategy with enhanced gatekeeping
-            gate_passed, gate_reason = _hybrid_v1_gate_check(candidate, strategy_config)
+            gate_passed, gate_reason = _hybrid_v1_gate_check(candidate, _calibration.get('scoring', {}).get('hybrid_v1', {}))
             
             if not gate_passed:
                 strategy_rejected.append({
