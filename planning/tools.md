@@ -1,366 +1,727 @@
-# AMC-TRADER Tools Specification: Short Interest Data Accuracy Enhancement
+# AMC-TRADER Monitoring and Learning Infrastructure Specification
 
-## Executive Summary
+## Overview
 
-Critical data accuracy issue identified: Yahoo Finance integration shows UP stock with 0.09% short interest, but external sources (Fintel, Benzinga) show 9.34% short interest - a **100x difference**! This undermines squeeze detection accuracy and requires immediate architectural enhancement.
+This specification defines comprehensive monitoring and learning infrastructure for AMC-TRADER focused on discovery pipeline tracking, learning system integration, buy-the-dip detection, and intelligent alerting. The system builds upon existing components while ensuring no disruption to current functionality.
 
-## Root Cause Analysis
+## 1. Discovery Pipeline Monitoring
 
-### Yahoo Finance API Issues (2024-2025)
+### 1.1 Real-time Flow Tracking API
 
-**Problem**: `yfinance` library `shortPercentOfFloat` field returning incorrect/missing data
-- **Current Implementation**: `info.get('shortPercentOfFloat')` returns `0.0009` (0.09%) for UP stock
-- **External Sources**: Show `9.34%` short interest with 8.43M shares short
-- **Impact**: 100x data discrepancy causing false negative squeeze signals
+**Endpoint**: `GET /monitoring/discovery/pipeline`
+**Function Signature**: `get_pipeline_status() -> PipelineStatusResponse`
 
-**Technical Root Causes**:
-1. **API Fragility**: Yahoo Finance API became unofficial after 2017 shutdown
-2. **HTML Scraping Dependencies**: yfinance relies on web scraping prone to layout changes
-3. **Field Mapping Issues**: `shortPercentOfFloat` may be returning raw decimal vs percentage
-4. **Data Freshness**: Yahoo may serve stale or cached data vs real FINRA reporting
-5. **Backend Changes**: Yahoo's internal API modifications affecting data availability
-
-## Core Trading APIs Enhancement
-
-### ShortInterestService V2 (Enhanced)
-
-**Purpose**: Replace unreliable Yahoo Finance with multi-source hierarchical data validation
-
-**Function Signature**: 
-```python
-async def get_enhanced_short_interest(symbol: str) -> ShortInterestDataV2
-async def get_bulk_short_interest_validated(symbols: List[str]) -> Dict[str, ShortInterestDataV2]
-async def validate_short_interest_accuracy(symbol: str, sources: List[str]) -> ValidationReport
-```
-
-**Enhanced Schema**:
 ```json
 {
-  "type": "object",
-  "properties": {
-    "symbol": {"type": "string"},
-    "short_percent_float": {"type": "number", "minimum": 0, "maximum": 1},
-    "short_ratio": {"type": "number", "minimum": 0},
-    "shares_short": {"type": "integer", "minimum": 0},
-    "float_shares": {"type": "integer", "minimum": 0},
-    "settlement_date": {"type": "string", "format": "date-time"},
-    "source_consensus": {
-      "type": "object",
-      "properties": {
-        "primary_source": {"type": "string"},
-        "validation_sources": {"type": "array", "items": {"type": "string"}},
-        "consensus_confidence": {"type": "number", "minimum": 0, "maximum": 1},
-        "data_agreement": {"type": "number", "minimum": 0, "maximum": 1},
-        "outlier_detection": {"type": "boolean"}
-      }
+  "pipeline_id": "discovery_20250903_143022",
+  "status": "running|completed|failed",
+  "start_time": "2025-09-03T14:30:22Z",
+  "end_time": "2025-09-03T14:35:18Z",
+  "stages": [
+    {
+      "stage_name": "universe_loading",
+      "status": "completed",
+      "symbols_input": 2847,
+      "symbols_output": 2847,
+      "duration_ms": 245,
+      "errors": []
     },
-    "validation_metadata": {
-      "type": "object",
-      "properties": {
-        "sources_checked": {"type": "integer"},
-        "sources_agreeing": {"type": "integer"},
-        "max_variance": {"type": "number"},
-        "data_quality_score": {"type": "number", "minimum": 0, "maximum": 1}
+    {
+      "stage_name": "price_filtering",
+      "status": "completed", 
+      "symbols_input": 2847,
+      "symbols_output": 1249,
+      "criteria": {
+        "price_min": 0.01,
+        "price_max": 10.00,
+        "eliminated_count": 1598,
+        "elimination_reasons": {
+          "price_too_high": 1432,
+          "price_too_low": 166
+        }
+      },
+      "duration_ms": 1823,
+      "errors": []
+    },
+    {
+      "stage_name": "volume_filtering",
+      "status": "completed",
+      "symbols_input": 1249,
+      "symbols_output": 87,
+      "criteria": {
+        "volume_spike_min": 10.0,
+        "volume_spike_target": 20.9,
+        "eliminated_count": 1162,
+        "elimination_reasons": {
+          "insufficient_volume_spike": 1162
+        }
+      },
+      "duration_ms": 3456,
+      "errors": []
+    },
+    {
+      "stage_name": "squeeze_detection",
+      "status": "completed",
+      "symbols_input": 87,
+      "symbols_output": 12,
+      "criteria": {
+        "vigl_threshold": 0.65,
+        "wolf_risk_max": 0.5,
+        "eliminated_count": 75,
+        "elimination_reasons": {
+          "low_vigl_score": 42,
+          "high_wolf_risk": 33
+        }
+      },
+      "duration_ms": 2145,
+      "errors": []
+    },
+    {
+      "stage_name": "final_ranking",
+      "status": "completed",
+      "symbols_input": 12,
+      "symbols_output": 8,
+      "final_candidates": [
+        {
+          "symbol": "QUBT",
+          "composite_score": 8.7,
+          "vigl_score": 0.78,
+          "volume_spike_ratio": 23.4,
+          "price": 2.94,
+          "elimination_stage": null
+        }
+      ],
+      "duration_ms": 567,
+      "errors": []
+    }
+  ],
+  "pipeline_health_score": 0.95,
+  "fallback_detected": false,
+  "total_duration_ms": 8236
+}
+```
+
+**Authentication**: Bearer token from existing system
+**Rate Limits**: 100 requests/minute
+**Latency Budget**: P50: <500ms, P95: <1500ms, P99: <3000ms
+
+### 1.2 Pipeline Health Monitoring Service
+
+**Class**: `DiscoveryPipelineMonitor`
+**Function Signature**: `monitor_pipeline_execution(pipeline_run: PipelineRun) -> HealthMetrics`
+
+**Retry Policy**:
+- Exponential backoff: 1s, 2s, 4s, 8s
+- Circuit breaker: 5 failures in 60 seconds triggers 5-minute cooldown
+- Fallback: Return cached health metrics if monitoring fails
+
+**Error Handling**:
+```python
+class PipelineMonitoringError(Exception):
+    pass
+
+class PipelineHealthAlert(Exception):
+    severity: str  # INFO, WARNING, CRITICAL, EMERGENCY
+    component: str
+    message: str
+    recommended_action: str
+```
+
+### 1.3 Alert System for Pipeline Failures
+
+**Endpoint**: `POST /monitoring/discovery/alerts`
+**Function Signature**: `trigger_pipeline_alert(alert: PipelineAlert) -> AlertResponse`
+
+```json
+{
+  "alert_id": "discovery_failure_20250903_143045",
+  "severity": "CRITICAL",
+  "component": "volume_filtering",
+  "title": "Discovery Pipeline Failure",
+  "message": "Volume filtering stage failed - no candidates found for 3 consecutive runs",
+  "details": {
+    "pipeline_run_id": "discovery_20250903_143022",
+    "failed_stage": "volume_filtering",
+    "error_code": "NO_VOLUME_SPIKE_CANDIDATES",
+    "consecutive_failures": 3,
+    "last_successful_run": "2025-09-03T14:15:22Z"
+  },
+  "recommended_actions": [
+    "Check volume spike thresholds - current: 10.0x minimum",
+    "Verify Polygon API data quality",
+    "Consider temporary threshold relaxation"
+  ],
+  "escalation_required": true,
+  "created_at": "2025-09-03T14:30:45Z"
+}
+```
+
+## 2. Learning System Integration
+
+### 2.1 Recommendation Tracking API
+
+**Endpoint**: `POST /learning/recommendations/track`
+**Function Signature**: `track_recommendation(recommendation: RecommendationData) -> TrackingResponse`
+
+```json
+{
+  "tracking_id": "rec_track_20250903_QUBT_143045",
+  "symbol": "QUBT",
+  "discovery_date": "2025-09-03T14:30:45Z",
+  "recommendation_data": {
+    "composite_score": 8.7,
+    "vigl_score": 0.78,
+    "volume_spike_ratio": 23.4,
+    "price_at_discovery": 2.94,
+    "thesis": "Explosive volume surge with tight squeeze metrics matching VIGL pattern",
+    "confidence": 0.87,
+    "pattern_features": {
+      "atr_pct": 0.085,
+      "momentum_5d": 0.34,
+      "compression_pct": 0.22,
+      "wolf_risk": 0.31
+    }
+  },
+  "bought": false,
+  "tracking_period_days": 30,
+  "performance_checkpoints": [1, 7, 14, 30],
+  "alert_thresholds": {
+    "missed_opportunity_pct": 25.0,
+    "major_move_pct": 50.0
+  }
+}
+```
+
+### 2.2 Performance Monitoring Service
+
+**Class**: `RecommendationPerformanceTracker`
+**Function Signature**: `track_30day_performance(tracking_id: str) -> PerformanceData`
+
+**Database Schema**:
+```sql
+CREATE TABLE recommendation_tracking (
+    tracking_id VARCHAR(50) PRIMARY KEY,
+    symbol VARCHAR(10) NOT NULL,
+    discovery_date TIMESTAMP NOT NULL,
+    discovery_price DECIMAL(10,4) NOT NULL,
+    composite_score FLOAT NOT NULL,
+    vigl_score FLOAT NOT NULL,
+    pattern_features JSONB NOT NULL,
+    bought BOOLEAN DEFAULT false,
+    
+    -- Performance tracking
+    price_1d DECIMAL(10,4),
+    price_7d DECIMAL(10,4), 
+    price_14d DECIMAL(10,4),
+    price_30d DECIMAL(10,4),
+    
+    return_1d DECIMAL(8,4),
+    return_7d DECIMAL(8,4),
+    return_14d DECIMAL(8,4),
+    return_30d DECIMAL(8,4),
+    
+    peak_price DECIMAL(10,4),
+    peak_return DECIMAL(8,4),
+    days_to_peak INTEGER,
+    max_drawdown DECIMAL(8,4),
+    
+    -- Learning classification
+    outcome_category VARCHAR(20), -- explosive, strong, moderate, poor, failed
+    missed_opportunity BOOLEAN DEFAULT false,
+    learning_notes TEXT,
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_rec_tracking_symbol ON recommendation_tracking(symbol);
+CREATE INDEX idx_rec_tracking_discovery_date ON recommendation_tracking(discovery_date);
+CREATE INDEX idx_rec_tracking_outcome ON recommendation_tracking(outcome_category);
+CREATE INDEX idx_rec_tracking_bought ON recommendation_tracking(bought);
+```
+
+### 2.3 Missed Opportunity Alert System
+
+**Endpoint**: `GET /learning/missed-opportunities`
+**Function Signature**: `get_missed_opportunities(days_back: int = 7) -> List[MissedOpportunity]`
+
+```json
+{
+  "missed_opportunities": [
+    {
+      "tracking_id": "rec_track_20250901_CRWV_091234",
+      "symbol": "CRWV", 
+      "discovery_date": "2025-09-01T09:12:34Z",
+      "discovery_price": 1.85,
+      "peak_price": 4.32,
+      "peak_return_pct": 133.5,
+      "days_to_peak": 3,
+      "composite_score": 7.2,
+      "vigl_score": 0.71,
+      "why_missed": "Below composite score threshold (7.5 required)",
+      "learning_opportunity": "Consider lowering composite threshold during high-volume periods",
+      "similar_patterns": ["VIGL_20240615", "AEVA_20240722"],
+      "recommended_action": "Add CRWV pattern to explosive winner training data"
+    }
+  ],
+  "summary": {
+    "total_missed": 3,
+    "total_potential_return": 287.3,
+    "avg_discovery_to_peak_days": 4.2,
+    "pattern_insights": [
+      "3/3 missed opportunities had volume spikes >15x average",
+      "2/3 had VIGL scores >0.7 but below current threshold",
+      "All occurred in $1-3 price range"
+    ]
+  }
+}
+```
+
+## 3. Buy-the-Dip Detection
+
+### 3.1 Portfolio Holdings Monitoring
+
+**Endpoint**: `GET /dip-detection/portfolio-analysis`
+**Function Signature**: `analyze_portfolio_dips() -> DipAnalysisResponse`
+
+```json
+{
+  "analysis_timestamp": "2025-09-03T14:30:45Z",
+  "portfolio_positions": [
+    {
+      "symbol": "QUBT",
+      "current_price": 2.45,
+      "entry_price": 2.94,
+      "current_return_pct": -16.7,
+      "position_size_usd": 1500.00,
+      "days_held": 5,
+      "original_thesis": "Explosive volume surge with tight squeeze metrics matching VIGL pattern",
+      "thesis_strength": "STRONG",
+      "dip_analysis": {
+        "is_dip_buy_candidate": true,
+        "dip_severity": "MODERATE",
+        "thesis_still_valid": true,
+        "catalyst_timeline": "Expected move within 7-14 days",
+        "support_levels": [2.40, 2.20, 1.95],
+        "resistance_levels": [2.85, 3.25, 3.70],
+        "volume_analysis": "Still above 5x average - thesis intact",
+        "risk_reward_ratio": 3.2,
+        "recommended_action": "BUY_MORE",
+        "recommended_size_pct": 0.15,
+        "max_dip_allocation": 2500.00
       }
+    }
+  ],
+  "summary": {
+    "total_positions": 8,
+    "dip_buy_candidates": 3,
+    "strong_thesis_positions": 5,
+    "total_dip_opportunity_usd": 3750.00
+  }
+}
+```
+
+### 3.2 Thesis Strength Evaluation Service
+
+**Class**: `ThesisStrengthEvaluator`
+**Function Signature**: `evaluate_thesis_strength(symbol: str, original_thesis: str) -> ThesisEvaluation`
+
+**Processing Pipeline**:
+1. Fetch current market conditions
+2. Analyze volume patterns vs thesis predictions
+3. Check catalyst timeline progress
+4. Evaluate technical pattern integrity
+5. Cross-reference with similar historical patterns
+6. Generate strength score (0.0-1.0)
+
+**Schema for Thesis Tracking**:
+```sql
+CREATE TABLE thesis_strength_history (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(10) NOT NULL,
+    evaluation_date TIMESTAMP NOT NULL,
+    original_thesis TEXT NOT NULL,
+    thesis_date TIMESTAMP NOT NULL,
+    strength_score DECIMAL(4,3) NOT NULL,
+    
+    -- Evaluation factors
+    volume_thesis_match DECIMAL(4,3),
+    catalyst_timeline_status VARCHAR(20),
+    technical_pattern_integrity DECIMAL(4,3),
+    market_regime_alignment DECIMAL(4,3),
+    
+    -- Current conditions
+    current_price DECIMAL(10,4),
+    entry_price DECIMAL(10,4),
+    volume_vs_avg DECIMAL(8,2),
+    days_since_entry INTEGER,
+    
+    evaluation_notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### 3.3 Buy-More Alert Generation
+
+**Endpoint**: `POST /dip-detection/alerts/buy-more`
+**Function Signature**: `generate_buy_more_alert(dip_candidate: DipCandidate) -> BuyMoreAlert`
+
+```json
+{
+  "alert_id": "buy_more_QUBT_20250903_143045",
+  "alert_type": "BUY_MORE_OPPORTUNITY",
+  "symbol": "QUBT",
+  "priority": "HIGH",
+  "current_price": 2.45,
+  "entry_price": 2.94,
+  "dip_percentage": -16.7,
+  "thesis_validation": {
+    "original_thesis": "Explosive volume surge with tight squeeze metrics matching VIGL pattern",
+    "thesis_strength": "STRONG",
+    "validation_factors": [
+      "Volume still 12.5x average (thesis: >10x) ✓",
+      "Short interest increased to 22% (thesis: >18%) ✓", 
+      "Float remains tight at 15.2M shares ✓",
+      "No fundamental deterioration detected ✓"
+    ],
+    "invalidating_factors": []
+  },
+  "buy_more_recommendation": {
+    "recommended_action": "BUY_MORE",
+    "confidence": 0.82,
+    "recommended_size_usd": 225.00,
+    "recommended_size_pct": 15.0,
+    "price_targets": {
+      "support_level": 2.40,
+      "entry_range_low": 2.35,
+      "entry_range_high": 2.50
+    },
+    "risk_management": {
+      "stop_loss": 2.15,
+      "take_profit_1": 3.25,
+      "take_profit_2": 4.15,
+      "max_position_size_usd": 2500.00,
+      "risk_reward_ratio": 3.2
+    }
+  },
+  "catalyst_timeline": "Expected catalyst within 7-14 days based on pattern analysis",
+  "historical_precedent": "Similar to VIGL pattern day 5-7 before +324% move",
+  "created_at": "2025-09-03T14:30:45Z"
+}
+```
+
+## 4. Alert System Architecture
+
+### 4.1 Multi-Channel Alert Delivery
+
+**Service**: `AlertDistributionService`
+**Channels**: WebSocket, HTTP Push, Database Storage, Redis Pub/Sub
+
+**Function Signature**: `distribute_alert(alert: Alert, channels: List[str]) -> DistributionResult`
+
+**WebSocket Schema**:
+```json
+{
+  "type": "alert",
+  "channel": "discovery|learning|dip_detection|system_health",
+  "severity": "INFO|WARNING|CRITICAL|EMERGENCY",
+  "alert_data": {
+    // Specific alert payload based on type
+  },
+  "timestamp": "2025-09-03T14:30:45Z",
+  "requires_acknowledgment": true
+}
+```
+
+### 4.2 Alert Aggregation and Prioritization
+
+**Endpoint**: `GET /alerts/dashboard`
+**Function Signature**: `get_alert_dashboard() -> AlertDashboard`
+
+```json
+{
+  "dashboard_timestamp": "2025-09-03T14:30:45Z",
+  "alert_summary": {
+    "total_active_alerts": 7,
+    "critical_alerts": 2,
+    "warning_alerts": 3,
+    "info_alerts": 2,
+    "unacknowledged_alerts": 4
+  },
+  "priority_alerts": [
+    {
+      "alert_id": "discovery_failure_20250903_143045",
+      "severity": "CRITICAL",
+      "component": "Discovery Pipeline",
+      "message": "Volume filtering stage failed - no candidates found",
+      "age_minutes": 15,
+      "requires_immediate_action": true,
+      "estimated_revenue_impact_usd": 2500.00
+    }
+  ],
+  "alert_categories": {
+    "discovery_health": {
+      "active_count": 3,
+      "trend": "worsening",
+      "last_24h_count": 12
+    },
+    "learning_opportunities": {
+      "active_count": 2,
+      "missed_opportunities_value_usd": 1250.00,
+      "trend": "stable"
+    },
+    "buy_the_dip": {
+      "active_count": 2,
+      "total_opportunity_usd": 3750.00,
+      "highest_confidence": 0.87
     }
   }
 }
 ```
 
-**Multi-Source Data Hierarchy**:
-1. **FINRA Official** (Authoritative, Bi-monthly)
-2. **Benzinga API** (Professional, Real-time)
-3. **ORTEX** (Institutional Grade, $149/month)
-4. **S3 Partners** (Leading Industry Source)
-5. **Free Web Scraping** (Fintel, Yahoo, MarketWatch, NASDAQ)
-6. **Intelligent Estimation** (Sector-based fallback)
+### 4.3 Alert Routing and Escalation
 
-**Retry Policy**:
-```python
-RETRY_CONFIG = {
-    'max_attempts': 3,
-    'base_delay': 1.0,  # seconds
-    'max_delay': 10.0,
-    'exponential_base': 2.0,
-    'jitter': True,
-    'retryable_errors': [
-        'ConnectionTimeoutError',
-        'RateLimitError',
-        'TemporaryAPIError',
-        'HTTPError_5xx'
-    ],
-    'non_retryable_errors': [
-        'AuthenticationError',
-        'InvalidSymbolError',
-        'PermanentAPIError'
-    ]
+**Configuration**:
+```json
+{
+  "alert_routing_rules": [
+    {
+      "condition": "severity == 'EMERGENCY'",
+      "channels": ["websocket", "push_notification", "email"],
+      "escalation_delay_minutes": 0
+    },
+    {
+      "condition": "severity == 'CRITICAL' AND component == 'discovery'",
+      "channels": ["websocket", "database"],
+      "escalation_delay_minutes": 5,
+      "escalation_channels": ["push_notification"]
+    },
+    {
+      "condition": "alert_type == 'MISSED_OPPORTUNITY' AND potential_return > 50.0",
+      "channels": ["websocket", "database"],
+      "escalation_delay_minutes": 15
+    }
+  ],
+  "escalation_chain": [
+    {
+      "level": 1,
+      "delay_minutes": 5,
+      "channels": ["push_notification"]
+    },
+    {
+      "level": 2, 
+      "delay_minutes": 15,
+      "channels": ["email", "sms"]
+    }
+  ]
 }
 ```
 
-**Latency Budget**:
-- P50: 500ms (single symbol)
-- P95: 2000ms (single symbol)  
-- P99: 5000ms (single symbol)
-- Bulk (10 symbols): P95 < 8000ms
+## 5. Integration Points
 
-**Rate Limits**:
-- Yahoo Finance: 1 request/second
-- Benzinga API: 100 requests/minute
-- ORTEX: 60 requests/minute
-- FINRA: 10 requests/minute
-- Web Scraping: 0.5 requests/second
+### 5.1 Existing System Integration
 
-## Data Enrichers
+**Discovery Job Integration**:
+- Hook into existing `discover.py` pipeline stages
+- Add monitoring wrapper around `select_candidates()` function
+- Preserve existing Redis cache keys and API contracts
 
-### ShortInterestValidationEnricher
+**Database Integration**:
+- Extend existing `recommendations` table with tracking fields
+- Add new monitoring tables alongside existing schema
+- Use existing connection pool and transaction patterns
 
-**Purpose**: Cross-validate short interest data across multiple sources
-**Dependencies**: All short interest data sources
-**Processing Pipeline**:
-1. **Parallel Fetch**: Query 3-5 sources simultaneously
-2. **Consensus Analysis**: Calculate median, detect outliers
-3. **Confidence Scoring**: Weight by source reliability and agreement
-4. **Fallback Logic**: Progressive degradation when sources fail
+**API Integration**:
+- Add new routes to existing FastAPI routers
+- Use existing authentication middleware
+- Maintain existing response formats with extensions
 
-**Error Handling Strategy**:
+### 5.2 Data Flow Integration Points
+
 ```python
-class ValidationStrategy:
-    def handle_source_failure(self, source: str, error: Exception):
-        if isinstance(error, RateLimitError):
-            return self.exponential_backoff(source)
-        elif isinstance(error, DataParseError):
-            return self.try_alternative_parser(source)
-        elif isinstance(error, AuthenticationError):
-            return self.disable_source_temporarily(source)
-        else:
-            return self.log_and_continue(source, error)
-```
-
-### DataQualityEnricher  
-
-**Purpose**: Monitor and alert on data quality issues like the UP stock 100x discrepancy
-**Processing Pipeline**:
-1. **Variance Detection**: Flag when sources disagree by >50%
-2. **Historical Comparison**: Compare against last-known-good values
-3. **Outlier Analysis**: Statistical detection of anomalous readings
-4. **Alert Generation**: Real-time notifications for data quality issues
-
-## Signal Generators
-
-### ShortSqueezePotentialSignal
-
-**Calculation Method**:
-```python
-def calculate_squeeze_potential(data: ShortInterestDataV2) -> float:
-    """Enhanced squeeze scoring with validated data"""
-    # Base short interest score (validated data)
-    si_score = min(data.short_percent_float / 0.30, 1.0)  # 30% = max score
+# Example integration wrapper for existing discovery job
+class MonitoredDiscoveryPipeline:
+    def __init__(self, original_discovery_func):
+        self.original_func = original_discovery_func
+        self.monitor = DiscoveryPipelineMonitor()
+        self.tracker = RecommendationPerformanceTracker()
     
-    # Data quality adjustment
-    quality_multiplier = data.validation_metadata.data_quality_score
-    
-    # Consensus confidence boost
-    consensus_boost = data.source_consensus.consensus_confidence * 0.2
-    
-    return (si_score * quality_multiplier) + consensus_boost
+    async def execute_monitored_discovery(self):
+        pipeline_run = await self.monitor.start_pipeline_run()
+        
+        try:
+            # Execute original discovery with monitoring
+            candidates = await self.original_func()
+            
+            # Track new recommendations
+            for candidate in candidates:
+                await self.tracker.track_recommendation(candidate)
+            
+            await self.monitor.complete_pipeline_run(pipeline_run, candidates)
+            return candidates
+            
+        except Exception as e:
+            await self.monitor.fail_pipeline_run(pipeline_run, e)
+            raise
 ```
 
-**Input Requirements**:
-- Validated short interest percentage
-- Days to cover ratio
-- Float size
-- Recent volume patterns
-- Data quality metrics
+## 6. Performance and Reliability Requirements
 
-**Update Frequency**: Every 30 minutes during market hours
+### 6.1 Latency Budgets
 
-**Validation Rules**:
+- **Discovery Pipeline Monitoring**: P95 < 200ms overhead
+- **Recommendation Tracking**: P95 < 500ms
+- **Alert Generation**: P95 < 1000ms
+- **Dashboard API**: P95 < 2000ms
+- **Buy-the-Dip Analysis**: P95 < 3000ms
+
+### 6.2 Throughput Requirements
+
+- **Pipeline Status Checks**: 100 requests/minute
+- **Alert Distribution**: 1000 alerts/minute
+- **Performance Tracking Updates**: 500 updates/minute
+- **Database Writes**: 200 writes/minute sustained
+
+### 6.3 Reliability Standards
+
+- **System Uptime**: 99.9% during market hours
+- **Data Accuracy**: 99.5% correlation with source systems
+- **Alert Delivery**: 99.8% successful delivery rate
+- **Monitoring Overhead**: <5% CPU impact on discovery pipeline
+
+### 6.4 Error Handling Strategy
+
 ```python
-VALIDATION_CHECKS = {
-    'data_freshness': timedelta(days=14),  # FINRA reporting cycle
-    'minimum_sources': 2,  # At least 2 sources must agree
-    'maximum_variance': 0.50,  # 50% max disagreement between sources
-    'confidence_threshold': 0.60,  # 60% minimum confidence
-    'outlier_detection': True  # Flag statistical outliers
-}
+class MonitoringError(Exception):
+    """Base exception for monitoring system errors"""
+    pass
+
+class PipelineMonitoringError(MonitoringError):
+    """Pipeline monitoring specific errors"""
+    pass
+
+class LearningSystemError(MonitoringError):
+    """Learning system specific errors"""
+    pass
+
+class AlertDeliveryError(MonitoringError):
+    """Alert delivery specific errors"""
+    pass
+
+# Error handling patterns
+async def with_monitoring_fallback(func, fallback_value=None):
+    """Execute function with monitoring, fallback on error"""
+    try:
+        return await func()
+    except MonitoringError as e:
+        logger.warning(f"Monitoring error: {e}")
+        return fallback_value
+    except Exception as e:
+        logger.error(f"Unexpected monitoring error: {e}")
+        return fallback_value
 ```
 
-## Integration Specifications
+### 6.5 Circuit Breaker Configuration
 
-### Enhanced Discovery Pipeline Integration
-
-**Current Issue**: `/discovery/squeeze-candidates` returns null short_interest_data
-**Solution**: Replace ShortInterestService with enhanced multi-source version
-
-**API Updates**:
 ```python
-# New endpoint for short interest validation
-@router.get("/discovery/short-interest-validated")
-async def get_validated_short_interest(symbols: str) -> Dict[str, ShortInterestDataV2]:
-    symbol_list = symbols.split(',')
-    service = await get_enhanced_short_interest_service()
-    return await service.get_bulk_short_interest_validated(symbol_list)
-
-# Enhanced existing endpoint
-@router.get("/discovery/squeeze-candidates")
-async def get_squeeze_candidates_enhanced() -> List[CandidateV2]:
-    # Now includes validated short interest data
-    candidates = await discovery_service.get_candidates_with_validated_si()
-    return candidates
-```
-
-### Monitoring and Observability
-
-**Data Quality Dashboard**:
-```python
-MONITORING_METRICS = {
-    'source_availability': {
-        'yahoo_finance': 'gauge',
-        'benzinga_api': 'gauge', 
-        'ortex_api': 'gauge',
-        'finra_scraper': 'gauge'
+CIRCUIT_BREAKER_CONFIG = {
+    "pipeline_monitoring": {
+        "failure_threshold": 5,
+        "timeout": 300,  # 5 minutes
+        "expected_exception": PipelineMonitoringError
     },
-    'data_accuracy': {
-        'variance_detected': 'counter',
-        'outliers_flagged': 'counter',
-        'consensus_failures': 'counter'
+    "alert_delivery": {
+        "failure_threshold": 3,
+        "timeout": 60,   # 1 minute
+        "expected_exception": AlertDeliveryError
     },
-    'performance': {
-        'fetch_latency_p95': 'histogram',
-        'validation_time': 'histogram',
-        'cache_hit_rate': 'gauge'
+    "performance_tracking": {
+        "failure_threshold": 10,
+        "timeout": 600,  # 10 minutes
+        "expected_exception": LearningSystemError
     }
 }
 ```
 
-**Alert Thresholds**:
-- Source availability < 80%: Warning
-- Data variance > 100%: Critical (like UP stock issue)
-- Consensus confidence < 50%: Warning
-- Validation failures > 10/hour: Critical
+## 7. Security and Compliance
 
-## Testing Requirements
+### 7.1 Authentication and Authorization
 
-### Data Accuracy Validation Tests
+- **API Security**: Bearer token authentication using existing system
+- **Role-Based Access**: Admin, Trader, Read-Only access levels
+- **Rate Limiting**: Per-endpoint limits with user-specific overrides
+- **Audit Logging**: All monitoring actions logged with user attribution
 
-**Test Case 1: UP Stock Validation**
-```python
-async def test_up_stock_short_interest_accuracy():
-    """Verify UP stock shows correct ~9.34% short interest, not 0.09%"""
-    service = get_enhanced_short_interest_service()
-    data = await service.get_enhanced_short_interest("UP")
-    
-    # Should be around 9.34% based on external sources
-    assert 0.08 <= data.short_percent_float <= 0.12, f"Expected ~9.34%, got {data.short_percent_float:.3%}"
-    assert data.validation_metadata.data_quality_score > 0.7, "Quality score too low"
-    assert data.source_consensus.sources_agreeing >= 2, "Need source consensus"
-```
+### 7.2 Data Privacy and Security
 
-**Load Testing Parameters**:
-- 100 symbols/minute sustained load
-- 1000 symbols/minute burst capacity
-- 99.5% availability during market hours
-- <2s P95 response time under load
+- **Sensitive Data**: Trading positions and P&L data encrypted at rest
+- **API Keys**: Stored in secure credential management system
+- **Network Security**: HTTPS only, no HTTP fallback
+- **Input Validation**: All inputs validated against strict schemas
 
-**Chaos Engineering**:
-- Yahoo Finance API failure simulation
-- Rate limiting enforcement testing
-- Network partition recovery testing
-- Data source intermittent failures
+## 8. Deployment and Scaling
 
-## Error Handling and Circuit Breakers
+### 8.1 Deployment Strategy
 
-### Circuit Breaker Configuration
+- **Blue-Green Deployment**: Zero-downtime updates
+- **Feature Flags**: Gradual rollout of monitoring features
+- **Health Checks**: Comprehensive health check endpoints
+- **Rollback Plan**: Automated rollback triggers on error rate spikes
 
-```python
-CIRCUIT_BREAKER_CONFIG = {
-    'failure_threshold': 5,  # Open after 5 failures
-    'success_threshold': 3,  # Close after 3 successes  
-    'timeout': 60,  # 60 seconds
-    'recovery_timeout': 300,  # 5 minutes
-    'half_open_max_calls': 2
-}
-```
+### 8.2 Scaling Considerations
 
-### Fallback Mechanisms
+- **Horizontal Scaling**: Stateless services with load balancing
+- **Database Scaling**: Read replicas for dashboard queries
+- **Cache Optimization**: Redis caching for frequently accessed data
+- **Background Processing**: Async task queue for heavy operations
 
-**Degraded Operation Modes**:
-1. **Single Source Mode**: When only 1 data source available
-2. **Cache-Only Mode**: Serve stale data with warnings
-3. **Estimation Mode**: Use sector-based intelligent estimates
-4. **Alert Mode**: Flag all data as low-confidence
+## 9. Testing Requirements
 
-## Security and Compliance
+### 9.1 Unit Testing
 
-**API Key Rotation**:
-- Benzinga API: 30-day rotation cycle
-- ORTEX: 90-day rotation cycle
-- Rate limiting tokens: Daily refresh
+- **Coverage Target**: 90% code coverage for new monitoring components
+- **Mock Services**: Comprehensive mocks for external dependencies
+- **Error Simulation**: Test all error handling paths
+- **Performance Tests**: Load testing for all critical paths
 
-**Data Encryption**:
-- In-transit: TLS 1.3 for all API calls
-- At-rest: AES-256 for cached short interest data
-- Redis: AUTH + SSL/TLS encryption
+### 9.2 Integration Testing
 
-**Audit Logging**:
-```python
-AUDIT_EVENTS = [
-    'short_interest_fetch',
-    'data_validation_failure',
-    'source_consensus_disagreement',
-    'cache_miss_critical_symbol',
-    'api_rate_limit_exceeded'
-]
-```
+- **End-to-End Workflows**: Complete pipeline monitoring flows
+- **Alert Delivery Testing**: Multi-channel alert distribution
+- **Database Integration**: Transaction handling and rollback scenarios
+- **API Contract Testing**: Maintain existing API compatibility
 
-## Implementation Timeline & Rollback Plan
+### 9.3 Chaos Engineering
 
-### Phase 1 (Week 1-2): Enhanced Data Sources
-- Implement Benzinga API integration
-- Add FINRA official data scraping
-- Create multi-source validation framework
-- Deploy shadow testing alongside existing system
+- **Failure Injection**: Simulate discovery pipeline failures
+- **Network Partitions**: Test resilience to connectivity issues  
+- **Database Failures**: Verify graceful degradation
+- **Load Testing**: Sustained high-load scenarios
 
-### Phase 2 (Week 3): Validation & Testing  
-- Validate UP stock shows correct 9.34% short interest
-- Test all high short interest symbols for accuracy
-- Performance testing under load
-- A/B test with 25% of discovery traffic
+## 10. Implementation Roadmap
 
-### Phase 3 (Week 4): Full Deployment
-- Switch 100% of short interest fetching to enhanced service
-- Monitor for 100x discrepancy issues
-- Real-time alerting for data quality problems
-- Sunset old Yahoo-only implementation
+### Phase 1: Foundation (Week 1-2)
+- Discovery pipeline monitoring infrastructure
+- Basic alert system setup
+- Database schema extensions
+- Core monitoring APIs
 
-### Emergency Rollback Procedure
-```bash
-# If enhanced service fails, immediate rollback
-redis-cli RENAME amc:short_interest:enhanced amc:short_interest:backup
-redis-cli RENAME amc:short_interest:legacy amc:short_interest:enhanced
-export SHORT_INTEREST_ENHANCED=false
-systemctl restart amc-discovery-service
-# Verify legacy service working: should return to 0.09% for UP (known issue)
-```
+### Phase 2: Learning Integration (Week 3-4)
+- Recommendation tracking system
+- Performance monitoring service
+- Missed opportunity detection
+- Learning feedback loops
 
-## Success Metrics
+### Phase 3: Advanced Features (Week 5-6)
+- Buy-the-dip detection
+- Advanced alert routing
+- Dashboard integration
+- Performance optimization
 
-**Data Accuracy Targets**:
-- Eliminate 100x discrepancies (0 occurrences/month)
-- <10% variance between consensus sources
-- >90% data quality score for top 100 symbols
-- 99.5% short interest data availability during market hours
+### Phase 4: Production Hardening (Week 7-8)
+- Security audit and hardening
+- Performance tuning
+- Comprehensive testing
+- Production deployment
 
-**Performance SLAs**:
-- Single symbol: P95 < 2000ms
-- Bulk 10 symbols: P95 < 8000ms  
-- Cache hit rate: >80%
-- Source availability: >95% each
-
-**Business Impact**:
-- Increase squeeze detection accuracy by 40%+
-- Reduce false negative signals (like missing UP squeeze potential)
-- Enable confident short interest thresholds for discovery pipeline
-- Provide competitive advantage through data quality
-
-This enhanced short interest architecture addresses the critical 100x data accuracy issue while building a robust, multi-source validation system that ensures AMC-TRADER has the most accurate short interest data available for squeeze detection and trading decisions.
+This specification provides a comprehensive foundation for implementing robust monitoring and learning infrastructure while ensuring seamless integration with the existing AMC-TRADER system.

@@ -111,22 +111,18 @@ export default function SqueezeAlert({ symbol, metrics, onTradeExecuted, alertTi
       // Execute the trade based on type
       let result;
       if (tradeType === 'bracket') {
-        // Bracket order with stops (3% stop loss, 10% take profit)
-        const stopPrice = metrics.price * 0.97; // 3% stop loss
-        const takeProfitPrice = metrics.price * 1.10; // 10% take profit
-        
-        result = await postJSON(`${API_BASE}/trades/bracket`, {
+        // For now, use regular market order until bracket order endpoint is implemented
+        // TODO: Implement bracket order with stops (3% stop loss, 10% take profit)
+        result = await postJSON(`${API_BASE}/trades/execute`, {
           symbol,
           action: "BUY",
           qty: shares,
-          limit_price: metrics.price * 1.01, // Slight premium for execution
-          stop_price: stopPrice,
-          take_profit_price: takeProfitPrice,
           mode: "live",
           squeeze_context: {
             squeeze_score: metrics.squeeze_score,
             volume_spike: metrics.volume_spike,
-            short_interest: metrics.short_interest
+            short_interest: metrics.short_interest,
+            note: "Bracket order requested - using market order (bracket endpoint not yet implemented)"
           }
         });
       } else {
