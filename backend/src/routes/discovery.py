@@ -1,18 +1,83 @@
-from fastapi import APIRouter, Query
-from typing import List, Dict
+from fastapi import APIRouter, Query, HTTPException, Body, Request
+from typing import List, Dict, Optional
 import json
 import importlib
 import math
 import os
 import logging
 from datetime import datetime, timezone
+from pydantic import BaseModel
 from backend.src.shared.redis_client import get_redis_client
 from backend.src.services.squeeze_detector import SqueezeDetector
 from ..services.short_interest_service import get_short_interest_service
 from ..services.short_interest_validator import get_short_interest_validator
+from .strategy_resolver import resolve_effective_strategy, get_strategy_metadata
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Pydantic models for request validation
+class WeightsUpdate(BaseModel):
+    volume_momentum: float = None
+    squeeze: float = None  
+    catalyst: float = None
+    options: float = None
+    technical: float = None
+
+# Global calibration reference (will be updated by tuning endpoints)
+_calibration_cache = None
+
+def _load_calibration_config():
+    """Load calibration config with caching"""
+    global _calibration_cache
+    try:
+        import os
+        calibration_path = os.path.join(os.path.dirname(__file__), "../../../calibration/active.json")
+        if os.path.exists(calibration_path):
+            with open(calibration_path, 'r') as f:
+                _calibration_cache = json.load(f)
+                return _calibration_cache
+    except Exception as e:
+        logger.error(f"Could not load calibration config: {e}")
+    return _calibration_cache or {}
+
+def _save_calibration_config(config):
+    """Save calibration config to file"""
+    global _calibration_cache
+    try:
+        import os
+        calibration_path = os.path.join(os.path.dirname(__file__), "../../../calibration/active.json")
+        with open(calibration_path, 'w') as f:
+            json.dump(config, f, indent=2)
+        _calibration_cache = config
+        return True
+    except Exception as e:
+        logger.error(f"Could not save calibration config: {e}")
+        return False
+
+def _normalize_weights(weights):
+    """Normalize weights to sum to 1.0"""
+    total = sum(weights.values()) or 1.0
+    return {k: max(0.0, v) / total for k, v in weights.items()}
+
+def _invalidate_redis_cache():
+    """Invalidate strategy-specific Redis cache"""
+    try:
+        r = get_redis_client()
+        # Clear hybrid_v1 specific caches
+        pattern_keys = [
+            "amc:discovery:v2:contenders.latest:hybrid_v1",
+            "amc:discovery:v2:explain.latest:hybrid_v1", 
+            "amc:discovery:contenders.latest:hybrid_v1",
+            "amc:discovery:explain.latest:hybrid_v1"
+        ]
+        for key in pattern_keys:
+            if r.exists(key):
+                r.delete(key)
+        return True
+    except Exception as e:
+        logger.error(f"Could not invalidate Redis cache: {e}")
+        return False
 
 # Redis keys
 V2_CONT = "amc:discovery:v2:contenders.latest"
@@ -39,15 +104,29 @@ def _load_selector():
     return None, None
 
 @router.get("/contenders")
-async def get_contenders():
+async def get_contenders(
+    request: Request,
+    strategy: str = Query("", description="Scoring strategy: legacy_v0 or hybrid_v1"),
+    session: str = Query("regular", description="Market session: premarket, regular, afterhours")
+):
     """
     CRITICAL SYSTEM INTEGRITY: Returns fresh discovery data ONLY
     NEVER serves fake/fallback/contaminated data under any circumstances
     """
+    # Resolve effective strategy (production enforcement)
+    effective_strategy = resolve_effective_strategy(strategy)
+    
     r = get_redis_client()
     
+    # Strategy-aware Redis keys
+    strategy_suffix = f":{effective_strategy}" if effective_strategy and effective_strategy in ["legacy_v0", "hybrid_v1"] else ""
+    v2_cont_key = f"{V2_CONT}{strategy_suffix}"
+    v2_trace_key = f"{V2_TRACE}{strategy_suffix}"
+    v1_cont_key = f"{V1_CONT}{strategy_suffix}"
+    v1_trace_key = f"{V1_TRACE}{strategy_suffix}"
+    
     # CRITICAL INTEGRITY CHECK: Validate discovery pipeline execution
-    trace = _get_json(r, V2_TRACE) or _get_json(r, V1_TRACE)
+    trace = _get_json(r, v2_trace_key) or _get_json(r, v2_trace_key) or _get_json(r, V2_TRACE) or _get_json(r, V1_TRACE)
     if trace:
         initial_universe = trace.get("counts_in", {}).get("universe", 0)
         
@@ -74,8 +153,8 @@ async def get_contenders():
             except:
                 pass
     
-    # Get candidates but validate freshness
-    items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT)
+    # Get candidates but validate freshness (try strategy-specific first, then fallback)
+    items = _get_json(r, v2_cont_key) or _get_json(r, v1_cont_key) or _get_json(r, V2_CONT) or _get_json(r, V1_CONT)
     
     if not items:
         logger.error("❌ No discovery data available - returning empty list")
@@ -140,8 +219,50 @@ async def get_contenders():
         logger.error("❌ NO REAL DATA: All items failed validation - returning empty list")
         return []
     
+    # Get current configuration for telemetry
+    try:
+        config = _load_calibration_config()
+        scoring_config = config.get("scoring", {})
+        preset_name = scoring_config.get("preset")
+        hybrid_weights = scoring_config.get("hybrid_v1", {}).get("weights", {})
+        weights_hash = hash(frozenset(hybrid_weights.items()))
+    except:
+        preset_name = None
+        weights_hash = None
+    
+    # Calculate thresholds hash for metadata
+    try:
+        thresholds = config.get("scoring", {}).get("hybrid_v1", {}).get("thresholds", {})
+        thresholds_hash = hash(frozenset(str(thresholds).encode()))
+    except:
+        thresholds_hash = None
+    
+    # Add telemetry metadata to response
+    response_data = {
+        "candidates": validated_items,
+        "count": len(validated_items),
+        "strategy": effective_strategy,
+        "filtered_from": len(items),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "meta": {
+            "strategy": effective_strategy,
+            "preset": preset_name,
+            "weights_hash": weights_hash,
+            "thresholds_hash": thresholds_hash,
+            "session": session,
+            "telemetry": {
+                "latency_ms": None,  # Will be calculated by caller
+                "score_distribution": {
+                    "min": min((item.get("score", 0) for item in validated_items), default=0),
+                    "max": max((item.get("score", 0) for item in validated_items), default=0),
+                    "avg": sum(item.get("score", 0) for item in validated_items) / len(validated_items) if validated_items else 0
+                }
+            }
+        }
+    }
+    
     logger.info(f"✅ Serving {len(validated_items)} validated items with real data (filtered from {len(items)})")
-    return validated_items
+    return response_data
 
 @router.get("/short-interest")
 async def get_short_interest(symbols: str = Query("UP,SPHR,NAK", description="Comma-separated symbols")):
@@ -541,17 +662,48 @@ async def discovery_audit_symbol(symbol: str):
         }
 
 @router.get("/test")
-async def discovery_test(relaxed: bool = Query(True), limit: int = Query(10)):
+async def discovery_test(
+    request: Request,
+    relaxed: bool = Query(True), 
+    limit: int = Query(10), 
+    strategy: str = Query("", description="Scoring strategy to test"),
+    session: str = Query("regular", description="Market session for testing")
+):
     f, mod = _load_selector()
     if not f:
         return {"items": [], "trace": {}, "error": "select_candidates not found in src.jobs.discovery or src.jobs.discover"}
     try:
-        res = await f(relaxed=relaxed, limit=limit, with_trace=True)  # type: ignore
-        if isinstance(res, tuple) and len(res) == 2:
-            items, trace = res
-        else:
-            items, trace = res, {}
-        return {"items": items, "trace": trace, "module": mod, "relaxed": relaxed, "limit": limit}
+        # Resolve effective strategy (production enforcement)
+        effective_strategy = resolve_effective_strategy(strategy)
+        
+        # Temporarily override strategy for testing
+        original_strategy = os.getenv("SCORING_STRATEGY")
+        os.environ["SCORING_STRATEGY"] = effective_strategy
+        
+        try:
+            res = await f(relaxed=relaxed, limit=limit, with_trace=True)  # type: ignore
+            if isinstance(res, tuple) and len(res) == 2:
+                items, trace = res
+            else:
+                items, trace = res, {}
+            
+            return {
+                "items": items, 
+                "trace": trace, 
+                "module": mod, 
+                "relaxed": relaxed, 
+                "limit": limit,
+                "strategy": effective_strategy,
+                "requested_strategy": strategy,
+                "effective_strategy": effective_strategy
+            }
+        finally:
+            # Restore original strategy
+            if original_strategy:
+                os.environ["SCORING_STRATEGY"] = original_strategy
+            elif strategy:
+                # Remove the temporary override
+                os.environ.pop("SCORING_STRATEGY", None)
     except Exception as e:
         return {"items": [], "trace": {}, "module": mod, "error": str(e)}
 
@@ -719,7 +871,12 @@ async def purge_contaminated_cache():
         }
 
 @router.post("/trigger")
-async def trigger_discovery(limit: int = Query(10), relaxed: bool = Query(False)):
+async def trigger_discovery(
+    request: Request,
+    limit: int = Query(10), 
+    relaxed: bool = Query(False), 
+    strategy: str = Query("", description="Strategy to use for discovery")
+):
     """
     Manual discovery trigger for production deployment
     
@@ -738,17 +895,36 @@ async def trigger_discovery(limit: int = Query(10), relaxed: bool = Query(False)
         if not f:
             return {"success": False, "error": "select_candidates not found"}
         
-        # Run discovery with trace
-        res = await f(relaxed=relaxed, limit=limit, with_trace=True)
-        if isinstance(res, tuple) and len(res) == 2:
-            items, trace = res
-        else:
-            items, trace = res, {}
+        # Resolve effective strategy (production enforcement)
+        effective_strategy = resolve_effective_strategy(strategy)
         
-        # Publish to Redis (same keys as main discovery job)
+        # Temporarily override strategy for discovery
+        original_strategy = os.getenv("SCORING_STRATEGY")
+        os.environ["SCORING_STRATEGY"] = effective_strategy
+        
+        try:
+            # Run discovery with trace
+            res = await f(relaxed=relaxed, limit=limit, with_trace=True)
+            if isinstance(res, tuple) and len(res) == 2:
+                items, trace = res
+            else:
+                items, trace = res, {}
+        finally:
+            # Restore original strategy
+            if original_strategy:
+                os.environ["SCORING_STRATEGY"] = original_strategy
+            elif strategy:
+                os.environ.pop("SCORING_STRATEGY", None)
+        
+        # Publish to Redis with strategy-aware keys
         r = get_redis_client()
-        r.set(V1_CONT, json.dumps(items), ex=600)
-        r.set(V2_CONT, json.dumps(items), ex=600)  # Store in both v1 and v2 keys
+        strategy_suffix = f":{effective_strategy}" if effective_strategy and effective_strategy in ["legacy_v0", "hybrid_v1"] else ""
+        
+        # Store with strategy-specific keys AND fallback keys for backward compatibility
+        r.set(f"{V1_CONT}{strategy_suffix}", json.dumps(items), ex=600)
+        r.set(f"{V2_CONT}{strategy_suffix}", json.dumps(items), ex=600)
+        r.set(V1_CONT, json.dumps(items), ex=600)  # Fallback
+        r.set(V2_CONT, json.dumps(items), ex=600)  # Fallback
         
         # Store trace data for diagnostics
         trace_data = {
@@ -768,7 +944,8 @@ async def trigger_discovery(limit: int = Query(10), relaxed: bool = Query(False)
             "min_score": 50,
             "stages": trace.get("stages", [])
         }
-        r.set(V1_TRACE, json.dumps(trace_data), ex=600)
+        r.set(f"{V1_TRACE}{strategy_suffix}", json.dumps(trace_data), ex=600)
+        r.set(V1_TRACE, json.dumps(trace_data), ex=600)  # Fallback
         
         # MONITORING INTEGRATION - Zero disruption monitoring
         try:
@@ -791,7 +968,8 @@ async def trigger_discovery(limit: int = Query(10), relaxed: bool = Query(False)
             logger = logging.getLogger(__name__)
             logger.error(f"Discovery monitoring error (non-critical): {monitor_error}")
         # END MONITORING INTEGRATION
-        r.set(V2_TRACE, json.dumps(trace_data), ex=600)
+        r.set(f"{V2_TRACE}{strategy_suffix}", json.dumps(trace_data), ex=600)
+        r.set(V2_TRACE, json.dumps(trace_data), ex=600)  # Fallback
         
         # Store status for diagnostics
         status_data = {
@@ -809,11 +987,90 @@ async def trigger_discovery(limit: int = Query(10), relaxed: bool = Query(False)
             "candidates_found": len(items),
             "published_to_redis": True,
             "module": mod,
+            "strategy": effective_strategy,
+            "requested_strategy": strategy,
+            "effective_strategy": effective_strategy,
             "trace": trace
         }
         
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+@router.get("/strategy-validation")
+async def validate_strategy_scoring():
+    """
+    Validate hybrid_v1 strategy against legacy_v0 strategy
+    
+    Returns comparison metrics and sample scoring for validation
+    """
+    try:
+        # Test both strategies on the same candidate set
+        f, mod = _load_selector()
+        if not f:
+            return {"validation_complete": False, "error": "select_candidates not found"}
+        
+        results = {
+            "validation_complete": True,
+            "strategies": {},
+            "comparison": {},
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Test each strategy
+        for strategy in ["legacy_v0", "hybrid_v1"]:
+            original_strategy = os.getenv("SCORING_STRATEGY")
+            os.environ["SCORING_STRATEGY"] = strategy
+            
+            try:
+                res = await f(relaxed=True, limit=10, with_trace=True)
+                if isinstance(res, tuple) and len(res) == 2:
+                    items, trace = res
+                else:
+                    items, trace = res, {}
+                
+                results["strategies"][strategy] = {
+                    "candidates_found": len(items),
+                    "sample_candidates": [
+                        {
+                            "symbol": item.get("symbol"),
+                            "score": item.get("score"),
+                            "strategy": item.get("strategy"),
+                            "action_tag": item.get("action_tag"),
+                            "pattern_match": item.get("pattern_match"),
+                            "reason": item.get("reason")
+                        } for item in items[:3]
+                    ],
+                    "avg_score": sum(item.get("score", 0) for item in items) / len(items) if items else 0,
+                    "trace_summary": {
+                        "initial_universe": trace.get("counts_in", {}).get("universe", 0),
+                        "final_candidates": len(items)
+                    }
+                }
+                
+            finally:
+                if original_strategy:
+                    os.environ["SCORING_STRATEGY"] = original_strategy
+                else:
+                    os.environ.pop("SCORING_STRATEGY", None)
+        
+        # Generate comparison metrics
+        legacy_count = results["strategies"].get("legacy_v0", {}).get("candidates_found", 0)
+        hybrid_count = results["strategies"].get("hybrid_v1", {}).get("candidates_found", 0)
+        
+        results["comparison"] = {
+            "candidate_count_diff": hybrid_count - legacy_count,
+            "legacy_avg_score": results["strategies"].get("legacy_v0", {}).get("avg_score", 0),
+            "hybrid_avg_score": results["strategies"].get("hybrid_v1", {}).get("avg_score", 0),
+            "strategy_working": legacy_count > 0 and hybrid_count > 0
+        }
+        
+        return results
+        
+    except Exception as e:
+        return {
+            "validation_complete": False,
+            "error": str(e)
+        }
 
 @router.get("/squeeze-validation")
 async def validate_squeeze_detector():
@@ -840,3 +1097,345 @@ async def validate_squeeze_detector():
             'validation_complete': False,
             'error': str(e)
         }
+
+@router.patch("/calibration/hybrid_v1/preset")
+async def set_preset(name: str = Query(..., description="Preset name to activate")):
+    """
+    One-click preset switching for hybrid_v1 strategy
+    
+    Available presets: squeeze_aggressive, catalyst_heavy, balanced_default
+    """
+    try:
+        config = _load_calibration_config()
+        presets = config.get("scoring", {}).get("presets", {})
+        
+        if name not in presets:
+            available = list(presets.keys())
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Unknown preset '{name}'. Available: {available}"
+            )
+        
+        # Update preset in config
+        config["scoring"]["preset"] = name
+        
+        if not _save_calibration_config(config):
+            raise HTTPException(status_code=500, detail="Failed to save configuration")
+        
+        # Invalidate cache
+        _invalidate_redis_cache()
+        
+        # Get resolved weights for response
+        preset_weights = presets[name].get("weights", {})
+        base_weights = config.get("scoring", {}).get("hybrid_v1", {}).get("weights", {})
+        resolved_weights = _normalize_weights({**base_weights, **preset_weights})
+        
+        return {
+            "success": True,
+            "preset": name,
+            "resolved_weights": resolved_weights,
+            "cache_invalidated": True,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Preset switch failed: {str(e)}")
+
+@router.patch("/calibration/hybrid_v1")
+async def update_calibration(request_body: Dict = Body(...)):
+    """
+    Update hybrid_v1 thresholds and/or weights
+    
+    Pass {"thresholds": {...}} to update thresholds
+    Pass {"weights": {...}} to update weights (will be normalized)
+    """
+    try:
+        config = _load_calibration_config()
+        thresholds = request_body.get("thresholds")
+        weights = request_body.get("weights")
+        
+        if thresholds:
+            # Update thresholds
+            current_thresholds = config.get("scoring", {}).get("hybrid_v1", {}).get("thresholds", {})
+            updated_thresholds = {**current_thresholds, **thresholds}
+            config["scoring"]["hybrid_v1"]["thresholds"] = updated_thresholds
+        
+        if weights:
+            # Update and normalize weights
+            current_weights = config.get("scoring", {}).get("hybrid_v1", {}).get("weights", {})
+            updated_weights = {**current_weights, **weights}
+            normalized_weights = _normalize_weights(updated_weights)
+            config["scoring"]["hybrid_v1"]["weights"] = normalized_weights
+            config["scoring"]["preset"] = None  # Clear preset when using explicit weights
+        
+        if not _save_calibration_config(config):
+            raise HTTPException(status_code=500, detail="Failed to save configuration")
+        
+        # Invalidate cache
+        _invalidate_redis_cache()
+        
+        return {
+            "success": True,
+            "thresholds_updated": thresholds is not None,
+            "weights_updated": weights is not None,
+            "cache_invalidated": True,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Configuration update failed: {str(e)}")
+
+# Alias endpoint - maps to same handler
+@router.patch("/discovery/calibration/hybrid_v1")
+async def update_calibration_alias(request_body: Dict = Body(...)):
+    """Alias for /calibration/hybrid_v1 to prevent 404s"""
+    return await update_calibration(request_body)
+
+@router.patch("/calibration/hybrid_v1/weights")
+async def set_weights(weights: WeightsUpdate):
+    """
+    Live weight tuning for hybrid_v1 strategy (legacy endpoint)
+    
+    Updates weights and normalizes to sum to 1.0. Overrides preset.
+    """
+    try:
+        config = _load_calibration_config()
+        
+        # Get current hybrid_v1 weights
+        current_weights = config.get("scoring", {}).get("hybrid_v1", {}).get("weights", {})
+        
+        # Update with provided weights (skip None values)
+        update_data = weights.dict(exclude_unset=True, exclude_none=True)
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No weights provided for update")
+        
+        updated_weights = {**current_weights, **update_data}
+        normalized_weights = _normalize_weights(updated_weights)
+        
+        # Apply updates
+        config["scoring"]["hybrid_v1"]["weights"] = normalized_weights
+        config["scoring"]["preset"] = None  # Clear preset when using explicit weights
+        
+        if not _save_calibration_config(config):
+            raise HTTPException(status_code=500, detail="Failed to save configuration")
+        
+        # Invalidate cache
+        _invalidate_redis_cache()
+        
+        return {
+            "success": True,
+            "weights": normalized_weights,
+            "preset_cleared": True,
+            "cache_invalidated": True,
+            "changes": update_data,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Weight update failed: {str(e)}")
+
+@router.get("/calibration/hybrid_v1/config")
+async def get_current_config():
+    """
+    Get current hybrid_v1 configuration including resolved weights
+    """
+    try:
+        config = _load_calibration_config()
+        scoring_config = config.get("scoring", {})
+        hybrid_config = scoring_config.get("hybrid_v1", {})
+        
+        # Resolve weights with preset overlay
+        base_weights = hybrid_config.get("weights", {})
+        preset_name = scoring_config.get("preset")
+        presets = scoring_config.get("presets", {})
+        
+        if preset_name and preset_name in presets:
+            preset_weights = presets[preset_name].get("weights", {})
+            resolved_weights = _normalize_weights({**base_weights, **preset_weights})
+        else:
+            resolved_weights = _normalize_weights(base_weights)
+        
+        return {
+            "strategy": scoring_config.get("strategy", "legacy_v0"),
+            "active_preset": preset_name,
+            "available_presets": list(presets.keys()),
+            "base_weights": base_weights,
+            "resolved_weights": resolved_weights,
+            "thresholds": hybrid_config.get("thresholds", {}),
+            "entry_rules": hybrid_config.get("entry_rules", {}),
+            "weights_hash": hash(frozenset(resolved_weights.items())),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Config retrieval failed: {str(e)}")
+
+@router.post("/calibration/hybrid_v1/reset") 
+async def reset_to_defaults():
+    """
+    Reset hybrid_v1 configuration to balanced_default preset
+    """
+    try:
+        config = _load_calibration_config()
+        
+        # Reset to balanced_default
+        config["scoring"]["preset"] = "balanced_default"
+        
+        if not _save_calibration_config(config):
+            raise HTTPException(status_code=500, detail="Failed to save configuration")
+        
+        # Invalidate cache
+        _invalidate_redis_cache()
+        
+        return {
+            "success": True,
+            "reset_to": "balanced_default",
+            "cache_invalidated": True,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Reset failed: {str(e)}")
+
+@router.post("/calibration/emergency/force-legacy")
+async def emergency_force_legacy():
+    """
+    EMERGENCY: Force legacy_v0 strategy for 15 minutes
+    
+    Use this if hybrid_v1 is causing issues in production
+    """
+    try:
+        # Set emergency override environment variable
+        os.environ["SCORING_STRATEGY"] = "legacy_v0"
+        os.environ["EMERGENCY_OVERRIDE"] = str(int(datetime.now(timezone.utc).timestamp() + 900))  # 15 minutes
+        
+        # Invalidate cache
+        _invalidate_redis_cache()
+        
+        logger.warning("🚨 EMERGENCY: Forced legacy_v0 strategy for 15 minutes")
+        
+        return {
+            "success": True,
+            "strategy_forced": "legacy_v0",
+            "expires_at": datetime.fromtimestamp(int(os.environ["EMERGENCY_OVERRIDE"]), timezone.utc).isoformat(),
+            "duration_minutes": 15,
+            "cache_invalidated": True,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Emergency override failed: {str(e)}")
+
+@router.get("/calibration/status")
+async def get_calibration_status():
+    """
+    Get comprehensive calibration and system status
+    """
+    try:
+        config = _load_calibration_config()
+        
+        # Check for emergency override
+        emergency_override = os.getenv("EMERGENCY_OVERRIDE")
+        emergency_active = False
+        emergency_expires = None
+        
+        if emergency_override:
+            try:
+                expire_time = int(emergency_override)
+                if datetime.now(timezone.utc).timestamp() < expire_time:
+                    emergency_active = True
+                    emergency_expires = datetime.fromtimestamp(expire_time, timezone.utc).isoformat()
+                else:
+                    # Clean up expired override
+                    os.environ.pop("EMERGENCY_OVERRIDE", None)
+            except:
+                pass
+        
+        # Get Redis cache status
+        cache_status = {}
+        try:
+            r = get_redis_client()
+            cache_keys = [
+                "amc:discovery:v2:contenders.latest",
+                "amc:discovery:v2:contenders.latest:hybrid_v1",
+                "amc:discovery:v2:contenders.latest:legacy_v0"
+            ]
+            for key in cache_keys:
+                cache_status[key] = r.exists(key)
+        except:
+            cache_status = {"error": "Redis unavailable"}
+        
+        # Calculate weights and thresholds hashes
+        weights = config.get("scoring", {}).get("hybrid_v1", {}).get("weights", {})
+        weights_hash = hash(frozenset(weights.items())) if weights else None
+        
+        thresholds = config.get("scoring", {}).get("hybrid_v1", {}).get("thresholds", {})
+        # Create a simplified thresholds snapshot without nested objects
+        thresholds_snapshot = {
+            "min_relvol_30": thresholds.get("min_relvol_30"),
+            "min_atr_pct": thresholds.get("min_atr_pct"),
+            "require_vwap_reclaim": thresholds.get("require_vwap_reclaim"),
+            "vwap_proximity_pct": thresholds.get("vwap_proximity_pct", 0.0),
+            "max_soft_pass": thresholds.get("max_soft_pass", 0),
+            "mid_float_enabled": thresholds.get("mid_float_path", {}).get("enabled", False),
+            "session_overrides_enabled": {
+                "premarket": thresholds.get("session_overrides", {}).get("premarket", {}).get("enabled", False),
+                "afterhours": thresholds.get("session_overrides", {}).get("afterhours", {}).get("enabled", False),
+                "regular": thresholds.get("session_overrides", {}).get("regular", {}).get("enabled", False)
+            }
+        }
+        
+        # Get strategy metadata
+        strategy_meta = get_strategy_metadata()
+        
+        return {
+            "effective_strategy": strategy_meta["effective_strategy"],
+            "preset": config.get("scoring", {}).get("preset"),
+            "weights_hash": weights_hash,
+            "thresholds_snapshot": thresholds_snapshot,
+            "emergency_flag": strategy_meta["emergency_active"],
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "strategy_resolution": {
+                "force_strategy": strategy_meta["force_strategy"],
+                "allow_override": strategy_meta["allow_override"],
+                "env_strategy": strategy_meta["env_strategy"],
+                "emergency_expires": strategy_meta["emergency_expires"]
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Status check failed: {str(e)}")
+
+@router.post("/calibration/hybrid_v1/limit")
+async def set_safety_limits(max_candidates: int = Query(100, ge=1, le=500), max_latency_ms: int = Query(15000, ge=1000, le=60000)):
+    """
+    Update safety guardrails for hybrid_v1 strategy
+    """
+    try:
+        config = _load_calibration_config()
+        
+        # Update safety limits
+        if "safety_guardrails" not in config.get("scoring", {}).get("hybrid_v1", {}):
+            config["scoring"]["hybrid_v1"]["safety_guardrails"] = {}
+        
+        config["scoring"]["hybrid_v1"]["safety_guardrails"]["max_candidates"] = max_candidates
+        config["scoring"]["hybrid_v1"]["safety_guardrails"]["max_latency_ms"] = max_latency_ms
+        
+        if not _save_calibration_config(config):
+            raise HTTPException(status_code=500, detail="Failed to save configuration")
+        
+        return {
+            "success": True,
+            "limits_updated": {
+                "max_candidates": max_candidates,
+                "max_latency_ms": max_latency_ms
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Safety limit update failed: {str(e)}")

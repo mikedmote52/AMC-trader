@@ -1,4 +1,43 @@
 services:
+  # Backend API Service - Force Hybrid V1 in Production
+  - type: web
+    name: amc-trader
+    env: python
+    plan: standard
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.app:api --host 0.0.0.0 --port $PORT
+    envVars:
+      # Force Hybrid V1 in production
+      - key: SCORING_STRATEGY
+        value: hybrid_v1
+      - key: FORCE_STRATEGY
+        value: hybrid_v1
+      - key: ALLOW_STRATEGY_OVERRIDE
+        value: "false"
+      
+      # Existing required environment variables (values from Render dashboard)
+      - key: POLYGON_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: ALPACA_API_KEY
+        sync: false
+      - key: ALPACA_SECRET_KEY
+        sync: false
+      - key: ALPACA_BASE_URL
+        sync: false
+        
+      # Additional configuration
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+    
+    healthCheckPath: /health
+    autoDeploy: true
+
   # Frontend Static Site
   - type: web
     name: amc-frontend
