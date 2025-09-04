@@ -126,16 +126,16 @@ class SqueezeDetector:
                     logger.debug(f"Invalid short interest format for {symbol} - using 0%")
                     short_interest = 0.0
                     
-            # FLOAT ANALYSIS: Must have real float data - no defaults
-            float_shares = data.get('float') or data.get('shares_outstanding')
+            # FLOAT ANALYSIS: Use provided float data or reasonable default for pattern detection
+            float_shares = data.get('float') or data.get('float_shares') or data.get('shares_outstanding')
             if float_shares is None:
-                logger.debug(f"Missing float/shares outstanding data for {symbol} - excluding from squeeze analysis")
-                return None
+                logger.debug(f"No float data for {symbol} - using 50M default for explosive pattern detection")
+                float_shares = 50000000  # Default allows pattern detection without real-time data dependency
             try:
                 float_shares = int(float_shares)
             except:
-                logger.debug(f"Invalid float data format for {symbol} - excluding")
-                return None
+                logger.debug(f"Invalid float data format for {symbol} - using 50M default")
+                float_shares = 50000000
                 
             # BORROW RATE: Optional but validate if present
             borrow_rate = data.get('borrow_rate')
