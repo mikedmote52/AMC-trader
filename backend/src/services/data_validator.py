@@ -301,25 +301,6 @@ class DataValidator:
         """DEPRECATED - No fallback validation allowed per validation requirements"""
         logger.error(f"Fallback validation requested for {symbol} - this should never happen")
         return None
-                    confidence=0.85,
-                    volume_spike=polygon_data.get("volume_spike", 1.0),
-                    volatility=polygon_data.get("volatility", 0.0),
-                    is_hot_stock=False
-                )
-        except Exception as e:
-            logger.error(f"Fallback validation failed for {symbol}: {e}")
-        
-        # Last resort - return zero price with low confidence
-        return PriceValidation(
-            price=0.0,
-            sources=[],
-            discrepancy=1.0,
-            timestamp=datetime.now(),
-            confidence=0.0,
-            volume_spike=1.0,
-            volatility=0.0,
-            is_hot_stock=False
-        )
 
 # Global singleton for efficient reuse
 validator_singleton = DataValidator()
