@@ -1187,9 +1187,14 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
             si_data = short_interest_data.get(symbol)
             
             # Use real short interest data instead of placeholders
-            real_short_interest = si_data.short_percent_float if si_data else 0.15
-            si_confidence = si_data.confidence if si_data else 0.1
-            si_source = si_data.source if si_data else 'fallback'
+            # NO FALLBACKS - Only process stocks with real short interest data
+            if not si_data or si_data.source in ['sector_fallback', 'default_fallback']:
+                logger.debug(f"Excluding {symbol} - no real short interest data available")
+                continue
+            
+            real_short_interest = si_data.short_percent_float
+            si_confidence = si_data.confidence
+            si_source = si_data.source
             
             # Prepare data for squeeze detector with real short interest
             squeeze_data = {
@@ -1198,9 +1203,9 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 'volume': candidate.get('volume_spike', 0.0) * 1000000,  # Approximate volume
                 'avg_volume_30d': 1000000,  # Placeholder - would need historical data
                 'short_interest': real_short_interest,  # REAL SHORT INTEREST DATA!
-                'float': candidate.get('factors', {}).get('float_shares', 15000000),  # 15M default
-                'borrow_rate': candidate.get('factors', {}).get('borrow_rate', 0.50),  # 50% default
-                'shares_outstanding': candidate.get('factors', {}).get('shares_outstanding', 30000000)  # 30M default
+                'float': candidate.get('factors', {}).get('float_shares'),  # No defaults - require real data
+                'borrow_rate': candidate.get('factors', {}).get('borrow_rate'),  # No defaults
+                'shares_outstanding': candidate.get('factors', {}).get('shares_outstanding')  # No defaults
             }
             
             # Add short interest metadata to candidate
@@ -1208,7 +1213,7 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 'percent': real_short_interest,
                 'confidence': si_confidence,
                 'source': si_source,
-                'last_updated': si_data.last_updated.isoformat() if si_data else None
+                'last_updated': si_data.last_updated.isoformat()
             }
             
             squeeze_result = squeeze_detector.detect_vigl_pattern(candidate['symbol'], squeeze_data)

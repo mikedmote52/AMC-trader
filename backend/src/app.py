@@ -202,6 +202,7 @@ from backend.src.routes import data_quality as data_quality_routes
 from backend.src.routes import pattern_memory as pattern_memory_routes
 from backend.src.routes import notifications as notification_routes
 from backend.src.routes import monitoring as monitoring_routes
+from backend.src.routes import data_integrity as data_integrity_routes
 
 app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery"])
 app.include_router(portfolio_routes.router, prefix="/portfolio", tags=["portfolio"])
@@ -215,6 +216,7 @@ app.include_router(data_quality_routes.router, prefix="/discovery", tags=["data-
 app.include_router(pattern_memory_routes.router, prefix="/pattern-memory", tags=["pattern-memory"])
 app.include_router(notification_routes.router, prefix="/notifications", tags=["notifications"])
 app.include_router(monitoring_routes.router, prefix="/monitoring", tags=["monitoring"])
+app.include_router(data_integrity_routes.router, prefix="/data-integrity", tags=["data-integrity"])
 
 # Compatibility routes for old frontend paths
 from starlette.responses import RedirectResponse

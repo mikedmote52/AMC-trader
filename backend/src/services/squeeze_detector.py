@@ -114,28 +114,39 @@ class SqueezeDetector:
                 logger.debug(f"{symbol} volume spike {volume_ratio:.1f}x below minimum")
                 return None
             
-            # SHORT INTEREST: Squeeze fuel calculation
-            short_interest = data.get('short_interest', 0.0)
+            # SHORT INTEREST: Must have real data - no defaults
+            short_interest = data.get('short_interest')
+            if short_interest is None:
+                logger.debug(f"Missing short interest data for {symbol} - excluding from squeeze analysis")
+                return None
             if isinstance(short_interest, str):
                 try:
                     short_interest = float(short_interest.rstrip('%')) / 100.0
                 except:
-                    short_interest = 0.0
+                    logger.debug(f"Invalid short interest format for {symbol} - excluding")
+                    return None
                     
-            # FLOAT ANALYSIS: Tight float requirement
-            float_shares = data.get('float', data.get('shares_outstanding', 100_000_000))
+            # FLOAT ANALYSIS: Must have real float data - no defaults
+            float_shares = data.get('float') or data.get('shares_outstanding')
+            if float_shares is None:
+                logger.debug(f"Missing float/shares outstanding data for {symbol} - excluding from squeeze analysis")
+                return None
             try:
                 float_shares = int(float_shares)
             except:
-                float_shares = 100_000_000  # Conservative default
+                logger.debug(f"Invalid float data format for {symbol} - excluding")
+                return None
                 
-            # BORROW RATE: Squeeze pressure indicator  
-            borrow_rate = data.get('borrow_rate', 0.0)
-            if isinstance(borrow_rate, str):
-                try:
-                    borrow_rate = float(borrow_rate.rstrip('%')) / 100.0
-                except:
-                    borrow_rate = 0.0
+            # BORROW RATE: Optional but validate if present
+            borrow_rate = data.get('borrow_rate')
+            if borrow_rate is not None:
+                if isinstance(borrow_rate, str):
+                    try:
+                        borrow_rate = float(borrow_rate.rstrip('%')) / 100.0
+                    except:
+                        logger.debug(f"Invalid borrow rate format for {symbol} - using None")
+                        borrow_rate = None
+            # Note: borrow_rate can be None - it's optional per calibration
             
             # MARKET CAP FILTER: Small-cap explosive potential
             market_cap = price * float_shares

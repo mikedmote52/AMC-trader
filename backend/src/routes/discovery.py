@@ -558,17 +558,20 @@ async def get_squeeze_candidates(min_score: float = Query(0.25, ge=0.0, le=1.0))
             if volume_spike_ratio and volume_spike_ratio > 0 and current_volume > 0:
                 calculated_avg_volume = max(current_volume / volume_spike_ratio, 100000)
             else:
-                calculated_avg_volume = 1000000  # Reasonable default
+                # Skip symbols without sufficient volume data
+                logger.debug(f"Excluding {symbol} - insufficient volume history")
+                continue
             
             squeeze_data = {
                 'symbol': symbol,
                 'price': item.get('price', 0.0),
                 'volume': current_volume,
                 'avg_volume_30d': calculated_avg_volume,  # Calculated from spike ratio
-                'short_interest': 0.30,  # AGGRESSIVE: 30% default (very bullish)
-                'float': 10_000_000,     # AGGRESSIVE: 10M tight float assumption
-                'borrow_rate': 0.75,     # AGGRESSIVE: 75% borrow rate (high pressure)
-                'shares_outstanding': 30_000_000,  # ENHANCED: 30M vs 50M (smaller default)
+                # NO DEFAULTS - Skip stocks without real market data
+                'short_interest': None,  # Must have real short interest data
+                'float': None,          # Must have real float data
+                'borrow_rate': None,    # Must have real borrow rate data
+                'shares_outstanding': None,  # Must have real shares outstanding data
                 # Market cap based on enhanced tight float estimate
                 'market_cap': item.get('price', 0.0) * 15_000_000  # Using tighter float
             }

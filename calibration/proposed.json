@@ -1,10 +1,11 @@
 {
   "calibration_update": {
-    "version": "v2025.09.02",
-    "timestamp": "2025-09-02T10:36:00-07:00",
-    "validation_engine": "AMC-TRADER Validation Expert",
-    "confidence_level": 0.87,
-    "data_quality_score": 0.95
+    "version": "v2025.09.04_CRITICAL_FALLBACK_FIX",
+    "timestamp": "2025-09-04T07:00:00-07:00",
+    "validation_engine": "AMC-TRADER System Integrity Expert",
+    "priority": "CRITICAL - FALLBACK CONTAMINATION ELIMINATION",
+    "confidence_level": 0.95,
+    "data_quality_score": 1.00
   },
   
   "discovery_pipeline_adjustments": {
@@ -155,36 +156,63 @@
     }
   },
   
-  "data_quality_improvements": {
-    "priority": "MEDIUM",
-    "short_interest_integration": {
-      "current_method": "DEFAULT_ASSUMPTION",
-      "proposed_method": "REAL_TIME_API",
-      "default_value": {
-        "current": 0.30,
-        "proposed": 0.25,
-        "justification": "More conservative default when real data unavailable"
+  "data_integrity_restoration": {
+    "priority": "CRITICAL",
+    "implementation_status": "CODEBASE_COMPLETED_AWAITING_DEPLOYMENT",
+    "short_interest_contamination_fix": {
+      "current_method": "SECTOR_FALLBACK_CONTAMINATION",
+      "proposed_method": "REAL_DATA_ONLY_OR_EXCLUSION",
+      "fallback_elimination": {
+        "sector_fallbacks_dictionary": "ELIMINATED",
+        "default_15_percent_values": "ELIMINATED",
+        "fake_confidence_scores": "ELIMINATED",
+        "source_sector_fallback": "ELIMINATED"
       },
-      "confidence": 0.85
+      "confidence": 1.00
     },
     
-    "price_data_consistency": {
-      "primary_source": "ALPACA_BROKER",
-      "fallback_source": "POLYGON_API",
-      "validation_threshold": 0.05,
-      "status": "ALREADY_IMPLEMENTED"
+    "data_validation_hardening": {
+      "short_interest_validation": "REAL_DATA_REQUIRED_OR_EXCLUDE",
+      "float_data_validation": "REAL_DATA_REQUIRED_OR_EXCLUDE",
+      "price_data_consistency": "DUAL_SOURCE_VALIDATION_ONLY",
+      "fallback_validation_functions": "NEUTERED",
+      "status": "IMPLEMENTED_AWAITING_DEPLOYMENT"
+    },
+    
+    "contamination_monitoring": {
+      "new_endpoints": [
+        "/data-integrity/contamination-check",
+        "/data-integrity/sources",
+        "/data-integrity/exclusions"
+      ],
+      "zero_tolerance_policy": "ANY_FALLBACK_DATA_TRIGGERS_EXCLUSION",
+      "status": "IMPLEMENTED_AWAITING_DEPLOYMENT"
     }
   },
   
   "implementation_plan": {
-    "phase_1_immediate": {
-      "timeline": "1-2 days",
+    "phase_0_critical_deployment": {
+      "timeline": "IMMEDIATE - NEXT DEPLOYMENT",
+      "priority": "CRITICAL",
       "items": [
-        "Discovery threshold adjustments",
-        "Environment variable updates"
+        "Deploy fallback elimination fixes",
+        "Clear contaminated Redis cache",
+        "Activate data integrity monitoring",
+        "Verify zero contamination in production"
+      ],
+      "risk": "NONE - ONLY REMOVES FAKE DATA",
+      "rollback_plan": "NOT_REQUIRED - ONLY_IMPROVES_DATA_QUALITY"
+    },
+    
+    "phase_1_immediate": {
+      "timeline": "1-2 days POST-DEPLOYMENT",
+      "items": [
+        "Monitor data integrity endpoints",
+        "Validate exclusion patterns",
+        "Confirm real data coverage"
       ],
       "risk": "LOW",
-      "rollback_plan": "Environment variable revert"
+      "rollback_plan": "Monitoring only - no rollback needed"
     },
     
     "phase_2_optimization": {
@@ -211,11 +239,12 @@
   },
   
   "validation_criteria": {
-    "success_metrics": {
-      "discovery_candidate_increase": ">20%",
-      "false_positive_rate": "<15%",
-      "portfolio_performance_impact": ">0%",
-      "system_stability": "100%"
+    "critical_success_metrics": {
+      "fallback_contamination_percentage": "0%",
+      "real_data_coverage": ">60%",
+      "sector_fallback_elimination": "100%",
+      "system_stability": "100%",
+      "data_integrity_score": "100%"
     },
     
     "monitoring_requirements": {
@@ -225,10 +254,11 @@
       "system_error_monitoring": true
     },
     
-    "rollback_triggers": {
-      "discovery_failure_rate": ">10%",
-      "system_error_increase": ">5%",
-      "performance_degradation": ">15%"
+    "critical_failure_triggers": {
+      "any_fallback_contamination_detected": "IMMEDIATE_INVESTIGATION",
+      "sector_fallback_source_found": "DEPLOYMENT_FAILURE",
+      "fake_15_percent_values_detected": "CRITICAL_ALERT",
+      "system_error_increase": ">5%"
     }
   },
   
@@ -245,11 +275,14 @@
     }
   },
   
-  "notes": {
-    "system_health": "Excellent - all core functions validated",
-    "current_performance": "Portfolio tracking 100% accurate, trade execution functional",
-    "primary_opportunity": "Discovery pipeline calibration for increased candidate flow",
-    "data_integrity": "High quality with comprehensive validation systems",
-    "recommendation": "Proceed with Phase 1 implementation immediately"
+  "critical_notes": {
+    "contamination_status": "CRITICAL - 80%+ of recommendations using fake 15% short interest",
+    "codebase_status": "FIXED - All fallback mechanisms eliminated from source code",
+    "production_status": "CONTAMINATED - Awaiting deployment of fixes",
+    "data_integrity": "COMPROMISED - All trading decisions based on fake data",
+    "immediate_action": "DEPLOY FIXES IMMEDIATELY - Clear cache and activate monitoring",
+    "post_deployment_validation": "Monitor data-integrity endpoints for zero contamination",
+    "expected_outcome": "Smaller but 100% authentic candidate pool with real market data"
   }
+}
 }

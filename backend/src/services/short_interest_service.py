@@ -53,15 +53,9 @@ class ShortInterestService:
         # FINRA reporting schedule - 15th and last day of month
         self.finra_reporting_days = [15, -1]  # -1 = last day
         
-        # Fallback short interest by sector (conservative estimates)
-        self.sector_fallbacks = {
-            'technology': 0.08,      # 8%
-            'healthcare': 0.12,      # 12% 
-            'energy': 0.15,          # 15%
-            'financial': 0.06,       # 6%
-            'consumer': 0.10,        # 10%
-            'default': 0.15          # 15% conservative default
-        }
+        # NO FALLBACKS - Only use real data or reject
+        # Fallback contamination eliminated per validation requirements
+        self.sector_fallbacks = None
     
     async def get_short_interest(self, symbol: str) -> ShortInterestData:
         """
@@ -85,9 +79,9 @@ class ShortInterestService:
                     await self._cache_short_interest(symbol, yahoo_data)
                     return yahoo_data
             
-            # Fallback to historical or defaults
-            fallback_data = await self._get_fallback_short_interest(symbol)
-            return fallback_data
+            # NO FALLBACKS - Return None to force exclusion
+            logger.warning(f"No real short interest data available for {symbol} - excluding from analysis")
+            return None
             
         except Exception as e:
             logger.error(f"Error getting short interest for {symbol}: {e}")
@@ -111,10 +105,12 @@ class ShortInterestService:
             fresh_data = await self._fetch_bulk_yahoo(symbols_needing_fetch)
             cached_results.update(fresh_data)
         
-        # Fill remaining gaps with fallbacks
-        for symbol in symbols:
-            if symbol not in cached_results or cached_results[symbol] is None:
-                cached_results[symbol] = await self._get_fallback_short_interest(symbol)
+        # NO FALLBACKS - Remove symbols without real data
+        symbols_with_data = {k: v for k, v in cached_results.items() if v is not None}
+        missing_count = len(symbols) - len(symbols_with_data)
+        if missing_count > 0:
+            logger.info(f"Excluded {missing_count} symbols without real short interest data")
+        cached_results = symbols_with_data
         
         return cached_results
     
@@ -237,22 +233,10 @@ class ShortInterestService:
         
         return datetime.utcnow() > data.expires_at
     
-    async def _get_fallback_short_interest(self, symbol: str) -> ShortInterestData:
-        """Get fallback short interest when primary sources fail"""
-        # Use sector-based fallback
-        sector = self._guess_sector(symbol)
-        fallback_percent = self.sector_fallbacks.get(sector, self.sector_fallbacks['default'])
-        
-        return ShortInterestData(
-            symbol=symbol,
-            short_percent_float=fallback_percent,
-            short_ratio=5.0,  # Conservative 5-day estimate
-            shares_short=0,   # Unknown
-            source='sector_fallback',
-            confidence=0.3,   # Low confidence
-            last_updated=datetime.utcnow(),
-            expires_at=datetime.utcnow() + timedelta(days=7)  # Shorter TTL for fallback
-        )
+    async def _get_fallback_short_interest(self, symbol: str) -> None:
+        """DEPRECATED - No fallbacks allowed per validation requirements"""
+        logger.error(f"Fallback short interest requested for {symbol} - this should never happen")
+        return None
     
     def _guess_sector(self, symbol: str) -> str:
         """Simple sector guessing based on symbol patterns"""
@@ -270,18 +254,10 @@ class ShortInterestService:
         else:
             return 'default'
     
-    def _create_default_short_interest(self, symbol: str) -> ShortInterestData:
-        """Create ultra-conservative default when all else fails"""
-        return ShortInterestData(
-            symbol=symbol,
-            short_percent_float=0.15,  # 15% conservative default
-            short_ratio=5.0,
-            shares_short=0,
-            source='default_fallback',
-            confidence=0.1,  # Very low confidence
-            last_updated=datetime.utcnow(),
-            expires_at=datetime.utcnow() + timedelta(hours=1)  # Very short TTL
-        )
+    def _create_default_short_interest(self, symbol: str) -> None:
+        """DEPRECATED - No defaults allowed per validation requirements"""
+        logger.error(f"Default short interest requested for {symbol} - excluding from analysis")
+        return None
     
     async def _get_bulk_cached(self, symbols: List[str]) -> Dict[str, Optional[ShortInterestData]]:
         """Get cached data for multiple symbols efficiently"""

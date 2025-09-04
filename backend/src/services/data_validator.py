@@ -121,7 +121,8 @@ class DataValidator:
         except Exception as e:
             logger.error(f"Price validation failed for {symbol}: {e}")
             # Fallback to single source
-            return await self._fallback_validation(symbol)
+            logger.warning(f"Dual-source price validation failed for {symbol} - excluding from analysis")
+            return None
     
     async def _get_polygon_price(self, symbol: str) -> Optional[Dict]:
         """Get price and market data from Polygon API"""
@@ -266,7 +267,7 @@ class DataValidator:
         try:
             # This would ideally fetch recent price data and calculate standard deviation
             # For now, return placeholder that can be enhanced later
-            return 0.05  # 5% default volatility
+            return None  # No default volatility - require real data
             
         except Exception as e:
             logger.warning(f"Volatility calculation failed for {symbol}: {e}")
@@ -296,17 +297,10 @@ class DataValidator:
         except Exception as e:
             logger.warning(f"Cache write failed for {symbol}: {e}")
     
-    async def _fallback_validation(self, symbol: str) -> PriceValidation:
-        """Fallback validation when dual-source fails"""
-        try:
-            # Try polygon only
-            polygon_data = await self._get_polygon_price(symbol)
-            if polygon_data:
-                return PriceValidation(
-                    price=polygon_data["price"],
-                    sources=["polygon"],
-                    discrepancy=0.0,
-                    timestamp=datetime.now(),
+    async def _fallback_validation(self, symbol: str) -> None:
+        """DEPRECATED - No fallback validation allowed per validation requirements"""
+        logger.error(f"Fallback validation requested for {symbol} - this should never happen")
+        return None
                     confidence=0.85,
                     volume_spike=polygon_data.get("volume_spike", 1.0),
                     volatility=polygon_data.get("volatility", 0.0),
