@@ -1,11 +1,14 @@
 import os
 import sys
-from typing import Optional
+from typing import Optional, Literal
 from pydantic import Field, validator
 from pydantic import BaseSettings
 import structlog
 
 logger = structlog.get_logger()
+
+# Scoring strategy type definition
+ScoringStrategy = Literal["legacy_v0", "hybrid_v1"]
 
 class Settings(BaseSettings):
     # Database
@@ -25,6 +28,17 @@ class Settings(BaseSettings):
     # Application settings
     environment: str = Field(default="development", env="ENVIRONMENT")
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
+    
+    # Scoring strategy settings
+    scoring_strategy: ScoringStrategy = Field(default="legacy_v0", env="SCORING_STRATEGY")
+    
+    @validator("scoring_strategy")
+    def validate_scoring_strategy(cls, v):
+        valid_strategies = ["legacy_v0", "hybrid_v1"]
+        if v not in valid_strategies:
+            logger.error(f"Invalid SCORING_STRATEGY: {v}. Must be one of: {valid_strategies}")
+            sys.exit(1)
+        return v
     
     @validator("*", pre=True)
     def validate_required_env_vars(cls, v, field):

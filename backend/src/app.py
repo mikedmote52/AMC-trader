@@ -191,6 +191,7 @@ app.include_router(polygon_debug, prefix="/debug")
 
 # Include discovery, portfolio, learning, daily updates, thesis, analytics, and pattern memory routers
 from backend.src.routes import discovery as discovery_routes
+from backend.src.routes import calibration as calibration_routes
 from backend.src.routes import portfolio as portfolio_routes
 from backend.src.routes import learning as learning_routes
 from backend.src.routes import daily_updates as daily_updates_routes
@@ -205,6 +206,7 @@ from backend.src.routes import monitoring as monitoring_routes
 from backend.src.routes import data_integrity as data_integrity_routes
 
 app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery"])
+app.include_router(calibration_routes.router, prefix="/calibration", tags=["calibration"])
 app.include_router(portfolio_routes.router, prefix="/portfolio", tags=["portfolio"])
 app.include_router(learning_routes.router, prefix="/learning", tags=["learning"])
 app.include_router(learning_analytics_routes.router, prefix="/learning-analytics", tags=["learning-analytics"])

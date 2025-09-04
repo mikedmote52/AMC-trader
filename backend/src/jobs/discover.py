@@ -46,8 +46,57 @@ def _load_calibration():
         print(f"Warning: Could not load calibration file: {e}")
     return {}
 
+# Utility functions for hybrid_v1 scoring
+def clamp(x, lo=0.0, hi=1.0):
+    """Clamp value between lo and hi bounds"""
+    return max(lo, min(hi, x or 0.0))
+
+def nz(x, default=0.0):
+    """Return default if x is None, else x"""
+    return default if x is None else x
+
+def _get_scoring_strategy():
+    """Get current scoring strategy from config with backward compatibility"""
+    # Check for explicit SCORING_STRATEGY setting
+    strategy = os.getenv("SCORING_STRATEGY", "").lower()
+    if strategy in ["legacy_v0", "hybrid_v1"]:
+        return strategy
+    
+    # Backward compatibility: if AMC_SQUEEZE_MODE is true, use legacy_v0
+    squeeze_mode = os.getenv("AMC_SQUEEZE_MODE", "true").lower() in ("1", "true", "yes")
+    if squeeze_mode:
+        return "legacy_v0"
+    
+    # Default to legacy_v0
+    return "legacy_v0"
+
+# Weight normalization and preset resolution
+def _normalize_weights(weights):
+    """Normalize weights to sum to 1.0"""
+    total = sum(weights.values()) or 1.0
+    return {k: max(0.0, v) / total for k, v in weights.items()}
+
+def _resolve_hybrid_weights(calibration):
+    """Resolve hybrid_v1 weights with preset overlay"""
+    scoring_config = calibration.get('scoring', {})
+    base_weights = scoring_config.get('hybrid_v1', {}).get('weights', {})
+    preset_name = scoring_config.get('preset')
+    presets = scoring_config.get('presets', {})
+    
+    if preset_name and preset_name in presets:
+        # Overlay preset weights over base weights
+        preset_weights = presets[preset_name].get('weights', {})
+        merged_weights = {**base_weights, **preset_weights}
+    else:
+        merged_weights = base_weights
+    
+    return _normalize_weights(merged_weights)
+
 # Load calibration settings
 _calibration = _load_calibration()
+
+# Resolve hybrid_v1 weights with preset overlay
+_hybrid_weights = _resolve_hybrid_weights(_calibration)
 
 # Environment variables for live discovery with calibration overrides
 POLY_KEY = os.getenv("POLYGON_API_KEY")
@@ -262,6 +311,320 @@ def _calculate_wolf_risk_score(price, volume_spike, momentum, atr_pct, rs_5d):
     # Return max risk factor, or low risk if no red flags
     return max(risk_factors) if risk_factors else 0.2
 
+def _detect_market_session():
+    """Detect current market session for session-aware gates"""
+    try:
+        from datetime import datetime
+        import pytz
+        
+        # Convert to Eastern Time (market time)
+        et = pytz.timezone('US/Eastern')
+        now_et = datetime.now(et)
+        time_et = now_et.time()
+        
+        # Market sessions (Eastern Time)
+        if time_et >= datetime.strptime("04:00", "%H:%M").time() and time_et < datetime.strptime("09:30", "%H:%M").time():
+            return "premarket"
+        elif time_et >= datetime.strptime("09:30", "%H:%M").time() and time_et < datetime.strptime("16:00", "%H:%M").time():
+            return "regular"
+        else:
+            return "afterhours"
+    except ImportError:
+        # Fallback if pytz not available
+        return "regular"
+
+def _resolve_thresholds(base_thresholds, session):
+    """Resolve thresholds with session overrides if enabled"""
+    overrides = base_thresholds.get("session_overrides", {})
+    session_config = overrides.get(session or "regular", {})
+    
+    # Only apply overrides if explicitly enabled
+    if not session_config or not session_config.get("enabled"):
+        return base_thresholds
+    
+    # Create copy and apply overrides
+    resolved = dict(base_thresholds)
+    for key in ("min_relvol_30", "min_atr_pct", "require_vwap_reclaim"):
+        if key in session_config:
+            resolved[key] = session_config[key]
+    return resolved
+
+def _passes_mid_float_path(enriched_data, thresholds):
+    """Check if candidate passes mid-float alternative path"""
+    mid_path = thresholds.get("mid_float_path", {})
+    if not mid_path.get("enabled"):
+        return False
+    
+    float_shares = nz(enriched_data.get('float_shares', enriched_data.get('float', 0)))
+    
+    # Check float range
+    if not (mid_path["float_min"] <= float_shares <= mid_path["float_max"]):
+        return False
+    
+    # Check core squeeze metrics (any one is enough)
+    short_interest = nz(enriched_data.get('short_interest', 0))
+    borrow_fee = nz(enriched_data.get('borrow_fee', 0))
+    utilization = nz(enriched_data.get('utilization', 0))
+    
+    core_met = (
+        short_interest >= mid_path.get("short_interest_min", 0.12) or
+        borrow_fee >= mid_path.get("borrow_fee_min", 0.10) or
+        utilization >= mid_path.get("utilization_min", 0.75)
+    )
+    
+    if not core_met:
+        return False
+    
+    # Plus one catalyst requirement
+    require_one = mid_path.get("require_one_of", {})
+    catalyst_signals = [
+        (require_one.get("news_catalyst") and enriched_data.get('has_news_catalyst', False)),
+        (nz(enriched_data.get('social_rank', 0)) >= require_one.get("social_rank_min", 1.1)),
+        (nz(enriched_data.get('call_put_ratio', 0)) >= require_one.get("call_put_ratio_min", 9e9))
+    ]
+    
+    return any(catalyst_signals)
+
+def _near(value, threshold, tolerance):
+    """Check if value is within tolerance below threshold"""
+    try:
+        return value is not None and threshold is not None and value >= (threshold * (1 - tolerance))
+    except:
+        return False
+
+def _hybrid_v1_gate_check(enriched_data, strategy_config):
+    """
+    Enhanced gatekeeping with observability for hybrid_v1 strategy
+    Returns (passed: bool, reason: str)
+    """
+    if not strategy_config:
+        return False, "no_strategy_config"
+    
+    thresholds = strategy_config.get('thresholds', {})
+    session = _detect_market_session()
+    
+    # Resolve thresholds with session overrides
+    active_thresholds = _resolve_thresholds(thresholds, session)
+    
+    # Extract metrics
+    symbol = enriched_data.get('symbol', 'UNKNOWN')
+    relvol_30 = nz(enriched_data.get('relvol_30', enriched_data.get('volume_spike', 0)))
+    atr_pct = nz(enriched_data.get('atr_pct', 0))
+    vwap_reclaim = enriched_data.get('vwap_reclaim', False)
+    price = nz(enriched_data.get('price', 0))
+    vwap = nz(enriched_data.get('vwap', 0))
+    float_shares = nz(enriched_data.get('float_shares', enriched_data.get('float', 0)))
+    short_interest = nz(enriched_data.get('short_interest', 0))
+    borrow_fee = nz(enriched_data.get('borrow_fee', 0))
+    utilization = nz(enriched_data.get('utilization', 0))
+    has_news_catalyst = enriched_data.get('has_news_catalyst', False)
+    social_rank = nz(enriched_data.get('social_rank', 0))
+    call_put_ratio = nz(enriched_data.get('call_put_ratio', 0))
+    
+    # Soft-pass configuration
+    tolerance = float(active_thresholds.get('soft_gate_tolerance', 0.0))
+    max_soft = int(active_thresholds.get('max_soft_pass', 0))
+    
+    # Helper to record rejections and push to trace
+    def reject(reason, details=None):
+        full_reason = f"{reason}_{session}"
+        # Push to trace for observability
+        try:
+            # Get the trace object from the caller context
+            import inspect
+            frame = inspect.currentframe()
+            while frame:
+                if 'trace' in frame.f_locals and hasattr(frame.f_locals['trace'], 'push'):
+                    frame.f_locals['trace'].push("strategy_scoring", {
+                        "symbol": symbol, 
+                        "reason": full_reason, 
+                        "details": details
+                    })
+                    break
+                frame = frame.f_back
+        except:
+            pass
+        logger.debug(f"Gate reject {symbol}: {full_reason} {details or ''}")
+        return False, full_reason
+    
+    # Gate 1: Relative volume
+    min_relvol = active_thresholds.get('min_relvol_30', 2.5)
+    relvol_ok = relvol_30 >= min_relvol
+    
+    # Gate 2: ATR percentage
+    min_atr = active_thresholds.get('min_atr_pct', 0.04)
+    atr_ok = atr_pct >= min_atr
+    
+    # Gate 3: VWAP with proximity tolerance
+    require_vwap = active_thresholds.get('require_vwap_reclaim', True)
+    vwap_ok = True
+    if require_vwap:
+        vwap_ok = vwap_reclaim
+        
+        # VWAP proximity check
+        if not vwap_ok:
+            prox_pct = float(active_thresholds.get('vwap_proximity_pct', 0.0))
+            if prox_pct > 0 and vwap > 0 and price > 0:
+                vwap_ok = price >= vwap * (1 - prox_pct/100.0)
+                if vwap_ok:
+                    metadata["vwap_proximity_used"] = True
+    
+    # Gate 4: Float/squeeze paths
+    float_max = active_thresholds.get('float_max', 75000000)
+    alt_path = active_thresholds.get('alt_path_large_float', {})
+    
+    # Primary small float path
+    float_ok = float_shares <= float_max
+    
+    # Large float alternative
+    large_alt = False
+    if not float_ok and float_shares >= alt_path.get('float_min', 150000000):
+        large_alt = (
+            short_interest >= alt_path.get('short_interest_min', 0.20) and
+            borrow_fee >= alt_path.get('borrow_fee_min', 0.20) and
+            utilization >= alt_path.get('utilization_min', 0.85)
+        )
+    
+    # Mid-float alternative path
+    mid_alt = _passes_mid_float_path(enriched_data, active_thresholds)
+    if mid_alt:
+        metadata["mid_alt"] = True
+    
+    squeeze_ok = float_ok or large_alt or mid_alt
+    
+    # Check hard pass
+    if relvol_ok and atr_ok and vwap_ok and squeeze_ok:
+        return True, None
+    
+    # Soft-pass logic (if enabled) - no counter tracking in this version
+    if max_soft > 0:
+        near_relvol = _near(relvol_30, min_relvol, tolerance)
+        near_atr = _near(atr_pct, min_atr, tolerance)
+        catalyst_strong = has_news_catalyst or social_rank >= 0.85
+        
+        if (near_relvol or near_atr) and catalyst_strong and vwap_ok and squeeze_ok:
+            # Tag as soft_pass in enriched_data for downstream tracking
+            enriched_data['soft_pass'] = True
+            try:
+                # Push soft pass to trace
+                import inspect
+                frame = inspect.currentframe()
+                while frame:
+                    if 'trace' in frame.f_locals and hasattr(frame.f_locals['trace'], 'push'):
+                        frame.f_locals['trace'].push("strategy_scoring", {
+                            "symbol": symbol, 
+                            "reason": "soft_pass", 
+                            "session": session
+                        })
+                        break
+                    frame = frame.f_back
+            except:
+                pass
+            return True, "soft_pass"
+    
+    # Detailed rejection reasons
+    if not relvol_ok:
+        return reject("relvol30_below", f"{relvol_30:.1f}<{min_relvol}")
+    if not atr_ok:
+        return reject("atr_pct_below", f"{atr_pct:.3f}<{min_atr}")
+    if not vwap_ok:
+        return reject("no_vwap_reclaim", f"price={price:.2f} vwap={vwap:.2f}")
+    if not squeeze_ok:
+        return reject("no_squeeze_path", f"float={float_shares/1e6:.1f}M")
+    
+    return reject("unknown")
+
+def _score_hybrid_v1(enriched_data, strategy_config):
+    """
+    Hybrid V1 scoring implementation with 5 subscores
+    Returns: (composite_score, subscores_dict)
+    """
+    weights = strategy_config.get('weights', {})
+    thresholds = strategy_config.get('thresholds', {})
+    
+    # Extract all metrics with safe defaults
+    relvol_30 = nz(enriched_data.get('relvol_30', enriched_data.get('volume_spike', 0)))
+    consec_up_days = nz(enriched_data.get('consec_up_days', 0))
+    vwap_reclaim = enriched_data.get('vwap_reclaim', False)
+    atr_pct = nz(enriched_data.get('atr_pct', 0))
+    float_shares = nz(enriched_data.get('float_shares', enriched_data.get('float', 50000000)))
+    short_interest = nz(enriched_data.get('short_interest', 0))
+    borrow_fee = nz(enriched_data.get('borrow_fee', 0))
+    utilization = nz(enriched_data.get('utilization', 0))
+    has_news_catalyst = enriched_data.get('has_news_catalyst', False)
+    social_rank = nz(enriched_data.get('social_rank', 0))
+    call_put_ratio = nz(enriched_data.get('call_put_ratio', 0))
+    iv_percentile = nz(enriched_data.get('iv_percentile', 0))
+    ema9 = nz(enriched_data.get('ema9', 0))
+    ema20 = nz(enriched_data.get('ema20', 0))
+    rsi = nz(enriched_data.get('rsi', 50))
+    
+    # 1. Volume & Momentum (35%)
+    min_relvol = thresholds.get('min_relvol_30', 2.5)
+    relvol_score = clamp((relvol_30 - min_relvol) / (8.0 - min_relvol))
+    uptrend_score = clamp((consec_up_days - 2) / 4.0)  # 3-6 days -> 0..1
+    vwap_score = 1.0 if vwap_reclaim else 0.0
+    min_atr = thresholds.get('min_atr_pct', 0.04)
+    atr_score = clamp((atr_pct - min_atr) / (0.10 - min_atr))
+    volume_momentum = 0.45*relvol_score + 0.20*uptrend_score + 0.20*vwap_score + 0.15*atr_score
+    
+    # 2. Squeeze (25%)
+    float_bonus = 1.0 if float_shares <= 50000000 else (0.6 if float_shares <= thresholds.get('float_max', 75000000) else 0.0)
+    si_score = clamp(short_interest / 0.40)  # 40%+ capped
+    borrow_score = clamp(borrow_fee / 0.50)
+    util_score = clamp((utilization - 0.70) / 0.30)  # 70-100%
+    squeeze = 0.35*float_bonus + 0.35*si_score + 0.15*borrow_score + 0.15*util_score
+    
+    # 3. Catalyst & Sentiment (20%)
+    catalyst = 0.5*(1.0 if has_news_catalyst else 0.0) + 0.5*clamp(social_rank)
+    
+    # 4. Options & Gamma (10%)
+    cpr_score = clamp((call_put_ratio - 1.0) / (3.0 - 1.0))  # 1..3+
+    iv_min = thresholds.get('iv_percentile_min', 80) / 100.0
+    ivp_score = clamp((iv_percentile - iv_min) / (1.0 - iv_min))
+    options = 0.6*cpr_score + 0.4*ivp_score
+    
+    # 5. Technical (10%)
+    ema_cross = 1.0 if ema9 > ema20 else 0.0
+    rsi_band = thresholds.get('rsi_band', [60, 70])
+    rsi_band_score = 1.0 if rsi_band[0] <= rsi <= rsi_band[1] else 0.0
+    technical = 0.6*ema_cross + 0.4*rsi_band_score
+    
+    # Use resolved weights (preset + normalization)
+    resolved_weights = _hybrid_weights
+    composite_score = (
+        resolved_weights.get('volume_momentum', 0.35) * volume_momentum +
+        resolved_weights.get('squeeze', 0.25) * squeeze +
+        resolved_weights.get('catalyst', 0.20) * catalyst +
+        resolved_weights.get('options', 0.10) * options +
+        resolved_weights.get('technical', 0.10) * technical
+    )
+    
+    # Build subscores dictionary
+    subscores = {
+        'volume_momentum': volume_momentum,
+        'squeeze': squeeze,
+        'catalyst': catalyst,
+        'options': options,
+        'technical': technical,
+        'components': {
+            'relvol_score': relvol_score,
+            'uptrend_score': uptrend_score,
+            'vwap_score': vwap_score,
+            'atr_score': atr_score,
+            'float_bonus': float_bonus,
+            'si_score': si_score,
+            'borrow_score': borrow_score,
+            'util_score': util_score,
+            'cpr_score': cpr_score,
+            'ivp_score': ivp_score,
+            'ema_cross': ema_cross,
+            'rsi_band_score': rsi_band_score
+        }
+    }
+    
+    return clamp(composite_score), subscores
+
 @dataclass
 class StageTrace:
     stages: List[str] = field(default_factory=list)
@@ -315,6 +678,109 @@ async def _poly_get(client, path, params=None, timeout=20):
     r = await client.get(f"https://api.polygon.io{path}", params=p, timeout=timeout)
     r.raise_for_status()
     return r.json()
+
+def _calculate_ema(prices, period):
+    """Calculate Exponential Moving Average"""
+    if len(prices) < period:
+        return None
+    
+    multiplier = 2.0 / (period + 1)
+    ema = prices[0]  # Start with first price
+    
+    for price in prices[1:]:
+        ema = (price * multiplier) + (ema * (1 - multiplier))
+    
+    return ema
+
+def _calculate_rsi(prices, period=14):
+    """Calculate Relative Strength Index"""
+    if len(prices) < period + 1:
+        return 50.0  # Default neutral RSI
+    
+    deltas = [prices[i] - prices[i-1] for i in range(1, len(prices))]
+    gains = [delta if delta > 0 else 0 for delta in deltas]
+    losses = [-delta if delta < 0 else 0 for delta in deltas]
+    
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
+    
+    if avg_loss == 0:
+        return 100.0
+    
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def _check_vwap_reclaim(bars):
+    """Check if price is reclaiming VWAP"""
+    if len(bars) < 20:
+        return False
+    
+    # Simple VWAP calculation for last 20 bars
+    total_volume = 0
+    total_pv = 0
+    
+    for bar in bars[-20:]:
+        volume = bar.get('v', 0)
+        typical_price = (bar.get('h', 0) + bar.get('l', 0) + bar.get('c', 0)) / 3
+        total_volume += volume
+        total_pv += typical_price * volume
+    
+    if total_volume == 0:
+        return False
+    
+    vwap = total_pv / total_volume
+    current_price = bars[-1].get('c', 0)
+    
+    return current_price > vwap
+
+def _count_consecutive_up_days(bars):
+    """Count consecutive up days"""
+    if len(bars) < 2:
+        return 0
+    
+    count = 0
+    for i in range(len(bars) - 1, 0, -1):
+        if bars[i].get('c', 0) > bars[i-1].get('c', 0):
+            count += 1
+        else:
+            break
+    
+    return count
+
+def _estimate_social_rank(symbol, volume_spike, price_change):
+    """Estimate social media rank (0-1) based on volume and price action"""
+    # Simple heuristic - in production this would integrate real social data
+    base_score = 0.0
+    
+    # Higher volume spikes suggest more social attention
+    if volume_spike >= 10.0:
+        base_score += 0.4
+    elif volume_spike >= 5.0:
+        base_score += 0.2
+    elif volume_spike >= 3.0:
+        base_score += 0.1
+    
+    # Significant price movements often generate social buzz
+    abs_change = abs(price_change or 0)
+    if abs_change >= 0.15:  # 15%+
+        base_score += 0.3
+    elif abs_change >= 0.10:  # 10%+
+        base_score += 0.2
+    elif abs_change >= 0.05:  # 5%+
+        base_score += 0.1
+    
+    # Known meme/social stocks get bonus (expand as needed)
+    social_symbols = {'AMC', 'GME', 'BBBY', 'APE', 'MULN', 'SNDL'}
+    if symbol.upper() in social_symbols:
+        base_score += 0.2
+    
+    return min(base_score, 1.0)
+
+def _detect_news_catalyst(volume_spike, price_change, atr_pct):
+    """Detect if unusual activity suggests news catalyst"""
+    # Strong volume + price movement suggests catalyst
+    return (volume_spike >= 5.0 and abs(price_change or 0) >= 0.10) or atr_pct >= 0.15
 
 def _bandwidth_percentile(closes, highs, lows, window=20, lookback=60):
     # Bollinger Band width / close, then percentile of last value vs history
@@ -1174,6 +1640,28 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                 
                 thesis = f"{sym} {pattern_type} pattern {confidence_level} confidence ({vigl_score:.2f}), {volume_desc}, {momentum_desc}, Risk: {risk_level}, {compression_desc}, ATR: {atrp*100:.1f}%, Liquidity: ${int(dollar_vol)/1_000_000:.1f}M."
                 
+                # Calculate additional hybrid_v1 metrics
+                closes = [float(bar.get("c", 0)) for bar in rows]
+                ema9 = _calculate_ema(closes, 9)
+                ema20 = _calculate_ema(closes, 20)
+                rsi = _calculate_rsi(closes)
+                vwap_reclaim = _check_vwap_reclaim(rows)
+                consec_up_days = _count_consecutive_up_days(rows)
+                social_rank = _estimate_social_rank(sym, volume_spike, r1)
+                has_news_catalyst = _detect_news_catalyst(volume_spike, r1, atrp)
+                
+                # Enhanced factors for hybrid_v1
+                factors.update({
+                    "ema9": round(ema9 or 0, 2),
+                    "ema20": round(ema20 or 0, 2),
+                    "rsi": round(rsi, 1),
+                    "vwap_reclaim": vwap_reclaim,
+                    "consec_up_days": consec_up_days,
+                    "social_rank": round(social_rank, 2),
+                    "has_news_catalyst": has_news_catalyst,
+                    "relvol_30": round(volume_spike, 2),  # Alias for hybrid_v1
+                })
+                
                 return {
                     "price": price,
                     "dollar_vol": dollar_vol, 
@@ -1184,7 +1672,19 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
                     "wolf_risk": wolf_risk,
                     "volume_spike": volume_spike,
                     "factors": factors,
-                    "thesis": thesis
+                    "thesis": thesis,
+                    # New hybrid_v1 fields
+                    "ema9": ema9,
+                    "ema20": ema20,
+                    "rsi": rsi,
+                    "vwap_reclaim": vwap_reclaim,
+                    "consec_up_days": consec_up_days,
+                    "social_rank": social_rank,
+                    "has_news_catalyst": has_news_catalyst,
+                    "relvol_30": volume_spike,  # Alias for hybrid_v1 compatibility
+                    "float_shares": 50000000,  # Default estimate - will be enhanced with real data when available
+                    "call_put_ratio": 1.0,  # Default - will be enhanced with options data
+                    "iv_percentile": 0.5,  # Default - will be enhanced with options data
                 }
         except Exception as e:
             logger.warning(f"Enrichment failed for {sym}: {e}")
@@ -1339,156 +1839,246 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
             logger.info("No squeeze candidates found - ending discovery")
             return ([], trace.to_dict()) if with_trace else []
 
-    # VIGL Pattern Filtering - keep only promising candidates
-    trace.enter("vigl_filter", [o["symbol"] for o in initial_out])
-    vigl_candidates = []
-    vigl_rejected = []
+    # STRATEGY-AWARE SCORING - Route based on strategy selection  
+    current_strategy = _get_scoring_strategy()
+    strategy_config = _calibration.get('scoring', {}).get('hybrid_v1', {}) if current_strategy == 'hybrid_v1' else {}
+    
+    logger.info(f"Using scoring strategy: {current_strategy}")
+    
+    trace.enter("strategy_scoring", [o["symbol"] for o in initial_out])
+    strategy_candidates = []
+    strategy_rejected = []
+    soft_pass_counter = 0  # Track soft passes used
     
     for candidate in initial_out:
-        vigl_score = candidate.get("vigl_score", 0.0)
-        wolf_risk = candidate.get("wolf_risk", 1.0)
-        price = candidate.get("price", 0.0)
-        volume_spike = candidate.get("volume_spike", 0.0)
-        
-        # EXPLOSIVE PATTERN REQUIREMENTS - Calibrated for explosive opportunities  
-        meets_explosive_criteria = (
-            vigl_score >= 0.10 and                           # ULTRA inclusive threshold
-            wolf_risk <= 0.8 and                             # Higher risk tolerance for explosions
-            price >= 0.01 and                                # $0.01+ minimum (penny stocks welcome)
-            price <= 500.0 and                               # Under $500 (include everything)  
-            volume_spike >= 2.0 and                          # 2x+ volume (real interest)
-            candidate.get("rs_5d", 0) >= -0.15 and          # Allow 15% pullbacks only
-            candidate.get("atr_pct", 0) >= 0.02              # 2%+ ATR for real movement
-        )
-        
-        # Legacy criteria (more lenient) for compatibility  
-        meets_vigl_criteria = meets_explosive_criteria or (
-            vigl_score >= 0.15 and                    # Very inclusive backup threshold
-            wolf_risk <= 0.8 and                      # Higher risk tolerance
-            price >= 0.10 and                         # Include penny stocks
-            price <= 100.0 and                        # Full range
-            volume_spike >= 1.0                       # Any volume increase
-        )
-        
-        if meets_vigl_criteria:
-            # Enhanced scoring with meaningful differentiation
-            compression_score = candidate.get("score", 0.0)  # Original compression score
-            atr_pct = candidate.get("atr_pct", 0.0)
-            rs_5d = candidate.get("rs_5d", 0.0)
+        # Strategy-specific processing
+        if current_strategy == 'hybrid_v1':
+            # Hybrid V1 strategy with enhanced gatekeeping
+            gate_passed, gate_reason = _hybrid_v1_gate_check(candidate, strategy_config)
             
-            # Normalize and scale factors for better differentiation
-            vigl_normalized = (vigl_score - 0.5) / 0.5  # Map 0.5-1.0 to 0.0-1.0
-            compression_normalized = compression_score  # Already 0-1
-            risk_score = max(0, 1.0 - wolf_risk)  # Invert risk for positive scoring
+            if not gate_passed:
+                strategy_rejected.append({
+                    "symbol": candidate["symbol"],
+                    "reason": f"hybrid_v1_gate_{gate_reason}",
+                    "strategy": "hybrid_v1"
+                })
+                continue
             
-            # Volume spike with logarithmic scaling for better spread
-            volume_multiplier = min(math.log(volume_spike + 1) / math.log(21), 1.0)  # log scale, cap at 20x
+            # Track soft passes (tagged by gate check function)
+            if candidate.get("soft_pass"):
+                soft_pass_counter += 1
+            # Add mid_alt tag if mid-float path was used
+            if gate_reason == "mid_float_catalyst_path":
+                candidate["mid_alt"] = True
             
-            # Momentum factor: recent 5-day performance
-            momentum_factor = max(0, min(1, 0.5 + rs_5d * 2))  # -50% to +50% maps to 0-1
-            
-            # Volatility factor: higher ATR = more opportunity
-            volatility_factor = min(atr_pct / 0.15, 1.0)  # 15% ATR = max score
-            
-            # SQUEEZE MODE: Use optimized weights for VIGL pattern detection
-            if SQUEEZE_MODE and 'squeeze_score' in candidate:
-                # Already has squeeze score - use it as primary factor
-                composite_score = candidate['squeeze_score']
-            else:
-                # Apply SQUEEZE_MODE weights if enabled, otherwise legacy weights
-                if SQUEEZE_MODE:
-                    composite_score = (
-                        volume_multiplier * SQUEEZE_WEIGHTS['volume'] +        # 0.40 - Volume primary
-                        (short_interest_score if 'short_interest_score' in locals() else 0.0) * SQUEEZE_WEIGHTS['short'] +  # 0.30 - Short interest
-                        momentum_factor * SQUEEZE_WEIGHTS['catalyst'] +        # 0.15 - Catalyst/momentum
-                        volatility_factor * SQUEEZE_WEIGHTS['options'] +       # 0.10 - Options/volatility
-                        compression_normalized * SQUEEZE_WEIGHTS['tech']       # 0.05 - Technical/compression
-                    )
+            # Apply hybrid_v1 scoring
+            try:
+                composite_score, subscores = _score_hybrid_v1(candidate, strategy_config)
+                
+                # Check entry rules
+                entry_rules = strategy_config.get('entry_rules', {})
+                score_pct = composite_score * 100
+                
+                if score_pct >= entry_rules.get('watchlist_min', 70):
+                    # Determine action tag
+                    if score_pct >= entry_rules.get('trade_ready_min', 75):
+                        action_tag = "trade_ready"
+                        pattern_match = "HYBRID_TRADE_READY"
+                    else:
+                        action_tag = "watchlist"
+                        pattern_match = "HYBRID_WATCHLIST"
+                    
+                    # Enhanced candidate with hybrid_v1 data
+                    candidate["score"] = round(composite_score, 4)
+                    candidate["reason"] = f"hybrid_v1_{action_tag}"
+                    candidate["strategy"] = "hybrid_v1"
+                    candidate["pattern_match"] = pattern_match
+                    candidate["subscores"] = subscores
+                    candidate["action_tag"] = action_tag
+                    candidate["gate_reason"] = gate_reason
+                    
+                    strategy_candidates.append(candidate)
                 else:
-                    # Legacy multi-factor composite
-                    composite_score = (
-                        vigl_normalized * 0.25 +      # VIGL pattern (reduced weight for differentiation)
-                        compression_normalized * 0.20 +  # Compression setup
-                        risk_score * 0.15 +           # Risk avoidance
-                        volume_multiplier * 0.20 +    # Volume spike (increased weight)
-                        momentum_factor * 0.15 +      # Recent momentum
-                        volatility_factor * 0.05      # Volatility opportunity
-                    )
-            
-            # Apply confidence tiers with score scaling
-            if vigl_score >= 0.80:
-                composite_score *= 1.2  # High confidence boost
-            elif vigl_score >= 0.65:
-                composite_score *= 1.0  # Medium confidence
-            else:
-                composite_score *= 0.8  # Lower confidence penalty
-            
-            # Ensure score stays in reasonable range with spread
-            composite_score = min(max(composite_score, 0.0), 1.0)
-            
-            candidate["score"] = round(composite_score, 4)
-            candidate["reason"] = f"VIGL pattern (similarity: {vigl_score:.2f})"
-            
-            # Add key decision metrics for frontend display
-            candidate["decision_data"] = {
-                "volume_spike_ratio": round(volume_spike, 1),
-                "momentum_1d_pct": round(candidate.get("rs_5d", 0) * 100, 1),  # Using 5d as momentum proxy
-                "vigl_confidence": "HIGH" if vigl_score >= 0.80 else "MEDIUM" if vigl_score >= 0.65 else "LOW",
-                "risk_level": "HIGH" if wolf_risk > 0.6 else "MEDIUM" if wolf_risk > 0.3 else "LOW",
-                "atr_pct": round(atr_pct * 100, 1),
-                "compression_rank": round((1 - compression_score) * 100, 1)  # Higher = tighter compression
-            }
-            
-            vigl_candidates.append(candidate)
+                    strategy_rejected.append({
+                        "symbol": candidate["symbol"],
+                        "reason": f"hybrid_v1_score_{score_pct:.1f}_below_min",
+                        "score": composite_score,
+                        "strategy": "hybrid_v1"
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Hybrid V1 scoring failed for {candidate['symbol']}: {e}")
+                strategy_rejected.append({
+                    "symbol": candidate["symbol"],
+                    "reason": f"hybrid_v1_scoring_error_{str(e)[:30]}",
+                    "strategy": "hybrid_v1"
+                })
+                
         else:
-            # Track rejection reasons
-            reasons = []
-            if vigl_score < 0.50: reasons.append("low_vigl_similarity")
-            if wolf_risk > WOLF_RISK_THRESHOLD: reasons.append("high_wolf_risk")
-            if price < VIGL_PRICE_MIN: reasons.append("price_too_low")
-            if price > VIGL_PRICE_MAX: reasons.append("price_too_high")
-            if volume_spike < VIGL_VOLUME_MIN: reasons.append("insufficient_volume_spike")
+            # Legacy V0 strategy (existing VIGL logic)
+            vigl_score = candidate.get("vigl_score", 0.0)
+            wolf_risk = candidate.get("wolf_risk", 1.0)
+            price = candidate.get("price", 0.0)
+            volume_spike = candidate.get("volume_spike", 0.0)
             
-            vigl_rejected.append({
-                "symbol": candidate["symbol"], 
-                "reason": "_".join(reasons),
-                "vigl_score": round(vigl_score, 3),
-                "wolf_risk": round(wolf_risk, 3),
-                "price": price,
-                "volume_spike": round(volume_spike, 1)
-            })
+            # EXPLOSIVE PATTERN REQUIREMENTS - Calibrated for explosive opportunities  
+            meets_explosive_criteria = (
+                vigl_score >= 0.10 and                           # ULTRA inclusive threshold
+                wolf_risk <= 0.8 and                             # Higher risk tolerance for explosions
+                price >= 0.01 and                                # $0.01+ minimum (penny stocks welcome)
+                price <= 500.0 and                               # Under $500 (include everything)  
+                volume_spike >= 2.0 and                          # 2x+ volume (real interest)
+                candidate.get("rs_5d", 0) >= -0.15 and          # Allow 15% pullbacks only
+                candidate.get("atr_pct", 0) >= 0.02              # 2%+ ATR for real movement
+            )
+            
+            # Legacy criteria (more lenient) for compatibility  
+            meets_vigl_criteria = meets_explosive_criteria or (
+                vigl_score >= 0.15 and                    # Very inclusive backup threshold
+                wolf_risk <= 0.8 and                      # Higher risk tolerance
+                price >= 0.10 and                         # Include penny stocks
+                price <= 100.0 and                        # Full range
+                volume_spike >= 1.0                       # Any volume increase
+            )
+            
+            if meets_vigl_criteria:
+                # Enhanced scoring with meaningful differentiation
+                compression_score = candidate.get("score", 0.0)  # Original compression score
+                atr_pct = candidate.get("atr_pct", 0.0)
+                rs_5d = candidate.get("rs_5d", 0.0)
+                
+                # Normalize and scale factors for better differentiation
+                vigl_normalized = (vigl_score - 0.5) / 0.5  # Map 0.5-1.0 to 0.0-1.0
+                compression_normalized = compression_score  # Already 0-1
+                risk_score = max(0, 1.0 - wolf_risk)  # Invert risk for positive scoring
+                
+                # Volume spike with logarithmic scaling for better spread
+                volume_multiplier = min(math.log(volume_spike + 1) / math.log(21), 1.0)  # log scale, cap at 20x
+                
+                # Momentum factor: recent 5-day performance
+                momentum_factor = max(0, min(1, 0.5 + rs_5d * 2))  # -50% to +50% maps to 0-1
+                
+                # Volatility factor: higher ATR = more opportunity
+                volatility_factor = min(atr_pct / 0.15, 1.0)  # 15% ATR = max score
+                
+                # SQUEEZE MODE: Use optimized weights for VIGL pattern detection
+                if SQUEEZE_MODE and 'squeeze_score' in candidate:
+                    # Already has squeeze score - use it as primary factor
+                    composite_score = candidate['squeeze_score']
+                else:
+                    # Apply SQUEEZE_MODE weights if enabled, otherwise legacy weights
+                    if SQUEEZE_MODE:
+                        composite_score = (
+                            volume_multiplier * SQUEEZE_WEIGHTS['volume'] +        # 0.40 - Volume primary
+                            (short_interest_score if 'short_interest_score' in locals() else 0.0) * SQUEEZE_WEIGHTS['short'] +  # 0.30 - Short interest
+                            momentum_factor * SQUEEZE_WEIGHTS['catalyst'] +        # 0.15 - Catalyst/momentum
+                            volatility_factor * SQUEEZE_WEIGHTS['options'] +       # 0.10 - Options/volatility
+                            compression_normalized * SQUEEZE_WEIGHTS['tech']       # 0.05 - Technical/compression
+                        )
+                    else:
+                        # Legacy multi-factor composite
+                        composite_score = (
+                            vigl_normalized * 0.25 +      # VIGL pattern (reduced weight for differentiation)
+                            compression_normalized * 0.20 +  # Compression setup
+                            risk_score * 0.15 +           # Risk avoidance
+                            volume_multiplier * 0.20 +    # Volume spike (increased weight)
+                            momentum_factor * 0.15 +      # Recent momentum
+                            volatility_factor * 0.05      # Volatility opportunity
+                        )
+                
+                # Apply confidence tiers with score scaling
+                if vigl_score >= 0.80:
+                    composite_score *= 1.2  # High confidence boost
+                elif vigl_score >= 0.65:
+                    composite_score *= 1.0  # Medium confidence
+                else:
+                    composite_score *= 0.8  # Lower confidence penalty
+                
+                # Ensure score stays in reasonable range with spread
+                composite_score = min(max(composite_score, 0.0), 1.0)
+                
+                candidate["score"] = round(composite_score, 4)
+                candidate["reason"] = f"VIGL pattern (similarity: {vigl_score:.2f})"
+                candidate["strategy"] = "legacy_v0"
+                
+                # Add key decision metrics for frontend display
+                candidate["decision_data"] = {
+                    "volume_spike_ratio": round(volume_spike, 1),
+                    "momentum_1d_pct": round(candidate.get("rs_5d", 0) * 100, 1),  # Using 5d as momentum proxy
+                    "vigl_confidence": "HIGH" if vigl_score >= 0.80 else "MEDIUM" if vigl_score >= 0.65 else "LOW",
+                    "risk_level": "HIGH" if wolf_risk > 0.6 else "MEDIUM" if wolf_risk > 0.3 else "LOW",
+                    "atr_pct": round(atr_pct * 100, 1),
+                    "compression_rank": round((1 - compression_score) * 100, 1)  # Higher = tighter compression
+                }
+                
+                strategy_candidates.append(candidate)
+            else:
+                # Track rejection reasons for legacy strategy
+                reasons = []
+                if vigl_score < 0.50: reasons.append("low_vigl_similarity")
+                if wolf_risk > WOLF_RISK_THRESHOLD: reasons.append("high_wolf_risk")
+                if price < VIGL_PRICE_MIN: reasons.append("price_too_low")
+                if price > VIGL_PRICE_MAX: reasons.append("price_too_high")
+                if volume_spike < VIGL_VOLUME_MIN: reasons.append("insufficient_volume_spike")
+                
+                strategy_rejected.append({
+                    "symbol": candidate["symbol"], 
+                    "reason": "_".join(reasons),
+                    "vigl_score": round(vigl_score, 3),
+                    "wolf_risk": round(wolf_risk, 3),
+                    "price": price,
+                    "volume_spike": round(volume_spike, 1),
+                    "strategy": "legacy_v0"
+                })
     
-    trace.exit("vigl_filter", [c["symbol"] for c in vigl_candidates], vigl_rejected)
+    trace.exit("strategy_scoring", [c["symbol"] for c in strategy_candidates], strategy_rejected)
     
-    # Intelligent quality filtering for top-tier recommendations
-    trace.enter("quality_filter", [c["symbol"] for c in vigl_candidates])
+    # Intelligent quality filtering for top-tier recommendations  
+    trace.enter("quality_filter", [c["symbol"] for c in strategy_candidates])
     
-    # Sort by enhanced VIGL score
-    vigl_candidates.sort(key=lambda x: x["score"], reverse=True)
+    # Sort by score (strategy-agnostic)
+    strategy_candidates.sort(key=lambda x: x["score"], reverse=True)
     
-    # Apply quality tiers for intelligent filtering
-    high_confidence = [c for c in vigl_candidates if c.get("vigl_score", 0) >= 0.80]
-    medium_confidence = [c for c in vigl_candidates if 0.65 <= c.get("vigl_score", 0) < 0.80]
-    
-    # Build final selection prioritizing quality over quantity
-    final_out = []
+    # Apply strategy-aware quality filtering
     target_count = limit or MAX_CANDIDATES
     
-    # Always include high confidence picks (up to 3)
-    final_out.extend(high_confidence[:3])
-    
-    # Fill remaining slots with best medium confidence picks
-    remaining_slots = target_count - len(final_out)
-    if remaining_slots > 0:
-        # Get medium confidence picks that aren't already included
-        available_medium = [c for c in medium_confidence if c not in final_out]
-        final_out.extend(available_medium[:remaining_slots])
-    
-    # If still need more, take remaining from any tier (backup)
-    if len(final_out) < target_count:
+    if current_strategy == 'hybrid_v1':
+        # Hybrid V1: Filter by action tags and score
+        trade_ready = [c for c in strategy_candidates if c.get("action_tag") == "trade_ready"]
+        watchlist = [c for c in strategy_candidates if c.get("action_tag") == "watchlist"]
+        
+        # Prioritize trade_ready candidates
+        final_out = []
+        final_out.extend(trade_ready[:target_count])
+        
+        # Fill remaining with watchlist candidates
         remaining_slots = target_count - len(final_out)
-        remaining_candidates = [c for c in vigl_candidates if c not in final_out]
-        final_out.extend(remaining_candidates[:remaining_slots])
+        if remaining_slots > 0:
+            final_out.extend(watchlist[:remaining_slots])
+            
+    else:
+        # Legacy V0: Filter by VIGL confidence tiers
+        high_confidence = [c for c in strategy_candidates if c.get("vigl_score", 0) >= 0.80]
+        medium_confidence = [c for c in strategy_candidates if 0.65 <= c.get("vigl_score", 0) < 0.80]
+        
+        # Build final selection prioritizing quality over quantity
+        final_out = []
+        
+        # Always include high confidence picks (up to 3)
+        final_out.extend(high_confidence[:3])
+        
+        # Fill remaining slots with best medium confidence picks
+        remaining_slots = target_count - len(final_out)
+        if remaining_slots > 0:
+            # Get medium confidence picks that aren't already included
+            available_medium = [c for c in medium_confidence if c not in final_out]
+            final_out.extend(available_medium[:remaining_slots])
+        
+        # If still need more, take remaining from any tier (backup)
+        if len(final_out) < target_count:
+            remaining_slots = target_count - len(final_out)
+            remaining_candidates = [c for c in strategy_candidates if c not in final_out]
+            final_out.extend(remaining_candidates[:remaining_slots])
     
     # Quality metrics for trace
     quality_metrics = {

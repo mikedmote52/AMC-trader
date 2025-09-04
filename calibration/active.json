@@ -3,6 +3,109 @@
     "squeeze": { "EXTREME": 0.85, "HIGH": 0.65, "MEDIUM": 0.45, "LOW": 0.25 },
     "meanrev": { "EXTREME": 0.82, "HIGH": 0.62, "MEDIUM": 0.42, "LOW": 0.25 }
   },
+  "scoring": {
+    "strategy": "legacy_v0",
+    "preset": "balanced_default",
+    "presets": {
+      "squeeze_aggressive": {
+        "weights": {
+          "squeeze": 0.35,
+          "volume_momentum": 0.30,
+          "catalyst": 0.20,
+          "options": 0.10,
+          "technical": 0.05
+        }
+      },
+      "catalyst_heavy": {
+        "weights": {
+          "catalyst": 0.35,
+          "volume_momentum": 0.30,
+          "squeeze": 0.20,
+          "options": 0.10,
+          "technical": 0.05
+        }
+      },
+      "balanced_default": {
+        "weights": {
+          "volume_momentum": 0.35,
+          "squeeze": 0.25,
+          "catalyst": 0.20,
+          "options": 0.10,
+          "technical": 0.10
+        }
+      }
+    },
+    "hybrid_v1": {
+      "weights": {
+        "volume_momentum": 0.35,
+        "squeeze": 0.25,
+        "catalyst": 0.20,
+        "options": 0.10,
+        "technical": 0.10
+      },
+      "thresholds": {
+        "min_relvol_30": 2.5,
+        "min_atr_pct": 0.04,
+        "rsi_band": [60, 70],
+        "ema_fast": 9,
+        "ema_slow": 20,
+        "iv_percentile_min": 80,
+        "call_put_min": 2.0,
+        "short_interest_min": 0.15,
+        "float_max": 75000000,
+        "alt_path_large_float": {
+          "float_min": 150000000,
+          "short_interest_min": 0.20,
+          "borrow_fee_min": 0.20,
+          "utilization_min": 0.85
+        },
+        "require_vwap_reclaim": true,
+        "session_overrides": {
+          "premarket": {
+            "enabled": false,
+            "min_relvol_30": 2.0,
+            "min_atr_pct": 0.03,
+            "require_vwap_reclaim": false
+          },
+          "afterhours": {
+            "enabled": false,
+            "min_relvol_30": 1.8,
+            "min_atr_pct": 0.03,
+            "require_vwap_reclaim": false
+          },
+          "regular": {
+            "enabled": false
+          }
+        },
+        "vwap_proximity_pct": 0.0,
+        "mid_float_path": {
+          "enabled": false,
+          "float_min": 75000000,
+          "float_max": 150000000,
+          "short_interest_min": 0.12,
+          "borrow_fee_min": 0.10,
+          "utilization_min": 0.75,
+          "require_one_of": {
+            "news_catalyst": true,
+            "social_rank_min": 0.85,
+            "call_put_ratio_min": 2.5
+          }
+        },
+        "soft_gate_tolerance": 0.10,
+        "max_soft_pass": 0
+      },
+      "entry_rules": {
+        "watchlist_min": 70,
+        "trade_ready_min": 75
+      },
+      "safety_guardrails": {
+        "max_candidates": 100,
+        "min_dollar_volume_premarket": 2000000,
+        "emergency_fallback": true,
+        "max_latency_ms": 15000
+      }
+    }
+  },
   "discovery_filters": {
     "price_cap": 100.0,
     "price_min": 0.10,

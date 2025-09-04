@@ -5,7 +5,7 @@ services:
     env: python
     plan: standard
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn backend.app:api --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn backend.src.app:app --host 0.0.0.0 --port $PORT
     envVars:
       # Force Hybrid V1 in production
       - key: SCORING_STRATEGY

@@ -60,10 +60,17 @@ def _emergency_override_active() -> bool:
         return False
 
 
-def get_strategy_metadata() -> dict:
+def get_strategy_metadata(effective: str = None, preset: str = None, weights_hash: str = None, thresholds_hash: str = None) -> dict:
     """Get current strategy resolution metadata for diagnostics"""
+    if effective is None:
+        effective = resolve_effective_strategy()
+    
     return {
-        "effective_strategy": resolve_effective_strategy(),
+        "strategy": effective,
+        "effective_strategy": effective,
+        "preset": preset,
+        "weights_hash": weights_hash,
+        "thresholds_hash": thresholds_hash,
         "force_strategy": os.getenv("FORCE_STRATEGY", ""),
         "allow_override": os.getenv("ALLOW_STRATEGY_OVERRIDE", "false"),
         "env_strategy": os.getenv("SCORING_STRATEGY", "legacy_v0"),
