@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 
 from ..services.data_validator import validator_singleton
 from ..services.short_interest_feed import short_interest_feed
-from ..services.polygon_client import poly_singleton
+from ..services.polygon_client_fixed import poly_fixed_singleton as poly_singleton
 from ..shared.redis_client import get_redis_client, squeeze_cache
 
 logger = logging.getLogger(__name__)

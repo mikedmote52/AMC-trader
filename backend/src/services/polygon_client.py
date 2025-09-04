@@ -10,9 +10,9 @@ class Polygon:
 
     async def agg_last_minute(self, symbol: str):
         # v2 aggregates, last closed 1-min bar
-        now_ms = int(time.time()*1000)
-        day_ago = now_ms - 24*3600*1000
-        url = f"/v2/aggs/ticker/{symbol.upper()}/range/1/min/{day_ago}/{now_ms}"
+        now_sec = int(time.time())
+        day_ago = now_sec - 24*3600
+        url = f"/v2/aggs/ticker/{symbol.upper()}/range/1/min/{day_ago}/{now_sec}"
         r = await self.c.get(url, params={"adjusted":"true","sort":"desc","limit":"1"})
         r.raise_for_status()
         js = r.json()
