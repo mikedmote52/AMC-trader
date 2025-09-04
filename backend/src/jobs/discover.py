@@ -55,7 +55,7 @@ POLY_KEY = os.getenv("POLYGON_API_KEY")
 PRICE_CAP = _calibration.get("discovery_filters", {}).get("price_cap", float(os.getenv("AMC_PRICE_CAP", "500")))
 MIN_DOLLAR_VOL = _calibration.get("discovery_filters", {}).get("dollar_volume_min", float(os.getenv("AMC_MIN_DOLLAR_VOL", "5000000")))  # CALIBRATED: 1M vs 5M
 LOOKBACK_DAYS = int(os.getenv("AMC_COMPRESSION_LOOKBACK", "60"))
-COMPRESSION_PCTL_MAX = _calibration.get("discovery_filters", {}).get("compression_percentile_max", float(os.getenv("AMC_COMPRESSION_PCTL_MAX", "0.30")))  # CALIBRATED: 0.50 vs 0.30
+COMPRESSION_PCTL_MAX = _calibration.get("discovery_filters", {}).get("compression_percentile_max", float(os.getenv("AMC_COMPRESSION_PCTL_MAX", "0.75")))  # EXPANDED: Allow 75th percentile (more candidates)
 MAX_CANDIDATES = _calibration.get("discovery_filters", {}).get("max_candidates", int(os.getenv("AMC_MAX_CANDIDATES", "25")))  # CALIBRATED: 35 vs 25
 # Enhanced fallback universe - expanded from small default to comprehensive squeeze candidates
 _DEFAULT_FALLBACK = "VIGL,QUBT,CRWV,AEVA,UP,WULF,SSRM,SPHR,TEVA,KSS,CELC,CARS,GMAB,AMDL,TEM,RGTI,DCGO,OCGN,COTI,INVZ,SERA,LFMD,MNOV,INZY,ANIC,BBIG,ASTS,RKLB,HOLO,LOVO,ARQQ,NNDM,PRTG,FUBO,GOEV,REI,CLSK,RIOT,HUT,BITF,MARA,CAN,HVBT,DAC,NAK,AAPL,NVDA,TSLA,AMD,ANTE"
@@ -79,7 +79,7 @@ SQUEEZE_WEIGHTS = {
 
 # EXPLOSIVE PATTERN LEARNING - Based on VIGL's 324% Winner Analysis  
 EXPLOSIVE_PRICE_MIN = float(os.getenv("AMC_EXPLOSIVE_PRICE_MIN", "0.01"))     # TRUE PENNY STOCKS - $0.01 minimum
-EXPLOSIVE_PRICE_MAX = float(os.getenv("AMC_EXPLOSIVE_PRICE_MAX", "10.00"))    # Tightened to explosive sweet spot
+EXPLOSIVE_PRICE_MAX = float(os.getenv("AMC_EXPLOSIVE_PRICE_MAX", "100.00"))   # Expanded to capture more opportunities
 EXPLOSIVE_VOLUME_MIN = float(os.getenv("AMC_EXPLOSIVE_VOLUME_MIN", "10.0"))   # Increased - 10x+ volume minimum
 EXPLOSIVE_VOLUME_TARGET = float(os.getenv("AMC_EXPLOSIVE_VOLUME_TARGET", "20.9"))  # VIGL's exact 20.9x target
 EXPLOSIVE_MOMENTUM_MIN = float(os.getenv("AMC_EXPLOSIVE_MOMENTUM_MIN", "0.25"))     # Increased - 25%+ for explosive moves
@@ -869,7 +869,7 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         
         # Enhanced bulk filters for massive elimination
         vigl_price_min = VIGL_PRICE_MIN
-        vigl_price_max = VIGL_PRICE_MAX if not relaxed else 50.0  # Allow higher prices in relaxed mode
+        vigl_price_max = VIGL_PRICE_MAX if not relaxed else 100.0  # Allow up to $100 in relaxed mode
         min_volume = 100000  # Minimum daily volume for liquidity
         
         bulk_rejected_counts = {
@@ -1207,12 +1207,21 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         for candidate in initial_out:
             symbol = candidate['symbol']
             
-            # Use enhanced multi-source short interest system
-            si_data = await get_enhanced_short_interest(symbol)
+            # Use enhanced multi-source short interest system with error handling
+            si_data = None
+            try:
+                si_data = await get_enhanced_short_interest(symbol)
+                if si_data:
+                    logger.debug(f"✅ {symbol}: {si_data.percent:.1%} SI from {si_data.source} (confidence: {si_data.confidence:.2f})")
+                else:
+                    logger.debug(f"❌ {symbol}: No enhanced short interest data from any source")
+            except Exception as e:
+                logger.error(f"💥 {symbol}: Enhanced SI system error - {e}")
+                si_data = None
             
             if not si_data:
                 # Log for monitoring but don't exclude - use confidence-based filtering instead
-                logger.debug(f"No short interest data available for {symbol} from any source")
+                logger.debug(f"Processing {symbol} without short interest data")
                 
                 # Create minimal data structure for squeeze detection without short interest
                 squeeze_data = {
