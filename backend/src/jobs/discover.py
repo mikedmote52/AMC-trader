@@ -30,6 +30,7 @@ from polygon import RESTClient
 import requests
 from services.squeeze_detector import SqueezeDetector, SqueezeCandidate
 from ..services.short_interest_service import get_short_interest_service
+from ..services.enhanced_short_interest import get_enhanced_short_interest
 
 def _load_calibration():
     """Load active calibration settings with fallbacks to environment variables"""
@@ -1200,50 +1201,94 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         squeeze_candidates = []
         squeeze_rejected = []
         
-        # Get real short interest data for all candidates
-        short_interest_service = await get_short_interest_service()
-        symbols = [candidate['symbol'] for candidate in initial_out]
-        short_interest_data = await short_interest_service.get_bulk_short_interest(symbols)
+        # Get enhanced short interest data for all candidates - MULTI-SOURCE AGGREGATION
+        logger.info(f"Processing {len(initial_out)} candidates with enhanced short interest system")
         
         for candidate in initial_out:
             symbol = candidate['symbol']
-            si_data = short_interest_data.get(symbol)
             
-            # Use real short interest data instead of placeholders
-            # NO FALLBACKS - Only process stocks with real short interest data
-            if not si_data or si_data.source in ['sector_fallback', 'default_fallback']:
-                logger.debug(f"Excluding {symbol} - no real short interest data available")
-                continue
+            # Use enhanced multi-source short interest system
+            si_data = await get_enhanced_short_interest(symbol)
             
-            real_short_interest = si_data.short_percent_float
-            si_confidence = si_data.confidence
-            si_source = si_data.source
+            if not si_data:
+                # Log for monitoring but don't exclude - use confidence-based filtering instead
+                logger.debug(f"No short interest data available for {symbol} from any source")
+                
+                # Create minimal data structure for squeeze detection without short interest
+                squeeze_data = {
+                    'symbol': symbol,
+                    'price': candidate.get('price', 0.0),
+                    'volume': candidate.get('volume_spike', 0.0) * 1000000,
+                    'avg_volume_30d': 1000000,
+                    'short_interest': None,  # No data available
+                    'float': candidate.get('factors', {}).get('float_shares'),
+                    'borrow_rate': candidate.get('factors', {}).get('borrow_rate'),
+                    'shares_outstanding': candidate.get('factors', {}).get('shares_outstanding')
+                }
+                
+                # Add placeholder short interest metadata
+                candidate['short_interest_data'] = {
+                    'percent': None,
+                    'confidence': 0.0,
+                    'source': 'no_data_available',
+                    'last_updated': datetime.now().isoformat()
+                }
+                
+                # Still try squeeze detection - might pass on other factors
+                squeeze_result = squeeze_detector.detect_vigl_pattern(symbol, squeeze_data)
+                if not squeeze_result:
+                    continue  # Skip if squeeze detector can't work without short interest data
+                    
+            else:
+                # Enhanced data available - extract details
+                real_short_interest = si_data.percent
+                si_confidence = si_data.confidence
+                si_source = si_data.source
+                
+                logger.debug(f"{symbol}: {real_short_interest:.1%} SI from {si_source} (confidence: {si_confidence:.2f})")
+                
+                # Add enhanced short interest metadata
+                candidate['short_interest_data'] = {
+                    'percent': real_short_interest,
+                    'confidence': si_confidence,
+                    'source': si_source,
+                    'last_updated': si_data.last_updated.isoformat()
+                }
+                
+                # Prepare data for squeeze detector with enhanced short interest
+                squeeze_data = {
+                    'symbol': symbol,
+                    'price': candidate.get('price', 0.0),
+                    'volume': candidate.get('volume_spike', 0.0) * 1000000,
+                    'avg_volume_30d': 1000000,
+                    'short_interest': real_short_interest,  # ENHANCED MULTI-SOURCE DATA!
+                    'float': candidate.get('factors', {}).get('float_shares'),
+                    'borrow_rate': candidate.get('factors', {}).get('borrow_rate'),
+                    'shares_outstanding': candidate.get('factors', {}).get('shares_outstanding')
+                }
+                
+                squeeze_result = squeeze_detector.detect_vigl_pattern(symbol, squeeze_data)
             
-            # Prepare data for squeeze detector with real short interest
-            squeeze_data = {
-                'symbol': symbol,
-                'price': candidate.get('price', 0.0),
-                'volume': candidate.get('volume_spike', 0.0) * 1000000,  # Approximate volume
-                'avg_volume_30d': 1000000,  # Placeholder - would need historical data
-                'short_interest': real_short_interest,  # REAL SHORT INTEREST DATA!
-                'float': candidate.get('factors', {}).get('float_shares'),  # No defaults - require real data
-                'borrow_rate': candidate.get('factors', {}).get('borrow_rate'),  # No defaults
-                'shares_outstanding': candidate.get('factors', {}).get('shares_outstanding')  # No defaults
-            }
+            # CONFIDENCE-BASED FILTERING: Replace binary filtering with graduated confidence thresholds
+            if not squeeze_result:
+                continue  # Skip if squeeze detection failed completely
             
-            # Add short interest metadata to candidate
-            candidate['short_interest_data'] = {
-                'percent': real_short_interest,
-                'confidence': si_confidence,
-                'source': si_source,
-                'last_updated': si_data.last_updated.isoformat()
-            }
+            # Get short interest confidence for dynamic thresholds
+            si_confidence = candidate.get('short_interest_data', {}).get('confidence', 0.0)
             
-            squeeze_result = squeeze_detector.detect_vigl_pattern(candidate['symbol'], squeeze_data)
+            # Dynamic squeeze thresholds based on data quality
+            if si_confidence >= 0.8:  # High quality short interest data
+                squeeze_threshold = 0.15  # Lower threshold - trust the data
+            elif si_confidence >= 0.5:  # Medium quality data
+                squeeze_threshold = 0.20  # Slightly higher threshold
+            elif si_confidence >= 0.3:  # Low quality data
+                squeeze_threshold = 0.30  # Higher threshold - need stronger other signals
+            else:  # No short interest data or very low confidence
+                squeeze_threshold = 0.40  # Volume/momentum must be very strong
             
-            # Use calibrated squeeze score threshold (0.15 vs 0.25)
-            squeeze_threshold = _calibration.get("discovery_filters", {}).get("squeeze_score_threshold", 0.25)
-            if squeeze_result and squeeze_result.squeeze_score >= squeeze_threshold:
+            logger.debug(f"{symbol}: squeeze_score={squeeze_result.squeeze_score:.3f}, threshold={squeeze_threshold:.3f} (SI confidence: {si_confidence:.2f})")
+            
+            if squeeze_result.squeeze_score >= squeeze_threshold:
                 # Update candidate with squeeze data
                 candidate['squeeze_score'] = squeeze_result.squeeze_score
                 candidate['squeeze_pattern'] = squeeze_result.pattern_match

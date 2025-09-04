@@ -114,17 +114,17 @@ class SqueezeDetector:
                 logger.debug(f"{symbol} volume spike {volume_ratio:.1f}x below minimum")
                 return None
             
-            # SHORT INTEREST: Must have real data - no defaults
+            # SHORT INTEREST: Handle gracefully when missing
             short_interest = data.get('short_interest')
             if short_interest is None:
-                logger.debug(f"Missing short interest data for {symbol} - excluding from squeeze analysis")
-                return None
-            if isinstance(short_interest, str):
+                logger.debug(f"No short interest data for {symbol} - using volume/momentum focused scoring")
+                short_interest = 0.0  # Default to 0% for scoring (no squeeze potential from SI)
+            elif isinstance(short_interest, str):
                 try:
                     short_interest = float(short_interest.rstrip('%')) / 100.0
                 except:
-                    logger.debug(f"Invalid short interest format for {symbol} - excluding")
-                    return None
+                    logger.debug(f"Invalid short interest format for {symbol} - using 0%")
+                    short_interest = 0.0
                     
             # FLOAT ANALYSIS: Must have real float data - no defaults
             float_shares = data.get('float') or data.get('shares_outstanding')
