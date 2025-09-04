@@ -41,10 +41,21 @@ def _load_selector():
 @router.get("/contenders")
 async def get_contenders():
     """
-    CRITICAL: Returns fresh discovery data ONLY
-    Fails with empty list if data is stale (>5 minutes old)
+    CRITICAL SYSTEM INTEGRITY: Returns fresh discovery data ONLY
+    NEVER serves fake/fallback/contaminated data under any circumstances
     """
     r = get_redis_client()
+    
+    # CRITICAL INTEGRITY CHECK: Validate discovery pipeline execution
+    trace = _get_json(r, V2_TRACE) or _get_json(r, V1_TRACE)
+    if trace:
+        initial_universe = trace.get("counts_in", {}).get("universe", 0)
+        
+        # CRITICAL: If initial universe is empty/tiny, discovery failed - return empty
+        if initial_universe < 100:
+            logger.error(f"❌ CRITICAL FAILURE: Initial universe only {initial_universe} stocks - discovery failed!")
+            logger.error("❌ Returning empty list to prevent serving stale/fake data")
+            return []
     
     # Check data freshness FIRST
     status = _get_json(r, STATUS)
@@ -70,37 +81,67 @@ async def get_contenders():
         logger.error("❌ No discovery data available - returning empty list")
         return []
     
-    # Validate we have real data, not stale fallback
-    if len(items) == 33:  # Suspicious - likely stale fallback data
-        logger.warning("⚠️ Detected possible stale fallback data (exactly 33 items) - verifying...")
-        # Check if any item has a timestamp
-        has_fresh_timestamp = False
-        for item in items:
-            if isinstance(item, dict) and item.get('timestamp'):
-                try:
-                    from datetime import datetime
-                    item_time = datetime.fromisoformat(item['timestamp'])
-                    age = (datetime.now() - item_time).total_seconds()
-                    if age < 300:  # Less than 5 minutes old
-                        has_fresh_timestamp = True
-                        break
-                except:
-                    pass
+    # CRITICAL DATA INTEGRITY: Check for contaminated fake data
+    contaminated_count = 0
+    for item in items:
+        if isinstance(item, dict):
+            si_data = item.get('short_interest_data', {})
+            # Count items with fake sector_fallback data
+            if si_data.get('source') == 'sector_fallback':
+                contaminated_count += 1
+    
+    # ABSOLUTE REJECTION: Never serve data with ANY fake short interest
+    if contaminated_count > 0:
+        logger.error(f"❌ CONTAMINATED DATA DETECTED: {contaminated_count}/{len(items)} items have fake sector_fallback data!")
+        logger.error("❌ ABSOLUTE REJECTION: Returning empty list to maintain data integrity")
+        return []
+    
+    # Validate we have real data, not stale fallback patterns
+    if len(items) == 33 or len(items) == 20:  # Suspicious - likely stale fallback data
+        logger.warning(f"⚠️ Detected suspicious data pattern ({len(items)} items) - verifying integrity...")
         
-        if not has_fresh_timestamp:
-            logger.error("❌ Data appears to be stale fallback - returning empty!")
+        # Additional integrity checks
+        fake_patterns = 0
+        for item in items:
+            if isinstance(item, dict):
+                # Check for fake 15% short interest pattern
+                si_data = item.get('short_interest_data', {})
+                if (si_data.get('percent', 0) == 0.15 and 
+                    si_data.get('confidence', 1) == 0.3):
+                    fake_patterns += 1
+        
+        # If >50% of data shows fake patterns, reject it
+        if fake_patterns > len(items) * 0.5:
+            logger.error(f"❌ FAKE DATA PATTERN: {fake_patterns}/{len(items)} items show 15%/0.3 fake pattern!")
+            logger.error("❌ INTEGRITY FAILURE: Returning empty list")
             return []
     
-    # Process items
-    for it in items:
-        if isinstance(it, dict):
-            # Ensure score exists (0..100) and set confidence = score/100 if missing
-            if "score" not in it:
-                it["score"] = 0
-            if "confidence" not in it:
-                it["confidence"] = it["score"] / 100.0
+    # Final validation: Ensure all items have real, verified data
+    validated_items = []
+    for item in items:
+        if isinstance(item, dict):
+            si_data = item.get('short_interest_data', {})
+            
+            # Only include items with real, verified short interest data
+            if (si_data.get('source') and 
+                si_data.get('source') not in ['sector_fallback', 'default_fallback'] and
+                si_data.get('confidence', 0) > 0.3):
+                
+                # Ensure score exists (0..100) and set confidence = score/100 if missing
+                if "score" not in item:
+                    item["score"] = 0
+                if "confidence" not in item:
+                    item["confidence"] = item["score"] / 100.0
+                    
+                validated_items.append(item)
     
-    return items
+    # Return only validated items with real data
+    if not validated_items:
+        logger.error("❌ NO REAL DATA: All items failed validation - returning empty list")
+        return []
+    
+    logger.info(f"✅ Serving {len(validated_items)} validated items with real data (filtered from {len(items)})")
+    return validated_items
 
 @router.get("/short-interest")
 async def get_short_interest(symbols: str = Query("UP,SPHR,NAK", description="Comma-separated symbols")):
@@ -641,6 +682,40 @@ async def get_squeeze_candidates(min_score: float = Query(0.25, ge=0.0, le=1.0))
             'count': 0,
             'error': str(e),
             'min_score_threshold': min_score
+        }
+
+@router.post("/purge-cache")
+async def purge_contaminated_cache():
+    """
+    EMERGENCY CACHE PURGE: Clear all contaminated discovery data
+    Forces system to return empty results until fresh data is available
+    """
+    try:
+        r = get_redis_client()
+        
+        # Clear all discovery cache keys
+        keys_to_clear = [V2_CONT, V2_TRACE, V1_CONT, V1_TRACE, STATUS]
+        cleared_keys = []
+        
+        for key in keys_to_clear:
+            if r.exists(key):
+                r.delete(key)
+                cleared_keys.append(key)
+        
+        logger.info(f"🧹 CACHE PURGED: Cleared {len(cleared_keys)} contaminated cache keys")
+        
+        return {
+            "success": True,
+            "message": "Contaminated cache purged successfully",
+            "keys_cleared": cleared_keys,
+            "note": "System will now return empty results until fresh discovery data is generated"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to purge cache: {e}")
+        return {
+            "success": False,
+            "error": str(e)
         }
 
 @router.post("/trigger")

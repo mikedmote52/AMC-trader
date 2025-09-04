@@ -275,14 +275,46 @@
     }
   },
   
+  "discovery_integrity_calibration": {
+    "version": "1.2.0_integrity_fix",
+    "priority": "CRITICAL",
+    "implementation_status": "READY_FOR_DEPLOYMENT",
+    
+    "discovery_filters": {
+      "price_cap": 100.0,
+      "dollar_volume_min": 500000,
+      "compression_percentile_max": 0.40,
+      "max_candidates": 30,
+      "squeeze_score_threshold": 0.15,
+      "justification": "Relaxed thresholds to increase discovery when fresh data available"
+    },
+    
+    "data_integrity_enforcement": {
+      "min_universe_size": 100,
+      "max_contamination_tolerance": 0.0,
+      "require_real_short_interest": true,
+      "cache_validity_minutes": 5,
+      "fail_on_polygon_api_error": true,
+      "never_serve_fallback_data": true
+    },
+    
+    "system_behavior": {
+      "empty_results_policy": "HONEST_EMPTY_OVER_FAKE_DATA",
+      "cache_purge_on_failure": true,
+      "integrity_validation_on_serve": true,
+      "zero_tolerance_contamination": true
+    }
+  },
+
   "critical_notes": {
-    "contamination_status": "CRITICAL - 80%+ of recommendations using fake 15% short interest",
-    "codebase_status": "FIXED - All fallback mechanisms eliminated from source code",
-    "production_status": "CONTAMINATED - Awaiting deployment of fixes",
-    "data_integrity": "COMPROMISED - All trading decisions based on fake data",
-    "immediate_action": "DEPLOY FIXES IMMEDIATELY - Clear cache and activate monitoring",
-    "post_deployment_validation": "Monitor data-integrity endpoints for zero contamination",
-    "expected_outcome": "Smaller but 100% authentic candidate pool with real market data"
+    "contamination_status": "CRITICAL - 75% of recommendations using fake sector_fallback data (15 of 20)",
+    "universe_contradiction": "IMPOSSIBLE - 1 stock universe produces 20 candidates", 
+    "codebase_status": "FIXED - Comprehensive integrity validation implemented",
+    "production_status": "CONTAMINATED - Awaiting deployment of critical fixes",
+    "data_integrity": "COMPROMISED - All squeeze analysis based on fake 15% values",
+    "immediate_action": "DEPLOY FIXES IMMEDIATELY - No tolerance for fake data serving",
+    "post_deployment_validation": "Run test_discovery_integrity.py to confirm zero contamination",
+    "expected_outcome": "Empty results or 100% authentic data - never fake sector_fallback"
   }
 }
 }

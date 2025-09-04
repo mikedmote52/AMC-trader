@@ -1,0 +1,73 @@
+{
+  "overall_status": "CRITICAL",
+  "total_tests": 3,
+  "passed": 1,
+  "failed": 2,
+  "errors": 0,
+  "critical_failures": 2,
+  "test_results": [
+    {
+      "test_name": "No Fake Data Serving",
+      "status": "FAIL",
+      "total_candidates": 20,
+      "fake_data_count": 15,
+      "fake_percentage": 75.0,
+      "fake_items_sample": [
+        {
+          "symbol": "NAMM",
+          "fake_percent": 0.15,
+          "fake_confidence": 0.3
+        },
+        {
+          "symbol": "LCFY",
+          "fake_percent": 0.15,
+          "fake_confidence": 0.3
+        },
+        {
+          "symbol": "SERV",
+          "fake_percent": 0.15,
+          "fake_confidence": 0.3
+        },
+        {
+          "symbol": "MSOS",
+          "fake_percent": 0.15,
+          "fake_confidence": 0.3
+        },
+        {
+          "symbol": "ATAI",
+          "fake_percent": 0.15,
+          "fake_confidence": 0.3
+        }
+      ],
+      "critical": true,
+      "message": "Found 15 items with fake sector_fallback data"
+    },
+    {
+      "test_name": "Universe Integrity",
+      "status": "FAIL",
+      "initial_universe": 1,
+      "final_candidates": 20,
+      "ratio": 20.0,
+      "suspicious": true,
+      "critical": true,
+      "message": "Suspicious: 1 universe -> 20 candidates"
+    },
+    {
+      "test_name": "Data Freshness",
+      "status": "PASS",
+      "last_run": "2025-09-04T07:12:56Z",
+      "age_seconds": 168,
+      "age_minutes": 2.8,
+      "is_fresh": true,
+      "critical": false,
+      "message": "Data is 168 seconds old (FRESH)"
+    }
+  ],
+  "timestamp": "2025-09-04T00:15:44.304293",
+  "recommendations": [
+    "URGENT: Deploy discovery API fixes to reject contaminated data",
+    "Clear all Redis cache keys containing fake sector_fallback data",
+    "URGENT: Fix Polygon API data fetch to get full universe",
+    "Deploy discovery pipeline fixes to prevent fallback data serving"
+  ]
+}

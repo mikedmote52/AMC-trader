@@ -846,10 +846,21 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
             g = await _poly_get(client, f"/v2/aggs/grouped/locale/us/market/stocks/{date}", params=params)
         rows = g.get("results") or []
         
-        # If Polygon returns no data, raise exception to trigger fallback
+        # CRITICAL DATA INTEGRITY: If Polygon returns no data, FAIL the discovery
         if not rows:
-            logger.warning(f"Polygon API returned no results for date {date}, triggering fallback")
-            raise Exception("No data from Polygon grouped API")
+            logger.error(f"❌ CRITICAL FAILURE: Polygon API returned no results for date {date}")
+            logger.error("❌ Discovery MUST FAIL to prevent serving stale/fake data")
+            # Clear any existing cached data to force empty results
+            try:
+                from lib.redis_client import get_redis_client
+                r = get_redis_client()
+                r.delete("amc:discovery:v2:contenders.latest")
+                r.delete("amc:discovery:contenders.latest") 
+                logger.info("🧹 Cleared contaminated cache to force empty results")
+            except:
+                pass
+            # Return empty results - NO FALLBACK DATA
+            return ([], trace.to_dict()) if with_trace else []
             
         # BULK FILTERING: Apply all cheap filters at once to eliminate 90%+ of universe
         pcap = PRICE_CAP * (1.2 if relaxed else 1.0)  # allow slight slack in relaxed mode
@@ -907,9 +918,21 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         
         logger.info(f"Bulk filtering eliminated {sum(bulk_rejected_counts.values())} stocks, keeping {len(kept_syms)}")
         logger.info(f"Rejection reasons: {bulk_rejected_counts}")
-    except Exception:
-        # fallback to curated universe to stay real but lighter
-        kept_syms = UNIVERSE_FALLBACK[:]
+    except Exception as e:
+        # CRITICAL: No fallback data allowed - discovery must fail cleanly
+        logger.error(f"❌ DISCOVERY PIPELINE FAILURE: {e}")
+        logger.error("❌ NO FALLBACK DATA - returning empty results to maintain integrity")
+        # Clear any cached contaminated data
+        try:
+            from lib.redis_client import get_redis_client
+            r = get_redis_client()
+            r.delete("amc:discovery:v2:contenders.latest")
+            r.delete("amc:discovery:contenders.latest")
+            logger.info("🧹 Cleared contaminated cache due to discovery failure")
+        except:
+            pass
+        # Return empty results immediately
+        return ([], trace.to_dict()) if with_trace else []
     trace.exit("universe", kept_syms, rejected)
 
     if not kept_syms:
