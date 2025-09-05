@@ -44,7 +44,7 @@
         "technical": 0.10
       },
       "thresholds": {
-        "min_relvol_30": 1.5,
+        "min_relvol_30": 1.0,
         "min_atr_pct": 0.02,
         "rsi_band": [60, 70],
         "ema_fast": 9,
@@ -95,8 +95,8 @@
         "max_soft_pass": 0
       },
       "entry_rules": {
-        "watchlist_min": 70,
-        "trade_ready_min": 75
+        "watchlist_min": 50,
+        "trade_ready_min": 55
       },
       "safety_guardrails": {
         "max_candidates": 100,
