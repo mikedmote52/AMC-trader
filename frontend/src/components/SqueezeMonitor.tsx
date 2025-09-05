@@ -25,11 +25,20 @@ interface SqueezeMonitorProps {
   showPatternHistory?: boolean;
 }
 
+interface PortfolioAction {
+  type: 'immediate' | 'trim' | 'add' | 'stop_loss';
+  symbol?: string;
+  action: string;
+  priority?: number;
+  urgency?: string;
+}
+
 export default function SqueezeMonitor({ 
   watchedSymbols = [], 
   showPatternHistory = true 
 }: SqueezeMonitorProps) {
   const [squeezeOpportunities, setSqueezeOpportunities] = useState<SqueezeOpportunity[]>([]);
+  const [portfolioActions, setPortfolioActions] = useState<PortfolioAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -50,6 +59,9 @@ export default function SqueezeMonitor({
       
       // Get advanced ranked candidates (top money-making opportunities)
       const rankingResponse = await getJSON<any>(`${API_BASE}/advanced-ranking/rank`);
+      
+      // Also get portfolio optimization actions
+      const portfolioResponse = await getJSON<any>(`${API_BASE}/portfolio/immediate-actions`).catch(() => ({ success: false }));
       
       // Transform ranked candidates to squeeze opportunities format
       const response: SqueezeOpportunity[] = Array.isArray(rankingResponse?.ranked_candidates) 
@@ -98,6 +110,23 @@ export default function SqueezeMonitor({
       opportunities.sort((a, b) => (b.advanced_score || b.squeeze_score) - (a.advanced_score || a.squeeze_score));
       
       setSqueezeOpportunities(opportunities);
+      
+      // Process portfolio actions
+      const actions: PortfolioAction[] = [];
+      if (portfolioResponse.success && portfolioResponse.data?.immediate_actions) {
+        portfolioResponse.data.immediate_actions.forEach((actionText: string, index: number) => {
+          actions.push({
+            type: actionText.includes('stop-loss') ? 'stop_loss' : 
+                  actionText.includes('Trim') ? 'trim' :
+                  actionText.includes('adding') ? 'add' : 'immediate',
+            action: actionText,
+            priority: index + 1,
+            urgency: actionText.includes('URGENT') ? 'HIGH' : 
+                    actionText.includes('Monitor') ? 'MEDIUM' : 'LOW'
+          });
+        });
+      }
+      setPortfolioActions(actions);
       
     } catch (err: any) {
       console.error("Squeeze monitoring error:", err);
@@ -301,13 +330,42 @@ export default function SqueezeMonitor({
         </div>
       )}
 
-      {/* No Opportunities Message */}
+      {/* No Opportunities Message + Portfolio Actions */}
       {squeezeOpportunities.length === 0 && (
         <div style={noOpportunitiesStyle}>
           <div style={noOpportunitiesIconStyle}>🔍</div>
           <div style={noOpportunitiesTextStyle}>
             No squeeze opportunities detected
           </div>
+          
+          {/* Portfolio Management Actions */}
+          {portfolioActions.length > 0 && (
+            <div style={{...noOpportunitiesSubTextStyle, marginBottom: 16, backgroundColor: '#1f2937', padding: 16, borderRadius: 8, border: '1px solid #374151'}}>
+              <div style={{color: '#10b981', fontWeight: 'bold', marginBottom: 8}}>
+                📈 Portfolio Management Actions Required:
+              </div>
+              {portfolioActions.map((action, index) => (
+                <div key={index} style={{
+                  marginBottom: 6,
+                  padding: '6px 10px',
+                  backgroundColor: action.urgency === 'HIGH' ? '#ef44441a' : 
+                                  action.urgency === 'MEDIUM' ? '#f59e0b1a' : '#10b9811a',
+                  borderRadius: 4,
+                  fontSize: 13,
+                  color: action.urgency === 'HIGH' ? '#fca5a5' : 
+                         action.urgency === 'MEDIUM' ? '#fcd34d' : '#86efac',
+                  border: `1px solid ${action.urgency === 'HIGH' ? '#ef4444' : 
+                                      action.urgency === 'MEDIUM' ? '#f59e0b' : '#10b981'}33`
+                }}>
+                  {action.urgency === 'HIGH' && '🚨 '}
+                  {action.urgency === 'MEDIUM' && '⚠️ '}
+                  {action.urgency === 'LOW' && '💡 '}
+                  {action.action}
+                </div>
+              ))}
+            </div>
+          )}
+          
           <div style={{...noOpportunitiesSubTextStyle, marginBottom: 16}}>
             <strong>Why no squeezes right now:</strong><br/>
             • Advanced scores below 0.50 threshold (need 50%+ probability)<br/>
@@ -334,6 +392,10 @@ export default function SqueezeMonitor({
         <div style={statItemStyle}>
           <span>🎯 Active Alerts</span>
           <span>{squeezeOpportunities.length}</span>
+        </div>
+        <div style={statItemStyle}>
+          <span>💼 Portfolio Actions</span>
+          <span>{portfolioActions.length}</span>
         </div>
         <div style={statItemStyle}>
           <span>⏱️ Last Update</span>
