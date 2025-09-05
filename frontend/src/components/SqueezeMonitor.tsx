@@ -317,7 +317,7 @@ export default function SqueezeMonitor({
             • Waiting for higher-probability setups to develop
           </div>
           <div style={{fontSize: 12, color: '#555', fontStyle: 'italic', marginBottom: 12}}>
-            💡 <strong>Squeeze Detection Active:</strong> Monitoring {watchedSymbols.length > 0 ? watchedSymbols.join(", ") : "1,700+ symbols"} for:<br/>
+            💡 <strong>Advanced Discovery Active:</strong> Monitoring {watchedSymbols.length > 0 ? watchedSymbols.join(", ") : "7,000+ symbols"} for:<br/>
             - High short interest (&gt;20%)<br/>
             - Low float (&lt;50M shares)<br/>
             - Volume surges (&gt;10x average)<br/>
