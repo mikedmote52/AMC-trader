@@ -6,6 +6,7 @@ import httpx
 import asyncio
 from datetime import datetime, timedelta
 from ..shared.redis_client import get_redis_client
+from ..services.portfolio_optimizer import optimize_portfolio, get_immediate_actions
 
 router = APIRouter()
 
@@ -722,6 +723,104 @@ async def debug_raw_broker_positions() -> Dict:
                 "sample_positions": raw_positions[:3] if len(raw_positions) > 3 else raw_positions
             }
         }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "data": {}
+        }
+
+@router.get("/optimization")
+async def get_portfolio_optimization() -> Dict:
+    """Get comprehensive portfolio optimization recommendations"""
+    try:
+        # Get current holdings
+        holdings_response = await get_holdings()
+        if not holdings_response.get("success"):
+            return holdings_response
+            
+        positions = holdings_response["data"]["positions"]
+        
+        # Run optimization analysis
+        optimization = optimize_portfolio(positions)
+        
+        return {
+            "success": True,
+            "data": {
+                "optimization": optimization,
+                "generated_at": datetime.now().isoformat()
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "data": {}
+        }
+
+@router.get("/immediate-actions")
+async def get_immediate_actions_endpoint() -> Dict:
+    """Get immediate action recommendations for portfolio"""
+    try:
+        # Get current holdings
+        holdings_response = await get_holdings()
+        if not holdings_response.get("success"):
+            return holdings_response
+            
+        positions = holdings_response["data"]["positions"]
+        
+        # Get immediate actions only
+        actions = get_immediate_actions(positions)
+        
+        return {
+            "success": True,
+            "data": {
+                "immediate_actions": actions,
+                "action_count": len(actions),
+                "generated_at": datetime.now().isoformat()
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "data": {}
+        }
+
+@router.get("/rebalancing-plan")
+async def get_rebalancing_plan() -> Dict:
+    """Get detailed rebalancing plan with specific trade recommendations"""
+    try:
+        # Get current holdings
+        holdings_response = await get_holdings()
+        if not holdings_response.get("success"):
+            return holdings_response
+            
+        positions = holdings_response["data"]["positions"]
+        
+        # Run full optimization
+        optimization = optimize_portfolio(positions)
+        
+        # Extract rebalancing specific data
+        rebalancing_data = {
+            "total_portfolio_value": optimization["total_portfolio_value"],
+            "current_allocation": optimization["current_allocation"],
+            "target_allocation": optimization["target_allocation"],
+            "positions_to_trim": optimization["positions_to_trim"],
+            "positions_to_add": optimization["positions_to_add"],
+            "stop_loss_alerts": optimization["stop_loss_alerts"],
+            "concentration_risk": optimization["concentration_risk"],
+            "immediate_actions": optimization["immediate_actions"],
+            "rebalancing_priority": len(optimization["positions_to_trim"]) + len(optimization["stop_loss_alerts"])
+        }
+        
+        return {
+            "success": True,
+            "data": rebalancing_data
+        }
+        
     except Exception as e:
         return {
             "success": False,
