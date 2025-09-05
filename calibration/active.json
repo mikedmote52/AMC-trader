@@ -44,8 +44,8 @@
         "technical": 0.10
       },
       "thresholds": {
-        "min_relvol_30": 2.5,
-        "min_atr_pct": 0.04,
+        "min_relvol_30": 1.5,
+        "min_atr_pct": 0.02,
         "rsi_band": [60, 70],
         "ema_fast": 9,
         "ema_slow": 20,
@@ -59,7 +59,7 @@
           "borrow_fee_min": 0.20,
           "utilization_min": 0.85
         },
-        "require_vwap_reclaim": true,
+        "require_vwap_reclaim": false,
         "session_overrides": {
           "premarket": {
             "enabled": false,
