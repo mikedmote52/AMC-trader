@@ -1869,8 +1869,19 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
         
         # Strategy-specific processing
         if current_strategy == 'hybrid_v1':
-            # Hybrid V1 strategy with enhanced gatekeeping
-            gate_passed, gate_reason = _hybrid_v1_gate_check(candidate, _calibration.get('scoring', {}).get('hybrid_v1', {}))
+            # Hybrid V1 strategy with minimal gates for explosive stocks
+            # Use minimal config to allow explosive candidates through
+            minimal_config = {
+                'thresholds': {
+                    'min_relvol_30': 1.0,
+                    'min_atr_pct': 0.01,
+                    'require_vwap_reclaim': False,
+                    'float_max': 100000000,
+                    'soft_gate_tolerance': 0.5,
+                    'max_soft_pass': 50
+                }
+            }
+            gate_passed, gate_reason = _hybrid_v1_gate_check(candidate, minimal_config)
             
             if not gate_passed:
                 strategy_rejected.append({
