@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+// Portfolio Actions Integration v2
 import SqueezeAlert from "./SqueezeAlert";
 import PatternHistory from "./PatternHistory";
 import { API_BASE } from "../config";
