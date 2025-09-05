@@ -204,9 +204,11 @@ from backend.src.routes import pattern_memory as pattern_memory_routes
 from backend.src.routes import notifications as notification_routes
 from backend.src.routes import monitoring as monitoring_routes
 from backend.src.routes import data_integrity as data_integrity_routes
+from backend.src.routes import advanced_ranking as advanced_ranking_routes
 
 app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery"])
 app.include_router(calibration_routes.router, prefix="/calibration", tags=["calibration"])
+app.include_router(advanced_ranking_routes.router, prefix="/advanced-ranking", tags=["advanced-ranking"])
 app.include_router(portfolio_routes.router, prefix="/portfolio", tags=["portfolio"])
 app.include_router(learning_routes.router, prefix="/learning", tags=["learning"])
 app.include_router(learning_analytics_routes.router, prefix="/learning-analytics", tags=["learning-analytics"])
