@@ -1862,6 +1862,11 @@ async def select_candidates(relaxed: bool=False, limit: int|None=None, with_trac
     soft_pass_counter = 0  # Track soft passes used
     
     for candidate in initial_out:
+        # Ensure volume_spike is available for gate checking
+        if 'volume_spike' not in candidate or candidate.get('volume_spike', 0) == 0:
+            # Use default volume activity for squeeze candidates
+            candidate['volume_spike'] = 2.0
+        
         # Strategy-specific processing
         if current_strategy == 'hybrid_v1':
             # Hybrid V1 strategy with enhanced gatekeeping
