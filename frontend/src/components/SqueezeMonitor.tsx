@@ -13,6 +13,11 @@ interface SqueezeOpportunity {
   pattern_type?: string;
   confidence?: number;
   detected_at: string;
+  advanced_score?: number;
+  success_probability?: number;
+  action?: string;
+  vigl_similarity?: number;
+  position_size_pct?: number;
 }
 
 interface SqueezeMonitorProps {
@@ -33,8 +38,8 @@ export default function SqueezeMonitor({
   useEffect(() => {
     loadSqueezeOpportunities();
     
-    // Refresh every 30 seconds
-    const interval = setInterval(loadSqueezeOpportunities, 30000);
+    // Refresh every 5 minutes (300 seconds)
+    const interval = setInterval(loadSqueezeOpportunities, 300000);
     return () => clearInterval(interval);
   }, [watchedSymbols]);
 
@@ -43,47 +48,54 @@ export default function SqueezeMonitor({
       setLoading(true);
       setError("");
       
-      // Check for current squeeze opportunities from contenders
-      const contendersResponse = await getJSON<any[]>(`${API_BASE}/discovery/contenders`);
+      // Get advanced ranked candidates (top money-making opportunities)
+      const rankingResponse = await getJSON<any>(`${API_BASE}/advanced-ranking/rank`);
       
-      // Transform contenders to squeeze opportunities format
-      const response: SqueezeOpportunity[] = Array.isArray(contendersResponse) 
-        ? contendersResponse.map(contender => ({
-            symbol: contender.symbol,
-            squeeze_score: contender.squeeze_score || contender.score || 0,
-            volume_spike: contender.volume_spike || contender.factors?.volume_spike_ratio || 0,
-            short_interest: contender.short_interest_data?.percent ? 
-              (contender.short_interest_data.percent * 100) : // Convert decimal (0.0934) to percentage (9.34)
-              (contender.short_interest || 15), // Fallback to legacy field or default 15%
-            price: contender.price || 0,
-            pattern_type: contender.squeeze_pattern || 'SQUEEZE',
-            confidence: contender.squeeze_confidence === 'HIGH' ? 0.8 : 
-                       contender.squeeze_confidence === 'MEDIUM' ? 0.6 : 0.4,
-            detected_at: new Date().toISOString()
+      // Transform ranked candidates to squeeze opportunities format
+      const response: SqueezeOpportunity[] = Array.isArray(rankingResponse?.ranked_candidates) 
+        ? rankingResponse.ranked_candidates.map((candidate: any) => ({
+            symbol: candidate.symbol,
+            squeeze_score: candidate.advanced_score || 0, // Use advanced score (0.0-1.0)
+            volume_spike: candidate.ranking_factors?.volume_quality || 0,
+            short_interest: 15, // Default for display
+            price: candidate.price || 0,
+            pattern_type: candidate.action || 'BUY',
+            confidence: candidate.success_probability || 0,
+            detected_at: new Date().toISOString(),
+            advanced_score: candidate.advanced_score,
+            success_probability: candidate.success_probability,
+            action: candidate.action,
+            vigl_similarity: candidate.vigl_similarity,
+            position_size_pct: candidate.position_size_pct
           }))
         : [];
       
-      // Only use real API data - no mock data
+      // Only use real advanced ranking data
       let opportunities: SqueezeOpportunity[] = [];
       if (Array.isArray(response) && response.length > 0) {
         opportunities = response.map(item => ({
           symbol: item.symbol,
-          squeeze_score: item.squeeze_score || 0,
+          squeeze_score: item.advanced_score || item.squeeze_score || 0,
           volume_spike: item.volume_spike || 0,
           short_interest: item.short_interest || 0,
           price: item.price || 0,
-          pattern_type: item.pattern_type || 'SQUEEZE',
-          confidence: item.confidence || item.squeeze_score || 0,
-          detected_at: new Date().toISOString()
-        })).filter(opp => opp.squeeze_score >= 0.25); // Lower threshold to show early signals
+          pattern_type: item.action || item.pattern_type || 'BUY',
+          confidence: item.success_probability || item.confidence || 0,
+          detected_at: new Date().toISOString(),
+          advanced_score: item.advanced_score,
+          success_probability: item.success_probability,
+          action: item.action,
+          vigl_similarity: item.vigl_similarity,
+          position_size_pct: item.position_size_pct
+        })).filter(opp => opp.advanced_score >= 0.50); // Only show high-quality candidates (0.50+ advanced score)
       }
       
       if (watchedSymbols.length > 0) {
         opportunities = opportunities.filter(opp => watchedSymbols.includes(opp.symbol));
       }
       
-      // Sort by squeeze score descending
-      opportunities.sort((a, b) => b.squeeze_score - a.squeeze_score);
+      // Sort by advanced score descending (1.0 = strongest)
+      opportunities.sort((a, b) => (b.advanced_score || b.squeeze_score) - (a.advanced_score || a.squeeze_score));
       
       setSqueezeOpportunities(opportunities);
       
@@ -101,11 +113,11 @@ export default function SqueezeMonitor({
     setTimeout(loadSqueezeOpportunities, 2000);
   };
 
-  // Categorize opportunities by squeeze score tiers
+  // Categorize opportunities by advanced score tiers (1.0 = strongest)
   const categorizeOpportunities = (opportunities: SqueezeOpportunity[]) => {
-    const critical = opportunities.filter(opp => opp.squeeze_score >= 0.70);
-    const developing = opportunities.filter(opp => opp.squeeze_score >= 0.40 && opp.squeeze_score < 0.70);
-    const early = opportunities.filter(opp => opp.squeeze_score >= 0.25 && opp.squeeze_score < 0.40);
+    const critical = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.80); // STRONG_BUY
+    const developing = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.65 && (opp.advanced_score || opp.squeeze_score) < 0.80); // BUY
+    const early = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.50 && (opp.advanced_score || opp.squeeze_score) < 0.65); // WATCH
     
     return { critical, developing, early };
   };
@@ -189,7 +201,7 @@ export default function SqueezeMonitor({
             {/* Critical Alerts */}
             {critical.length > 0 && (
               <div style={{ marginBottom: '24px' }}>
-                <div style={{ ...sectionTitleStyle, color: '#dc2626' }}>🚨 CRITICAL SQUEEZE ALERTS ({critical.length})</div>
+                <div style={{ ...sectionTitleStyle, color: '#dc2626' }}>🚨 STRONG BUY SIGNALS ({critical.length})</div>
                 <div style={alertsGridStyle}>
                   {critical.map((opportunity, index) => (
                     <SqueezeAlert
@@ -207,7 +219,7 @@ export default function SqueezeMonitor({
             {/* Developing Alerts */}
             {developing.length > 0 && (
               <div style={{ marginBottom: '24px' }}>
-                <div style={{ ...sectionTitleStyle, color: '#f59e0b' }}>⚡ DEVELOPING SQUEEZE ALERTS ({developing.length})</div>
+                <div style={{ ...sectionTitleStyle, color: '#f59e0b' }}>⚡ BUY OPPORTUNITIES ({developing.length})</div>
                 <div style={alertsGridStyle}>
                   {developing.map((opportunity, index) => (
                     <SqueezeAlert
@@ -225,7 +237,7 @@ export default function SqueezeMonitor({
             {/* Early Signals */}
             {early.length > 0 && (
               <div style={{ marginBottom: '24px' }}>
-                <div style={{ ...sectionTitleStyle, color: '#eab308' }}>📊 EARLY SIGNALS ({early.length})</div>
+                <div style={{ ...sectionTitleStyle, color: '#eab308' }}>📊 WATCH CANDIDATES ({early.length})</div>
                 <div style={alertsGridStyle}>
                   {early.map((opportunity, index) => (
                     <SqueezeAlert
@@ -256,12 +268,12 @@ export default function SqueezeMonitor({
                   <span style={priceTextStyle}>${opportunity.price.toFixed(2)}</span>
                 </div>
                 <div style={scoreRowStyle}>
-                  <span style={scoreTextStyle}>Score: {(opportunity.squeeze_score * 100).toFixed(0)}%</span>
+                  <span style={scoreTextStyle}>Score: {((opportunity.advanced_score || opportunity.squeeze_score) * 100).toFixed(0)}% | {opportunity.action || 'EVAL'}</span>
                   <span style={{
                     ...confidenceTextStyle,
-                    color: opportunity.confidence >= 0.7 ? '#22c55e' : opportunity.confidence >= 0.5 ? '#f59e0b' : '#ef4444'
+                    color: (opportunity.success_probability || opportunity.confidence) >= 0.7 ? '#22c55e' : (opportunity.success_probability || opportunity.confidence) >= 0.5 ? '#f59e0b' : '#ef4444'
                   }}>
-                    {opportunity.confidence >= 0.7 ? 'HIGH' : opportunity.confidence >= 0.5 ? 'MED' : 'LOW'}
+                    {Math.round((opportunity.success_probability || opportunity.confidence) * 100)}%
                   </span>
                 </div>
               </div>
@@ -298,11 +310,11 @@ export default function SqueezeMonitor({
           </div>
           <div style={{...noOpportunitiesSubTextStyle, marginBottom: 16}}>
             <strong>Why no squeezes right now:</strong><br/>
-            • Short interest too low across monitored stocks (&lt;15%)<br/>
-            • Volume spikes insufficient (need &gt;10x average)<br/>
-            • Float sizes too large for effective squeezes<br/>
-            • Current market conditions reducing squeeze potential<br/>
-            • Waiting for tight consolidation patterns to develop
+            • Advanced scores below 0.50 threshold (need 50%+ probability)<br/>
+            • VIGL pattern similarity insufficient (&lt;40%)<br/>
+            • Volume momentum not meeting criteria<br/>
+            • Current market conditions reducing explosive potential<br/>
+            • Waiting for higher-probability setups to develop
           </div>
           <div style={{fontSize: 12, color: '#555', fontStyle: 'italic', marginBottom: 12}}>
             💡 <strong>Squeeze Detection Active:</strong> Monitoring {watchedSymbols.length > 0 ? watchedSymbols.join(", ") : "1,700+ symbols"} for:<br/>
@@ -312,7 +324,7 @@ export default function SqueezeMonitor({
             - Price compression patterns
           </div>
           <div style={{fontSize: 11, color: '#777', textAlign: 'center'}}>
-            Last scan: {new Date().toLocaleTimeString()} • Next scan: {new Date(Date.now() + 30000).toLocaleTimeString()}
+            Last scan: {new Date().toLocaleTimeString()} • Next scan: {new Date(Date.now() + 300000).toLocaleTimeString()}
           </div>
         </div>
       )}
