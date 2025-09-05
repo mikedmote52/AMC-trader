@@ -868,63 +868,33 @@ class DiscoveryPipeline:
     def read_universe(self) -> List[str]:
         """Dynamically fetch full stock universe from Polygon API"""
         
-        # Check if we should use dynamic universe fetching
-        USE_DYNAMIC_UNIVERSE = os.getenv("AMC_DYNAMIC_UNIVERSE", "true").lower() in ("1", "true", "yes")
-        
-        if USE_DYNAMIC_UNIVERSE:
-            logger.info("🌍 Fetching full stock universe from Polygon API...")
-            try:
-                symbols = self._fetch_polygon_universe()
-                if symbols:
-                    logger.info(f"✅ Dynamic universe loaded: {len(symbols)} symbols from Polygon API")
-                    return symbols
-                else:
-                    logger.warning("❌ Dynamic universe fetch failed, falling back to file/static")
-            except Exception as e:
-                logger.error(f"❌ Dynamic universe error: {e}, falling back to file/static")
-        
-        # Static fallback universe (only used if dynamic fails or disabled)
-        STATIC_FALLBACK = [
-            # Core squeeze candidates with confirmed data
-            "VIGL", "QUBT", "UP", "NAK", "SPHR", "ANTE", "AEVA", "WULF", "SSRM",
-            "TEVA", "KSS", "CELC", "CARS", "GMAB", "AMDL", "TEM", "SNDL", "AMC", "GME",
-            # Biotech & Healthcare  
-            "RGTI", "DCGO", "OCGN", "COTI", "INVZ", "SERA", "LFMD", "MNOV", "INZY", "ANIC",
-            # Technology & Growth
-            "BBIG", "ASTS", "RKLB", "HOLO", "LOVO", "ARQQ", "NNDM", "PRTG", "FUBO", "GOEV",
-            # Energy & Mining
-            "REI", "CLSK", "RIOT", "HUT", "BITF", "MARA", "CAN", "HVBT", "DAC",
-            # Reference Large Caps
-            "AAPL", "NVDA", "TSLA", "AMD"
-        ]
+        # CRITICAL: NO FALLBACKS - FAIL LOUDLY IF REAL-TIME DATA UNAVAILABLE
+        logger.info("🌍 CRITICAL: Fetching REAL-TIME stock universe from Polygon API...")
         
         try:
-            # Try universe file as backup
-            possible_paths = [
-                f"/app/{self.universe_file}",
-                os.path.join(os.path.dirname(__file__), '..', '..', '..', self.universe_file),
-                os.path.join(os.getcwd(), self.universe_file),
-                self.universe_file if os.path.isabs(self.universe_file) else None
-            ]
+            symbols = self._fetch_polygon_universe()
+            if not symbols or len(symbols) < 5000:
+                # FAIL LOUDLY - this is unacceptable for a trading system
+                error_msg = f"❌ CRITICAL FAILURE: Universe fetch returned {len(symbols) if symbols else 0} symbols (minimum 5000 required)"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
             
-            for path in filter(None, possible_paths):
-                if os.path.exists(path) and os.path.isfile(path):
-                    with open(path, 'r') as f:
-                        symbols = [line.strip().upper() for line in f 
-                                 if line.strip() and not line.strip().startswith('#')]
-                    logger.info(f"📁 Loaded {len(symbols)} symbols from universe file: {path}")
-                    return symbols
-                    
-            # Final fallback to static list
-            logger.warning(f"⚠️  Using static fallback universe with {len(STATIC_FALLBACK)} symbols")
-            return STATIC_FALLBACK
+            logger.info(f"✅ REAL-TIME universe loaded: {len(symbols)} symbols from Polygon API")
+            return symbols
             
         except Exception as e:
-            logger.error(f"❌ Universe loading failed: {e}. Using static fallback")
-            return STATIC_FALLBACK
+            # FAIL LOUDLY - NO FALLBACKS EVER
+            error_msg = f"❌ CRITICAL SYSTEM FAILURE: Cannot fetch real-time universe: {e}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
     
     def _fetch_polygon_universe(self) -> List[str]:
         """Fetch complete stock universe from Polygon API"""
+        
+        # CRITICAL: Validate API key first
+        if not self.polygon_api_key:
+            raise RuntimeError("❌ CRITICAL: POLYGON_API_KEY environment variable not set")
+        
         all_symbols = []
         next_url = None
         page = 1
@@ -932,6 +902,16 @@ class DiscoveryPipeline:
         
         try:
             import requests
+            
+            # Test API key with a simple call first
+            test_url = f"https://api.polygon.io/v3/reference/tickers?limit=1&apikey={self.polygon_api_key}"
+            test_response = requests.get(test_url, timeout=10)
+            if test_response.status_code == 401:
+                raise RuntimeError("❌ CRITICAL: Invalid Polygon API key - authentication failed")
+            elif test_response.status_code != 200:
+                raise RuntimeError(f"❌ CRITICAL: Polygon API test failed with status {test_response.status_code}")
+            
+            logger.info("✅ Polygon API key validated successfully")
             
             while page <= max_pages:
                 if next_url:
@@ -971,7 +951,14 @@ class DiscoveryPipeline:
                         break
                     page += 1
                 else:
-                    logger.error(f"❌ Polygon API error on page {page}: {response.status_code}")
+                    error_msg = f"❌ Polygon API error on page {page}: {response.status_code} - {response.text[:500]}"
+                    logger.error(error_msg)
+                    if response.status_code == 401:
+                        raise RuntimeError("❌ CRITICAL: Polygon API authentication failed - check API key")
+                    elif response.status_code == 429:
+                        raise RuntimeError("❌ CRITICAL: Polygon API rate limit exceeded")
+                    else:
+                        raise RuntimeError(f"❌ CRITICAL: Polygon API failed with status {response.status_code}")
                     break
                     
             # Deduplicate and sort
