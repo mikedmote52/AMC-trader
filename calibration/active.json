@@ -109,7 +109,7 @@
   "discovery_filters": {
     "price_cap": 100.0,
     "price_min": 0.10,
-    "dollar_volume_min": 500000,
+    "dollar_volume_min": 50000,
     "volume_spike_min": 1.2,
     "compression_percentile_max": 0.50,
     "squeeze_score_threshold": 0.12,
