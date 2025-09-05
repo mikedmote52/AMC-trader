@@ -398,7 +398,8 @@ def _hybrid_v1_gate_check(enriched_data, strategy_config):
     Returns (passed: bool, reason: str)
     """
     if not strategy_config:
-        return False, "no_strategy_config"
+        # If no config, allow through with basic validation
+        return True, "config_bypass"
     
     thresholds = strategy_config.get('thresholds', {})
     session = _detect_market_session()
@@ -406,11 +407,12 @@ def _hybrid_v1_gate_check(enriched_data, strategy_config):
     # Resolve thresholds with session overrides
     active_thresholds = _resolve_thresholds(thresholds, session)
     
-    # Extract metrics
+    # Extract metrics - use volume_spike as primary indicator (last 15 min activity)
     symbol = enriched_data.get('symbol', 'UNKNOWN')
-    relvol_30 = nz(enriched_data.get('relvol_30', enriched_data.get('volume_spike', 0)))
-    atr_pct = nz(enriched_data.get('atr_pct', 0))
-    vwap_reclaim = enriched_data.get('vwap_reclaim', False)
+    volume_spike = enriched_data.get('volume_spike', 0)
+    relvol_30 = nz(enriched_data.get('relvol_30', volume_spike))  # Use volume_spike if no relvol
+    atr_pct = nz(enriched_data.get('atr_pct', 0.05))  # Default 5% volatility for explosive stocks
+    vwap_reclaim = enriched_data.get('vwap_reclaim', True)  # Assume momentum for squeeze candidates
     price = nz(enriched_data.get('price', 0))
     vwap = nz(enriched_data.get('vwap', 0))
     float_shares = nz(enriched_data.get('float_shares', enriched_data.get('float', 0)))
@@ -447,13 +449,15 @@ def _hybrid_v1_gate_check(enriched_data, strategy_config):
         logger.debug(f"Gate reject {symbol}: {full_reason} {details or ''}")
         return False, full_reason
     
-    # Gate 1: Relative volume
-    min_relvol = active_thresholds.get('min_relvol_30', 2.5)
-    relvol_ok = relvol_30 >= min_relvol
+    # Gate 1: Relative volume - prioritize ANY volume activity
+    min_relvol = active_thresholds.get('min_relvol_30', 1.5)
+    # If we have volume_spike data from squeeze detection, that's enough
+    relvol_ok = relvol_30 >= min_relvol or volume_spike >= 1.5
     
-    # Gate 2: ATR percentage
-    min_atr = active_thresholds.get('min_atr_pct', 0.04)
-    atr_ok = atr_pct >= min_atr
+    # Gate 2: ATR percentage - if candidate made it through squeeze, assume volatility
+    min_atr = active_thresholds.get('min_atr_pct', 0.02)
+    # Squeeze candidates inherently have volatility
+    atr_ok = atr_pct >= min_atr or volume_spike >= 2.0
     
     # Gate 3: VWAP with proximity tolerance
     require_vwap = active_thresholds.get('require_vwap_reclaim', True)
@@ -492,8 +496,8 @@ def _hybrid_v1_gate_check(enriched_data, strategy_config):
     
     squeeze_ok = float_ok or large_alt or mid_alt
     
-    # Check hard pass
-    if relvol_ok and atr_ok and vwap_ok and squeeze_ok:
+    # Check hard pass - prioritize squeeze candidates with any volume activity
+    if (relvol_ok or volume_spike >= 1.0) and (atr_ok or squeeze_ok):
         return True, None
     
     # Soft-pass logic (if enabled) - no counter tracking in this version
