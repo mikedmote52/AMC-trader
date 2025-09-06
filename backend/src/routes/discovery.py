@@ -286,6 +286,12 @@ async def get_contenders(
         system_state = "DEGRADED"
         reason_stats["stale"] = contaminated_count
     
+    # STRICT LIVE-DATA-ONLY ENFORCEMENT: Return empty array if DEGRADED
+    if system_state == "DEGRADED":
+        response_data = []
+        validated_items = []
+        logger.warning(f"🚫 DEGRADED system detected - returning empty candidates (stale: {contaminated_count}, age_check: {age_seconds if 'age_seconds' in locals() else 'N/A'})")
+    
     # Set response headers
     response.headers["X-System-State"] = system_state
     response.headers["X-Reason-Stats"] = json.dumps(reason_stats)
