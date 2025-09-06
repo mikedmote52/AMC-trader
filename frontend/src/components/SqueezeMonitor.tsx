@@ -45,11 +45,36 @@ export default function SqueezeMonitor({
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
+  const getRefreshInterval = () => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const isWeekend = now.getDay() === 0 || now.getDay() === 6; // Sunday = 0, Saturday = 6
+    
+    // Convert to ET (approximate - for more precision, use a timezone library)
+    const etHour = currentHour - 5; // Rough EST conversion (ignoring DST)
+    
+    if (isWeekend) {
+      return 15 * 60 * 1000; // 15 minutes on weekends
+    } else if (etHour >= 9.5 && etHour < 16) { // 9:30am - 4pm ET (market hours)
+      return 5 * 60 * 1000; // 5 minutes during trading hours
+    } else if ((etHour >= 4 && etHour < 9.5) || (etHour >= 16 && etHour < 20)) { // Extended hours
+      return 10 * 60 * 1000; // 10 minutes during extended hours
+    } else {
+      return 20 * 60 * 1000; // 20 minutes overnight
+    }
+  };
+
   useEffect(() => {
     loadSqueezeOpportunities();
     
-    // Refresh every 5 minutes (300 seconds)
-    const interval = setInterval(loadSqueezeOpportunities, 300000);
+    // Set interval based on market hours
+    const refreshInterval = getRefreshInterval();
+    const interval = setInterval(loadSqueezeOpportunities, refreshInterval);
+    
+    // Log the refresh rate for transparency
+    const minutes = refreshInterval / 60000;
+    console.log(`Scanner refresh rate: ${minutes} minutes`);
+    
     return () => clearInterval(interval);
   }, [watchedSymbols]);
 
@@ -58,28 +83,31 @@ export default function SqueezeMonitor({
       setLoading(true);
       setError("");
       
-      // Get advanced ranked candidates (top money-making opportunities)
-      const rankingResponse = await getJSON<any>(`${API_BASE}/advanced-ranking/rank`);
+      // Use test endpoint which consistently works (bypasses broken contenders persistence)
+      const discoveryResponse = await getJSON<any>(`${API_BASE}/discovery/test?strategy=legacy_v0&limit=20`);
       
       // Also get portfolio optimization actions
       const portfolioResponse = await getJSON<any>(`${API_BASE}/portfolio/immediate-actions`).catch(() => ({ success: false }));
       
-      // Transform ranked candidates to squeeze opportunities format
-      const response: SqueezeOpportunity[] = Array.isArray(rankingResponse?.ranked_candidates) 
-        ? rankingResponse.ranked_candidates.map((candidate: any) => ({
+      // Transform discovery candidates to squeeze opportunities format (test endpoint uses .items)
+      const candidates = Array.isArray(discoveryResponse?.items) ? discoveryResponse.items :
+                         Array.isArray(discoveryResponse?.candidates) ? discoveryResponse.candidates :
+                         Array.isArray(discoveryResponse) ? discoveryResponse : [];
+      
+      const response: SqueezeOpportunity[] = candidates.map((candidate: any) => ({
             symbol: candidate.symbol,
-            squeeze_score: candidate.advanced_score || 0, // Use advanced score (0.0-1.0)
-            volume_spike: candidate.ranking_factors?.volume_quality || 0,
-            short_interest: 15, // Default for display
+            squeeze_score: candidate.score || 0, // Use raw score (already 0-1 range)
+            volume_spike: candidate.factors?.volume_spike_ratio || candidate.volume_spike || 0,
+            short_interest: candidate.short_interest_data?.percent * 100 || candidate.short_interest || 0,
             price: candidate.price || 0,
-            pattern_type: candidate.action || 'BUY',
-            confidence: candidate.success_probability || 0,
+            pattern_type: candidate.action_tag || candidate.pattern_match || 'WATCH',
+            confidence: candidate.confidence || (candidate.score || 0) / 100,
             detected_at: new Date().toISOString(),
-            advanced_score: candidate.advanced_score,
-            success_probability: candidate.success_probability,
-            action: candidate.action,
-            vigl_similarity: candidate.vigl_similarity,
-            position_size_pct: candidate.position_size_pct
+            advanced_score: (candidate.score || 0) / 100,
+            success_probability: candidate.confidence || (candidate.score || 0) / 100,
+            action: candidate.action_tag || 'WATCH',
+            vigl_similarity: candidate.vigl_similarity || 0,
+            position_size_pct: candidate.position_size_pct || 0
           }))
         : [];
       
@@ -100,7 +128,7 @@ export default function SqueezeMonitor({
           action: item.action,
           vigl_similarity: item.vigl_similarity,
           position_size_pct: item.position_size_pct
-        })).filter(opp => opp.advanced_score >= 0.50); // Only show high-quality candidates (0.50+ advanced score)
+        })).filter(opp => opp.advanced_score >= 0.25); // Show candidates with 25%+ score (realistic threshold)
       }
       
       if (watchedSymbols.length > 0) {
@@ -143,11 +171,11 @@ export default function SqueezeMonitor({
     setTimeout(loadSqueezeOpportunities, 2000);
   };
 
-  // Categorize opportunities by advanced score tiers (1.0 = strongest)
+  // Categorize opportunities by advanced score tiers (realistic thresholds)
   const categorizeOpportunities = (opportunities: SqueezeOpportunity[]) => {
-    const critical = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.80); // STRONG_BUY
-    const developing = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.65 && (opp.advanced_score || opp.squeeze_score) < 0.80); // BUY
-    const early = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.50 && (opp.advanced_score || opp.squeeze_score) < 0.65); // WATCH
+    const critical = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.40); // STRONG_BUY
+    const developing = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.32 && (opp.advanced_score || opp.squeeze_score) < 0.40); // BUY
+    const early = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.25 && (opp.advanced_score || opp.squeeze_score) < 0.32); // WATCH
     
     return { critical, developing, early };
   };
@@ -369,11 +397,11 @@ export default function SqueezeMonitor({
           
           <div style={{...noOpportunitiesSubTextStyle, marginBottom: 16}}>
             <strong>Why no squeezes right now:</strong><br/>
-            • Advanced scores below 0.50 threshold (need 50%+ probability)<br/>
-            • VIGL pattern similarity insufficient (&lt;40%)<br/>
-            • Volume momentum not meeting criteria<br/>
-            • Current market conditions reducing explosive potential<br/>
-            • Waiting for higher-probability setups to develop
+            • Advanced scores below 0.25 threshold (need 25%+ probability)<br/>
+            • Volume patterns not meeting discovery criteria<br/>
+            • Current market conditions limiting squeeze setups<br/>
+            • System recently updated - scanning for new opportunities<br/>
+            • Discovery pipeline processing 7,000+ stocks
           </div>
           <div style={{fontSize: 12, color: '#555', fontStyle: 'italic', marginBottom: 12}}>
             💡 <strong>Advanced Discovery Active:</strong> Monitoring {watchedSymbols.length > 0 ? watchedSymbols.join(", ") : "7,000+ symbols"} for:<br/>

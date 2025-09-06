@@ -305,13 +305,13 @@ class AdvancedRankingSystem:
     
     def _calculate_risk_levels(self, price: float, factors: Dict[str, Any]) -> Tuple[float, float, float]:
         """Calculate stop loss, target, and risk/reward ratio"""
-        atr_pct = factors.get('atr_percent', 0.05)
+        atr_pct = factors.get('atr_percent', 5.0) / 100.0  # Convert percentage to decimal
         
-        # Stop loss: 2x ATR or 5% minimum
-        stop_distance_pct = max(0.05, atr_pct * 2)
+        # Stop loss: 2x ATR or 3% minimum, cap at 8% maximum
+        stop_distance_pct = max(0.03, min(0.08, atr_pct * 2))
         stop_loss = price * (1 - stop_distance_pct)
         
-        # Target: 2.5x risk minimum (conservative)
+        # Target: 2.5x risk (reasonable risk/reward)
         target_distance_pct = stop_distance_pct * 2.5
         target_price = price * (1 + target_distance_pct)
         
