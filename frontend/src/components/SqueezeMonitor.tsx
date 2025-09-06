@@ -42,6 +42,8 @@ export default function SqueezeMonitor({
   const [portfolioActions, setPortfolioActions] = useState<PortfolioAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [systemState, setSystemState] = useState("UNKNOWN");
+  const [debugInfo, setDebugInfo] = useState<any>(null);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
@@ -83,8 +85,28 @@ export default function SqueezeMonitor({
       setLoading(true);
       setError("");
       
-      // Use test endpoint which consistently works (bypasses broken contenders persistence)
-      const discoveryResponse = await getJSON<any>(`${API_BASE}/discovery/test?strategy=legacy_v0&limit=20`);
+      // PRODUCTION: Use only contenders endpoint (never test endpoint)
+      const useTestEndpoint = import.meta.env.VITE_USE_TEST_ENDPOINT === 'true' && import.meta.env.DEV;
+      
+      let discoveryResponse: any;
+      let systemState = "UNKNOWN";
+      let reasonStats = {};
+      
+      if (useTestEndpoint) {
+        discoveryResponse = await getJSON<any>(`${API_BASE}/discovery/test?strategy=legacy_v0&limit=20`);
+      } else {
+        // Use fetch to capture headers
+        const response = await fetch(`${API_BASE}/discovery/contenders?strategy=legacy_v0&cache=${Date.now()}`, {
+          cache: 'no-store'
+        });
+        
+        // Read system state headers
+        systemState = response.headers.get('X-System-State') || 'UNKNOWN';
+        const reasonStatsHeader = response.headers.get('X-Reason-Stats');
+        reasonStats = reasonStatsHeader ? JSON.parse(reasonStatsHeader) : {};
+        
+        discoveryResponse = await response.json();
+      }
       
       // Also get portfolio optimization actions
       const portfolioResponse = await getJSON<any>(`${API_BASE}/portfolio/immediate-actions`).catch(() => ({ success: false }));
@@ -135,6 +157,21 @@ export default function SqueezeMonitor({
         opportunities = opportunities.filter(opp => watchedSymbols.includes(opp.symbol));
       }
       
+      // Update system state
+      setSystemState(systemState);
+      
+      // If healthy system but no candidates, get debug info
+      let debugInfo = null;
+      if (!useTestEndpoint && systemState === "HEALTHY" && opportunities.length === 0) {
+        try {
+          debugInfo = await getJSON<any>(`${API_BASE}/discovery/contenders/debug?strategy=legacy_v0`);
+          console.log("Debug info:", debugInfo);
+          setDebugInfo(debugInfo);
+        } catch (e) {
+          console.warn("Debug endpoint not available:", e);
+        }
+      }
+
       // Sort by advanced score descending (1.0 = strongest)
       opportunities.sort((a, b) => (b.advanced_score || b.squeeze_score) - (a.advanced_score || a.squeeze_score));
       
@@ -220,6 +257,61 @@ export default function SqueezeMonitor({
 
   return (
     <div style={containerStyle}>
+      {/* Test Mode Banner */}
+      {import.meta.env.VITE_USE_TEST_ENDPOINT === 'true' && import.meta.env.DEV && (
+        <div style={{
+          backgroundColor: 'rgba(234, 179, 8, 0.1)',
+          border: '1px solid rgba(234, 179, 8, 0.3)',
+          borderRadius: '8px',
+          padding: '12px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <div style={{
+            width: '8px',
+            height: '8px',
+            backgroundColor: '#facc15',
+            borderRadius: '50%',
+            animation: 'pulse 2s infinite'
+          }}></div>
+          <span style={{ color: '#fcd34d', fontWeight: '500' }}>
+            TEST MODE - Using development endpoint
+          </span>
+        </div>
+      )}
+
+      {/* System Status Bar */}
+      {!import.meta.env.DEV && (
+        <div style={{
+          backgroundColor: systemState === 'HEALTHY' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+          border: `1px solid ${systemState === 'HEALTHY' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+          borderRadius: '8px',
+          padding: '8px 12px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '14px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              width: '8px',
+              height: '8px',
+              backgroundColor: systemState === 'HEALTHY' ? '#22c55e' : '#ef4444',
+              borderRadius: '50%'
+            }}></div>
+            <span style={{ color: systemState === 'HEALTHY' ? '#86efac' : '#fca5a5' }}>
+              {systemState === 'HEALTHY' ? 'System Healthy' : 'Live market data degraded — signals paused'}
+            </span>
+          </div>
+          <span style={{ color: '#9ca3af', fontSize: '12px' }}>
+            {squeezeOpportunities.length} candidates
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div style={headerStyle}>
         <div style={titleStyle}>
@@ -366,6 +458,41 @@ export default function SqueezeMonitor({
           <div style={noOpportunitiesTextStyle}>
             No squeeze opportunities detected
           </div>
+
+          {/* Debug Information for HEALTHY system with no candidates */}
+          {systemState === 'HEALTHY' && debugInfo && (
+            <div style={{
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              marginTop: '16px',
+              fontSize: '14px'
+            }}>
+              <div style={{ color: '#93c5fd', fontWeight: '500', marginBottom: '8px' }}>
+                🔍 System Diagnostics
+              </div>
+              <div style={{ color: '#e5e7eb', fontSize: '13px', lineHeight: '1.4' }}>
+                <div>Symbols processed: {debugInfo.summary?.symbols_in || 0}</div>
+                <div>After filtering: {debugInfo.summary?.after_freshness || 0}</div>
+                <div>Watchlist eligible: {debugInfo.summary?.watchlist || 0}</div>
+                <div>Trade ready: {debugInfo.summary?.trade_ready || 0}</div>
+                {debugInfo.drop_reasons?.length > 0 && (
+                  <div style={{ marginTop: '8px' }}>
+                    <div style={{ color: '#93c5fd', fontSize: '12px' }}>Top drop reasons:</div>
+                    {debugInfo.drop_reasons.slice(0, 3).map((reason: any, i: number) => (
+                      <div key={i} style={{ fontSize: '12px', color: '#9ca3af' }}>
+                        • {reason.reason}: {reason.count}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280' }}>
+                  Thresholds: {debugInfo.config_snapshot?.gates?.watchlist_min}% watchlist, {debugInfo.config_snapshot?.gates?.trade_ready_min}% trade ready
+                </div>
+              </div>
+            </div>
+          )}
           
           {/* Portfolio Management Actions */}
           {portfolioActions.length > 0 && (
