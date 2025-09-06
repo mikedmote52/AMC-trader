@@ -130,8 +130,7 @@ export default function SqueezeMonitor({
             action: candidate.action_tag || 'WATCH',
             vigl_similarity: candidate.vigl_similarity || 0,
             position_size_pct: candidate.position_size_pct || 0
-          }))
-        : [];
+          }));
       
       // Only use real advanced ranking data
       let opportunities: SqueezeOpportunity[] = [];
