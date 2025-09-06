@@ -41,13 +41,14 @@ class RedisClient:
             raise RuntimeError(f"Redis initialization failed: {e}")
     
     @classmethod
-    def publish_discovery_contenders(cls, contenders: list, ttl: int = 600):
+    def publish_discovery_contenders(cls, contenders: list, ttl: int = 600, strategy: str = None):
         """
         Publish discovery contenders to Redis for API consumption
         
         Args:
             contenders: List of contender dictionaries with symbol, score, reason, etc.
             ttl: Time to live in seconds (default 600 = 10 minutes)
+            strategy: Strategy identifier (legacy_v0, hybrid_v1, etc.)
         """
         import json
         from datetime import datetime
@@ -55,16 +56,35 @@ class RedisClient:
         client = cls.get_instance()
         
         try:
-            # Publish contenders list
-            contenders_key = "amc:discovery:contenders.latest"
             contenders_json = json.dumps(contenders)
-            client.set(contenders_key, contenders_json, ex=ttl)
+            
+            # Detect strategy from contenders if not provided
+            if not strategy and contenders:
+                detected_strategy = contenders[0].get('strategy', 'legacy_v0')
+                strategy = detected_strategy
+            
+            strategy = strategy or 'legacy_v0'
+            
+            # Strategy-specific keys (new format expected by API readers)
+            v2_cont_key = f"amc:discovery:v2:contenders.latest:{strategy}"
+            v1_cont_key = f"amc:discovery:contenders.latest:{strategy}"
+            
+            # Legacy fallback keys
+            v2_fallback = "amc:discovery:v2:contenders.latest"
+            v1_fallback = "amc:discovery:contenders.latest"
+            
+            # Publish to all expected keys
+            keys_written = []
+            for key in [v2_cont_key, v1_cont_key, v2_fallback, v1_fallback]:
+                client.set(key, contenders_json, ex=ttl)
+                keys_written.append(key)
             
             # Publish status with count and timestamp
             status_key = "amc:discovery:status"
             status = {
                 "count": len(contenders),
-                "ts": datetime.utcnow().isoformat() + "Z"
+                "ts": datetime.utcnow().isoformat() + "Z",
+                "strategy": strategy
             }
             status_json = json.dumps(status)
             client.set(status_key, status_json, ex=ttl)
@@ -72,8 +92,9 @@ class RedisClient:
             logger.info(
                 "Published discovery results to Redis",
                 contenders_count=len(contenders),
+                strategy=strategy,
                 ttl_seconds=ttl,
-                contenders_key=contenders_key,
+                keys_written=keys_written,
                 status_key=status_key
             )
             
@@ -86,6 +107,6 @@ def get_redis_client() -> redis.Redis:
     """Get Redis client instance"""
     return RedisClient.get_instance()
 
-def publish_discovery_contenders(contenders: list, ttl: int = 600):
+def publish_discovery_contenders(contenders: list, ttl: int = 600, strategy: str = None):
     """Publish discovery contenders to Redis"""
-    RedisClient.publish_discovery_contenders(contenders, ttl)
+    RedisClient.publish_discovery_contenders(contenders, ttl, strategy)

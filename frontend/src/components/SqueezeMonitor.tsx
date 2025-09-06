@@ -42,14 +42,41 @@ export default function SqueezeMonitor({
   const [portfolioActions, setPortfolioActions] = useState<PortfolioAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [systemState, setSystemState] = useState("UNKNOWN");
+  const [debugInfo, setDebugInfo] = useState<any>(null);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+
+  const getRefreshInterval = () => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const isWeekend = now.getDay() === 0 || now.getDay() === 6; // Sunday = 0, Saturday = 6
+    
+    // Convert to ET (approximate - for more precision, use a timezone library)
+    const etHour = currentHour - 5; // Rough EST conversion (ignoring DST)
+    
+    if (isWeekend) {
+      return 15 * 60 * 1000; // 15 minutes on weekends
+    } else if (etHour >= 9.5 && etHour < 16) { // 9:30am - 4pm ET (market hours)
+      return 5 * 60 * 1000; // 5 minutes during trading hours
+    } else if ((etHour >= 4 && etHour < 9.5) || (etHour >= 16 && etHour < 20)) { // Extended hours
+      return 10 * 60 * 1000; // 10 minutes during extended hours
+    } else {
+      return 20 * 60 * 1000; // 20 minutes overnight
+    }
+  };
 
   useEffect(() => {
     loadSqueezeOpportunities();
     
-    // Refresh every 5 minutes (300 seconds)
-    const interval = setInterval(loadSqueezeOpportunities, 300000);
+    // Set interval based on market hours
+    const refreshInterval = getRefreshInterval();
+    const interval = setInterval(loadSqueezeOpportunities, refreshInterval);
+    
+    // Log the refresh rate for transparency
+    const minutes = refreshInterval / 60000;
+    console.log(`Scanner refresh rate: ${minutes} minutes`);
+    
     return () => clearInterval(interval);
   }, [watchedSymbols]);
 
@@ -58,28 +85,51 @@ export default function SqueezeMonitor({
       setLoading(true);
       setError("");
       
-      // Get advanced ranked candidates (top money-making opportunities)
-      const rankingResponse = await getJSON<any>(`${API_BASE}/advanced-ranking/rank`);
+      // PRODUCTION: Use only contenders endpoint (never test endpoint)
+      const useTestEndpoint = import.meta.env.VITE_USE_TEST_ENDPOINT === 'true' && import.meta.env.DEV;
+      
+      let discoveryResponse: any;
+      let systemState = "UNKNOWN";
+      let reasonStats = {};
+      
+      if (useTestEndpoint) {
+        discoveryResponse = await getJSON<any>(`${API_BASE}/discovery/test?strategy=legacy_v0&limit=20`);
+      } else {
+        // Use fetch to capture headers
+        const response = await fetch(`${API_BASE}/discovery/contenders?strategy=legacy_v0&cache=${Date.now()}`, {
+          cache: 'no-store'
+        });
+        
+        // Read system state headers
+        systemState = response.headers.get('X-System-State') || 'UNKNOWN';
+        const reasonStatsHeader = response.headers.get('X-Reason-Stats');
+        reasonStats = reasonStatsHeader ? JSON.parse(reasonStatsHeader) : {};
+        
+        discoveryResponse = await response.json();
+      }
       
       // Also get portfolio optimization actions
       const portfolioResponse = await getJSON<any>(`${API_BASE}/portfolio/immediate-actions`).catch(() => ({ success: false }));
       
-      // Transform ranked candidates to squeeze opportunities format
-      const response: SqueezeOpportunity[] = Array.isArray(rankingResponse?.ranked_candidates) 
-        ? rankingResponse.ranked_candidates.map((candidate: any) => ({
+      // Transform discovery candidates to squeeze opportunities format (test endpoint uses .items)
+      const candidates = Array.isArray(discoveryResponse?.items) ? discoveryResponse.items :
+                         Array.isArray(discoveryResponse?.candidates) ? discoveryResponse.candidates :
+                         Array.isArray(discoveryResponse) ? discoveryResponse : [];
+      
+      const response: SqueezeOpportunity[] = candidates.map((candidate: any) => ({
             symbol: candidate.symbol,
-            squeeze_score: candidate.advanced_score || 0, // Use advanced score (0.0-1.0)
-            volume_spike: candidate.ranking_factors?.volume_quality || 0,
-            short_interest: 15, // Default for display
+            squeeze_score: candidate.score || 0, // Use raw score (already 0-1 range)
+            volume_spike: candidate.factors?.volume_spike_ratio || candidate.volume_spike || 0,
+            short_interest: candidate.short_interest_data?.percent * 100 || candidate.short_interest || 0,
             price: candidate.price || 0,
-            pattern_type: candidate.action || 'BUY',
-            confidence: candidate.success_probability || 0,
+            pattern_type: candidate.action_tag || candidate.pattern_match || 'WATCH',
+            confidence: candidate.confidence || (candidate.score || 0) / 100,
             detected_at: new Date().toISOString(),
-            advanced_score: candidate.advanced_score,
-            success_probability: candidate.success_probability,
-            action: candidate.action,
-            vigl_similarity: candidate.vigl_similarity,
-            position_size_pct: candidate.position_size_pct
+            advanced_score: (candidate.score || 0) / 100,
+            success_probability: candidate.confidence || (candidate.score || 0) / 100,
+            action: candidate.action_tag || 'WATCH',
+            vigl_similarity: candidate.vigl_similarity || 0,
+            position_size_pct: candidate.position_size_pct || 0
           }))
         : [];
       
@@ -100,13 +150,28 @@ export default function SqueezeMonitor({
           action: item.action,
           vigl_similarity: item.vigl_similarity,
           position_size_pct: item.position_size_pct
-        })).filter(opp => opp.advanced_score >= 0.50); // Only show high-quality candidates (0.50+ advanced score)
+        })).filter(opp => opp.advanced_score >= 0.25); // Show candidates with 25%+ score (realistic threshold)
       }
       
       if (watchedSymbols.length > 0) {
         opportunities = opportunities.filter(opp => watchedSymbols.includes(opp.symbol));
       }
       
+      // Update system state
+      setSystemState(systemState);
+      
+      // If healthy system but no candidates, get debug info
+      let debugInfo = null;
+      if (!useTestEndpoint && systemState === "HEALTHY" && opportunities.length === 0) {
+        try {
+          debugInfo = await getJSON<any>(`${API_BASE}/discovery/contenders/debug?strategy=legacy_v0`);
+          console.log("Debug info:", debugInfo);
+          setDebugInfo(debugInfo);
+        } catch (e) {
+          console.warn("Debug endpoint not available:", e);
+        }
+      }
+
       // Sort by advanced score descending (1.0 = strongest)
       opportunities.sort((a, b) => (b.advanced_score || b.squeeze_score) - (a.advanced_score || a.squeeze_score));
       
@@ -143,11 +208,11 @@ export default function SqueezeMonitor({
     setTimeout(loadSqueezeOpportunities, 2000);
   };
 
-  // Categorize opportunities by advanced score tiers (1.0 = strongest)
+  // Categorize opportunities by advanced score tiers (realistic thresholds)
   const categorizeOpportunities = (opportunities: SqueezeOpportunity[]) => {
-    const critical = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.80); // STRONG_BUY
-    const developing = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.65 && (opp.advanced_score || opp.squeeze_score) < 0.80); // BUY
-    const early = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.50 && (opp.advanced_score || opp.squeeze_score) < 0.65); // WATCH
+    const critical = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.40); // STRONG_BUY
+    const developing = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.32 && (opp.advanced_score || opp.squeeze_score) < 0.40); // BUY
+    const early = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.25 && (opp.advanced_score || opp.squeeze_score) < 0.32); // WATCH
     
     return { critical, developing, early };
   };
@@ -192,6 +257,61 @@ export default function SqueezeMonitor({
 
   return (
     <div style={containerStyle}>
+      {/* Test Mode Banner */}
+      {import.meta.env.VITE_USE_TEST_ENDPOINT === 'true' && import.meta.env.DEV && (
+        <div style={{
+          backgroundColor: 'rgba(234, 179, 8, 0.1)',
+          border: '1px solid rgba(234, 179, 8, 0.3)',
+          borderRadius: '8px',
+          padding: '12px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <div style={{
+            width: '8px',
+            height: '8px',
+            backgroundColor: '#facc15',
+            borderRadius: '50%',
+            animation: 'pulse 2s infinite'
+          }}></div>
+          <span style={{ color: '#fcd34d', fontWeight: '500' }}>
+            TEST MODE - Using development endpoint
+          </span>
+        </div>
+      )}
+
+      {/* System Status Bar */}
+      {!import.meta.env.DEV && (
+        <div style={{
+          backgroundColor: systemState === 'HEALTHY' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+          border: `1px solid ${systemState === 'HEALTHY' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+          borderRadius: '8px',
+          padding: '8px 12px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '14px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              width: '8px',
+              height: '8px',
+              backgroundColor: systemState === 'HEALTHY' ? '#22c55e' : '#ef4444',
+              borderRadius: '50%'
+            }}></div>
+            <span style={{ color: systemState === 'HEALTHY' ? '#86efac' : '#fca5a5' }}>
+              {systemState === 'HEALTHY' ? 'System Healthy' : 'Live market data degraded — signals paused'}
+            </span>
+          </div>
+          <span style={{ color: '#9ca3af', fontSize: '12px' }}>
+            {squeezeOpportunities.length} candidates
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div style={headerStyle}>
         <div style={titleStyle}>
@@ -338,6 +458,41 @@ export default function SqueezeMonitor({
           <div style={noOpportunitiesTextStyle}>
             No squeeze opportunities detected
           </div>
+
+          {/* Debug Information for HEALTHY system with no candidates */}
+          {systemState === 'HEALTHY' && debugInfo && (
+            <div style={{
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              borderRadius: '8px',
+              padding: '12px',
+              marginTop: '16px',
+              fontSize: '14px'
+            }}>
+              <div style={{ color: '#93c5fd', fontWeight: '500', marginBottom: '8px' }}>
+                🔍 System Diagnostics
+              </div>
+              <div style={{ color: '#e5e7eb', fontSize: '13px', lineHeight: '1.4' }}>
+                <div>Symbols processed: {debugInfo.summary?.symbols_in || 0}</div>
+                <div>After filtering: {debugInfo.summary?.after_freshness || 0}</div>
+                <div>Watchlist eligible: {debugInfo.summary?.watchlist || 0}</div>
+                <div>Trade ready: {debugInfo.summary?.trade_ready || 0}</div>
+                {debugInfo.drop_reasons?.length > 0 && (
+                  <div style={{ marginTop: '8px' }}>
+                    <div style={{ color: '#93c5fd', fontSize: '12px' }}>Top drop reasons:</div>
+                    {debugInfo.drop_reasons.slice(0, 3).map((reason: any, i: number) => (
+                      <div key={i} style={{ fontSize: '12px', color: '#9ca3af' }}>
+                        • {reason.reason}: {reason.count}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280' }}>
+                  Thresholds: {debugInfo.config_snapshot?.gates?.watchlist_min}% watchlist, {debugInfo.config_snapshot?.gates?.trade_ready_min}% trade ready
+                </div>
+              </div>
+            </div>
+          )}
           
           {/* Portfolio Management Actions */}
           {portfolioActions.length > 0 && (
@@ -369,11 +524,11 @@ export default function SqueezeMonitor({
           
           <div style={{...noOpportunitiesSubTextStyle, marginBottom: 16}}>
             <strong>Why no squeezes right now:</strong><br/>
-            • Advanced scores below 0.50 threshold (need 50%+ probability)<br/>
-            • VIGL pattern similarity insufficient (&lt;40%)<br/>
-            • Volume momentum not meeting criteria<br/>
-            • Current market conditions reducing explosive potential<br/>
-            • Waiting for higher-probability setups to develop
+            • Advanced scores below 0.25 threshold (need 25%+ probability)<br/>
+            • Volume patterns not meeting discovery criteria<br/>
+            • Current market conditions limiting squeeze setups<br/>
+            • System recently updated - scanning for new opportunities<br/>
+            • Discovery pipeline processing 7,000+ stocks
           </div>
           <div style={{fontSize: 12, color: '#555', fontStyle: 'italic', marginBottom: 12}}>
             💡 <strong>Advanced Discovery Active:</strong> Monitoring {watchedSymbols.length > 0 ? watchedSymbols.join(", ") : "7,000+ symbols"} for:<br/>

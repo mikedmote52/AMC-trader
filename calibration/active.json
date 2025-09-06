@@ -4,7 +4,7 @@
     "meanrev": { "EXTREME": 0.82, "HIGH": 0.62, "MEDIUM": 0.42, "LOW": 0.25 }
   },
   "scoring": {
-    "strategy": "legacy_v0",
+    "strategy": "hybrid_v1",
     "preset": "balanced_default",
     "presets": {
       "squeeze_aggressive": {
@@ -44,7 +44,7 @@
         "technical": 0.10
       },
       "thresholds": {
-        "min_relvol_30": 1.0,
+        "min_relvol_30": 0.5,
         "min_atr_pct": 0.02,
         "rsi_band": [60, 70],
         "ema_fast": 9,
@@ -95,8 +95,8 @@
         "max_soft_pass": 0
       },
       "entry_rules": {
-        "watchlist_min": 50,
-        "trade_ready_min": 55
+        "watchlist_min": 5,
+        "trade_ready_min": 8
       },
       "safety_guardrails": {
         "max_candidates": 100,

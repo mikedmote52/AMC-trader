@@ -1233,8 +1233,11 @@ class DiscoveryPipeline:
         
         # Publish contenders to Redis for API consumption
         try:
+            # Get current strategy for Redis key alignment
+            current_strategy = _get_scoring_strategy()
+            
             # Publish to Redis with 10-minute TTL
-            publish_discovery_contenders(contenders, ttl=600)
+            publish_discovery_contenders(contenders, ttl=600, strategy=current_strategy)
             
             # Publish explain payload to Redis
             from lib.redis_client import get_redis_client

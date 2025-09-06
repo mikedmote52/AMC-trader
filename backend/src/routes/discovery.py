@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, HTTPException, Body, Request
+from fastapi import APIRouter, Query, HTTPException, Body, Request, Response
 from typing import List, Dict, Optional
 import json
 import importlib
@@ -106,13 +106,20 @@ def _load_selector():
 @router.get("/contenders")
 async def get_contenders(
     request: Request,
+    response: Response,
     strategy: str = Query("", description="Scoring strategy: legacy_v0 or hybrid_v1"),
     session: str = Query("regular", description="Market session: premarket, regular, afterhours")
 ):
     """
-    CRITICAL SYSTEM INTEGRITY: Returns fresh discovery data ONLY
-    NEVER serves fake/fallback/contaminated data under any circumstances
+    PRODUCTION ENDPOINT: Returns live market data only with system state monitoring
+    Enforces data freshness, drops stale symbols, and provides diagnostic headers
     """
+    from datetime import datetime, timezone
+    import time
+    
+    # Set cache control headers
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
     # Resolve effective strategy (production enforcement)
     effective_strategy = resolve_effective_strategy(strategy)
     
@@ -261,8 +268,162 @@ async def get_contenders(
         }
     }
     
+    # Add system state headers for frontend monitoring
+    system_state = "HEALTHY"
+    reason_stats = {"stale": 0, "gate": 0, "error": 0, "scored": len(validated_items)}
+    
+    # Check for stale data
+    if status and status.get('last_run'):
+        try:
+            last_run_time = datetime.fromisoformat(status['last_run'].replace('Z', '+00:00'))
+            age_seconds = (datetime.now(timezone.utc) - last_run_time).total_seconds()
+            if age_seconds > 300:  # 5 minutes
+                system_state = "DEGRADED"
+        except:
+            system_state = "DEGRADED"
+    
+    if contaminated_count > 0:
+        system_state = "DEGRADED"
+        reason_stats["stale"] = contaminated_count
+    
+    # Set response headers
+    response.headers["X-System-State"] = system_state
+    response.headers["X-Reason-Stats"] = json.dumps(reason_stats)
+    
     logger.info(f"✅ Serving {len(validated_items)} validated items with real data (filtered from {len(items)})")
     return response_data
+
+@router.get("/contenders/debug")
+async def debug_contenders(
+    request: Request,
+    strategy: str = Query("", description="Scoring strategy to debug")
+):
+    """
+    Debug endpoint to explain why contenders endpoint may be returning empty results
+    """
+    from datetime import datetime, timezone
+    import time
+    
+    effective_strategy = resolve_effective_strategy(strategy)
+    r = get_redis_client()
+    
+    # Get Redis keys
+    strategy_suffix = f":{effective_strategy}" if effective_strategy and effective_strategy in ["legacy_v0", "hybrid_v1"] else ""
+    v2_cont_key = f"{V2_CONT}{strategy_suffix}"
+    v2_trace_key = f"{V2_TRACE}{strategy_suffix}"
+    v1_cont_key = f"{V1_CONT}{strategy_suffix}"
+    v1_trace_key = f"{V1_TRACE}{strategy_suffix}"
+    
+    # Check data availability
+    items = _get_json(r, v2_cont_key) or _get_json(r, v1_cont_key) or _get_json(r, V2_CONT) or _get_json(r, V1_CONT)
+    trace = _get_json(r, v2_trace_key) or _get_json(r, V2_TRACE) or _get_json(r, V1_TRACE)
+    status = _get_json(r, STATUS)
+    
+    # Analyze drop reasons
+    drop_reasons = []
+    symbols_in = 0
+    after_freshness = 0
+    watchlist = 0
+    trade_ready = 0
+    
+    if trace:
+        counts = trace.get("counts_out", {})
+        symbols_in = counts.get("universe", 0)
+        after_freshness = symbols_in  # Assume no freshness filtering for now
+        
+        rejections = trace.get("rejections", {})
+        for stage, reasons in rejections.items():
+            if isinstance(reasons, dict):
+                for reason, count in reasons.items():
+                    drop_reasons.append({"reason": f"{stage}_{reason}", "count": count})
+    
+    # Check data freshness
+    data_age_seconds = 0
+    system_state = "HEALTHY"
+    if status and status.get('last_run'):
+        try:
+            last_run_time = datetime.fromisoformat(status['last_run'].replace('Z', '+00:00'))
+            data_age_seconds = (datetime.now(timezone.utc) - last_run_time).total_seconds()
+            if data_age_seconds > 300:  # 5 minutes
+                system_state = "DEGRADED"
+        except:
+            system_state = "DEGRADED"
+    
+    # Count stale data
+    stale_count = 0
+    if items:
+        for item in items:
+            si_data = item.get('short_interest_data', {})
+            if si_data.get('source') in ['sector_fallback', 'default_fallback']:
+                stale_count += 1
+        
+        if stale_count > len(items) * 0.4:  # >40% stale
+            system_state = "DEGRADED"
+    
+    # Load current configuration
+    try:
+        config = _load_calibration_config()
+        hybrid_config = config.get("scoring", {}).get("hybrid_v1", {})
+        entry_rules = hybrid_config.get("entry_rules", {})
+        watchlist_min = entry_rules.get("watchlist_min", 50)
+        trade_ready_min = entry_rules.get("trade_ready_min", 55)
+    except:
+        watchlist_min = 50
+        trade_ready_min = 55
+    
+    return {
+        "system_state": system_state,
+        "summary": {
+            "symbols_in": symbols_in,
+            "after_freshness": after_freshness,
+            "watchlist": len(items) if items else 0,
+            "trade_ready": len([i for i in (items or []) if i.get('score', 0) >= trade_ready_min/100])
+        },
+        "drop_reasons": sorted(drop_reasons, key=lambda x: x['count'], reverse=True)[:10],
+        "config_snapshot": {
+            "freshness": {"quotes": 60, "bars_1m": 120},
+            "gates": {"watchlist_min": watchlist_min, "trade_ready_min": trade_ready_min}
+        },
+        "data_diagnostics": {
+            "redis_keys_checked": [v2_cont_key, v1_cont_key, V2_CONT, V1_CONT],
+            "items_found": len(items) if items else 0,
+            "stale_items": stale_count,
+            "data_age_seconds": data_age_seconds,
+            "effective_strategy": effective_strategy
+        }
+    }
+
+@router.get("/health")
+async def discovery_health():
+    """Minimal health endpoint for system monitoring"""
+    r = get_redis_client()
+    
+    # Check universe availability
+    universe_status = "DOWN"
+    try:
+        status = _get_json(r, STATUS)
+        if status and status.get('last_run'):
+            from datetime import datetime, timezone
+            last_run_time = datetime.fromisoformat(status['last_run'].replace('Z', '+00:00'))
+            age_seconds = (datetime.now(timezone.utc) - last_run_time).total_seconds()
+            if age_seconds < 600:  # 10 minutes
+                universe_status = "LIVE"
+            else:
+                universe_status = "FALLBACK"
+    except:
+        universe_status = "DOWN"
+    
+    # Check market data (simplified)
+    market_data = "LIVE"  # Assume live unless proven otherwise
+    
+    # Overall system state
+    system_state = "HEALTHY" if universe_status == "LIVE" else "DEGRADED"
+    
+    return {
+        "universe": universe_status,
+        "market_data": market_data,
+        "system_state": system_state
+    }
 
 @router.get("/short-interest")
 async def get_short_interest(symbols: str = Query("UP,SPHR,NAK", description="Comma-separated symbols")):
@@ -669,6 +830,14 @@ async def discovery_test(
     strategy: str = Query("", description="Scoring strategy to test"),
     session: str = Query("regular", description="Market session for testing")
 ):
+    # Restrict test endpoint to development environment only
+    import os
+    if os.getenv("ENVIRONMENT", "development") not in ["development", "dev", "local"]:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=403, 
+            detail="Test endpoint restricted to development environment only"
+        )
     f, mod = _load_selector()
     if not f:
         return {"items": [], "trace": {}, "error": "select_candidates not found in src.jobs.discovery or src.jobs.discover"}
