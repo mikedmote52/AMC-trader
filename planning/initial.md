@@ -1,642 +1,587 @@
----
-run_id: 2025-08-30T20-17-35Z
-analysis_date: 2025-08-30
-system: AMC-TRADER
-focus: Squeeze Detection Enhancement & Monthly Profit Optimization
----
+# AMC-TRADER Squeeze Detection Enhancement Plan
 
-# AMC-TRADER System Enhancement Plan: Squeeze Intelligence & Discovery Optimization
+**Version**: 2.0  
+**Date**: 2025-09-06  
+**Focus**: Comprehensive detector architecture and advanced gating system  
 
-## Context Digest
+## Executive Summary
 
-After comprehensive analysis of the AMC-TRADER codebase, I have identified the current architecture and key components:
+This plan details the comprehensive enhancement of AMC-TRADER's squeeze detection system, moving from the current basic implementation to a sophisticated multi-detector architecture with advanced gating, confidence weighting, and real-time calibration capabilities. The system will integrate multiple free-data providers while maintaining strict data quality standards and providing regime-aware scoring for optimal market conditions adaptation.
 
-### Current System Architecture
-- **Backend**: FastAPI with async architecture, PostgreSQL + Redis caching
-- **Frontend**: React with TypeScript, real-time polling every 30-60 seconds
-- **Discovery Pipeline**: `/backend/src/jobs/discover.py` - runs every 5 minutes during market hours
-- **Cache Keys**: `amc:discovery:contenders.latest`, `amc:discovery:explain.latest`
-- **API Endpoints**: `/discovery/contenders`, `/discovery/squeeze-candidates`, `/discovery/trigger`
-- **Current Thresholds**: Price cap $500, min volume 3x, ATR 4%+, max float 50M
+## Current System Analysis
 
-### Existing Squeeze Detection System
-- **SqueezeDetector Service**: `/backend/src/services/squeeze_detector.py` 
-- **VIGL Pattern Recognition**: Based on +324% historical winner (20.9x volume, 18% SI, 15.2M float)
-- **Confidence Levels**: EXTREME (0.50+), HIGH (0.35+), MEDIUM (0.25+), LOW (0.15+)
-- **Frontend Integration**: SqueezeMonitor.tsx, SqueezeAlert.tsx with 3-tier alert system
-- **Current Issue**: Frontend calls `/discovery/squeeze-candidates` but may not show results due to data flow issues
+### Existing Architecture
+- **Discovery Pipeline**: FastAPI backend with Redis caching, 15-minute execution cycles
+- **Current Detectors**: `volume_momentum.py` and `squeeze.py` implemented as stubs
+- **Scoring Strategy**: Hybrid V1 with configurable weights (35% volume_momentum, 25% squeeze, 20% catalyst, 10% options, 10% technical)
+- **Data Sources**: Polygon Live (high confidence), FINRA Short Interest, Alpha Vantage Options
+- **Configuration**: Active calibration system in `/calibration/active.json` with preset switching
 
-### Data Pipeline Analysis
-- **Redis TTL**: 600 seconds (10 minutes) for discovery results
-- **Frontend Polling**: TopRecommendations.tsx polls `/discovery/contenders` every 60 seconds
-- **Universe**: Currently limited to 14 symbols in `data/universe.txt` (AAPL, MSFT, etc.)
-- **Squeeze Integration**: Pipeline includes squeeze detection but results may not flow to UI properly
+### Current Limitations
+1. **Incomplete Detector Suite**: Missing catalyst, options, technical, and vigl_pattern detectors
+2. **Basic Gating**: No hard/soft gate distinction or confidence reduction mechanisms
+3. **Session Agnostic**: No market session awareness (premarket, regular, afterhours)
+4. **Limited Provider Integration**: Manual provider switching without circuit breakers
+5. **No Experimental Framework**: Lacks A/B testing and shadow testing capabilities
 
-## Verification Plan for Discovery
+## Architecture Enhancement Plan
 
-### 1. Current VIGL Thresholds Effectiveness Analysis
+### 1. Complete Detector Architecture
 
-**Existing Thresholds Assessment:**
-- **Price Range**: $0.10-$100 (TOO RESTRICTIVE for $2.94 VIGL entry)
-- **Volume Minimum**: 2x average (GOOD - captures early signals)
-- **Target Volume**: 20.9x (PERFECT - matches VIGL pattern)
-- **Short Interest**: 20%+ required (GOOD - matches VIGL's 18%)
-- **Float Maximum**: 50M shares (APPROPRIATE for explosive moves)
+#### A. Catalyst News Detector (`catalyst_news.py`)
 
-**Recommended Threshold Adjustments:**
+**Purpose**: Detect news sentiment, social media rank, and event-driven catalysts
+
+**Data Sources**:
+- News APIs (when available) with confidence weighting
+- Social media sentiment scores
+- Event calendars (earnings, FDA approvals, etc.)
+
+**Core Components**:
 ```python
-ENHANCED_VIGL_CRITERIA = {
-    'price_range': (0.50, 50.0),        # Expand to capture $2.94-$25 sweet spot
-    'volume_spike_min': 5.0,            # Increase minimum to 5x for quality
-    'volume_spike_target': 20.9,        # Keep VIGL target
-    'float_max': 75_000_000,            # Increase slightly for more candidates
-    'short_interest_min': 0.15,         # Lower to 15% for more opportunities
-    'market_cap_max': 1_000_000_000,    # Increase to $1B for mid-caps
-}
-```
-
-### 2. Pattern Expansion Opportunities
-
-**Beyond VIGL Pattern Detection:**
-1. **CRWV Pattern**: 35.2x volume, 22% SI, 8.5M float → +515% gains
-2. **AEVA Pattern**: 18.3x volume, 15% SI, 45.8M float → +345% gains
-3. **Momentum Breakout**: 10x+ volume without squeeze metrics
-4. **Float Rotation**: Large float (>100M) with institutional accumulation
-
-**New Pattern Detection Classes:**
-```python
-PATTERN_CLASSES = {
-    'VIGL_EXTREME': {'volume': 15.0, 'si': 0.15, 'float': 25e6},
-    'CRWV_PARABOLIC': {'volume': 25.0, 'si': 0.20, 'float': 15e6},
-    'AEVA_INSTITUTIONAL': {'volume': 15.0, 'si': 0.12, 'float': 50e6},
-    'MOMENTUM_SURGE': {'volume': 10.0, 'si': 0.05, 'float': 100e6}
-}
-```
-
-### 3. Threshold Optimization Strategy
-
-**A/B Testing Framework:**
-1. **Conservative Profile**: Current thresholds (baseline)
-2. **Aggressive Profile**: Lowered minimums, expanded ranges
-3. **Hybrid Profile**: Balanced approach with dynamic adjustment
-4. **Performance Tracking**: 30-day rolling returns by profile
-
-**Dynamic Threshold Adjustment:**
-```python
-def adjust_thresholds_by_market_regime():
-    volatility = get_vix_level()
-    if volatility > 25:  # High volatility
-        return AGGRESSIVE_THRESHOLDS  # Cast wider net
-    elif volatility < 15:  # Low volatility  
-        return CONSERVATIVE_THRESHOLDS  # Be selective
-    else:
-        return STANDARD_THRESHOLDS  # Balanced approach
-```
-
-### 4. Learning System Integration
-
-**Continuous Improvement Loop:**
-1. **Outcome Tracking**: Track all recommendations vs actual 7/14/30-day returns
-2. **Pattern Success Rates**: VIGL vs CRWV vs AEVA pattern performance
-3. **Threshold Optimization**: Machine learning on historical success rates
-4. **False Positive Reduction**: Learn from failed patterns
-
-## UI Data Flow Diagnostics
-
-### Root Cause Analysis: "No Results Showing" in TopRecommendations
-
-**Identified Issues:**
-
-1. **Universe Limitation**: Only 14 large-cap symbols in universe.txt
-   - **Problem**: AAPL, MSFT, GOOGL rarely meet explosive squeeze criteria
-   - **Solution**: Expand universe to 1000+ small-mid cap stocks
-
-2. **Discovery-to-Frontend Pipeline Break**:
-   ```
-   discover.py → Redis (amc:discovery:contenders.latest) → /discovery/contenders → TopRecommendations.tsx
-   ```
-   - **Issue**: SqueezeMonitor calls `/discovery/squeeze-candidates` (different endpoint)
-   - **Issue**: TopRecommendations calls `/discovery/contenders` (general discoveries)
-   - **Fix**: Unify data flow or ensure both endpoints return squeeze-enhanced data
-
-3. **Redis Cache Expiration**:
-   - **Current TTL**: 600 seconds (10 minutes)
-   - **Discovery Job**: Runs every 5 minutes during market hours
-   - **Risk**: 5-minute gap could cause empty results
-   - **Solution**: Reduce TTL to 300 seconds, increase job frequency to 3 minutes
-
-4. **Frontend Polling Timing**:
-   - **TopRecommendations**: 60-second intervals
-   - **SqueezeMonitor**: 30-second intervals  
-   - **Risk**: UI might poll before fresh data arrives
-   - **Solution**: Add cache-aware polling with exponential backoff
-
-### Squeeze Alert Display Issues
-
-**Current Problems:**
-1. **Mock Data Contamination**: References to fake squeeze alerts were removed but data pipeline may still use fallbacks
-2. **Wrong Data Sources**: Frontend expects different data shapes from different endpoints
-3. **Vague Results**: Generic thesis generation instead of squeeze-specific analysis
-
-**Solutions:**
-1. **Standardized Data Shape**: Unified response format for all discovery endpoints
-2. **Real-time Validation**: Ensure all displayed data comes from live market sources
-3. **Enhanced Thesis Generation**: Squeeze-specific messaging with historical comparisons
-
-### Redis → FastAPI → React Pipeline Validation
-
-**Current Flow Audit:**
-```mermaid
-graph LR
-    A[Polygon API] --> B[discover.py]
-    B --> C[SqueezeDetector]
-    C --> D[Redis Cache]
-    D --> E[/discovery/contenders API]
-    D --> F[/discovery/squeeze-candidates API]
-    E --> G[TopRecommendations.tsx]
-    F --> H[SqueezeMonitor.tsx]
-```
-
-**Validation Steps:**
-1. **Data Consistency Check**: Same symbols should appear in both endpoints with consistent data
-2. **TTL Alignment**: Ensure frontend polling frequency < cache TTL
-3. **Error Handling**: Graceful fallbacks when Redis is empty or stale
-4. **Performance Monitoring**: Track API response times and cache hit rates
-
-### Real-time Data Flow Testing Approach
-
-**Test Scenarios:**
-1. **Fresh Market Data**: Verify new market open data flows through system
-2. **High Volume Events**: Test system under 50x+ volume spike conditions
-3. **Empty Results**: Ensure proper messaging when no opportunities exist
-4. **Stale Data**: Test behavior when Redis cache expires
-5. **API Failures**: Verify frontend resilience to backend failures
-
-**Monitoring Implementation:**
-```python
-# Add to discovery.py
-def publish_pipeline_health():
-    health_data = {
-        'pipeline_status': 'healthy',
-        'last_run': datetime.utcnow().isoformat(),
-        'symbols_processed': len(processed_symbols),
-        'candidates_found': len(candidates),
-        'redis_status': 'connected'
-    }
-    redis_client.setex('amc:discovery:health', 300, json.dumps(health_data))
-```
-
-## Hypotheses for Current Issues
-
-### 1. Why Discovery Might Not Be Finding Opportunities
-
-**Primary Hypothesis**: **Universe Too Conservative**
-- Current universe contains only large-cap stocks (AAPL, MSFT, GOOGL)
-- These rarely exhibit explosive squeeze patterns (20x+ volume spikes)
-- VIGL was a $2.94 small-cap stock, not a mega-cap
-
-**Evidence**: 
-- VIGL ($2.94): Small-cap with tight float
-- Current universe: All large-caps with massive floats
-- Volume spikes in large-caps are typically 2-5x, not 20x+
-
-**Solution**: Expand universe to include:
-```python
-ENHANCED_UNIVERSE = [
-    # Small-caps ($100M - $2B market cap)
-    "QUBT", "WULF", "MARA", "RIOT", "SAVA", "CYCC", 
-    # Mid-caps with squeeze history  
-    "AMC", "GME", "BBBY", "SPRT", "IRNT", "DWAC",
-    # High-volume small-caps
-    "SOFI", "PLTR", "WISH", "CLOV", "SPCE"
-]
-```
-
-**Secondary Hypothesis**: **Threshold Mismatch**
-- Detection thresholds calibrated for different market conditions
-- May be too restrictive during low-volatility periods
-- Need dynamic adjustment based on market regime
-
-### 2. Potential Redis Cache Staleness Issues
-
-**Cache Timing Analysis:**
-- **Job Frequency**: Every 5 minutes during market hours
-- **Cache TTL**: 10 minutes
-- **Frontend Polling**: Every 60 seconds
-- **Risk Window**: 0-5 minute gap where cache might be stale
-
-**Staleness Scenarios:**
-1. **Market Open**: Discovery job might not run immediately at 9:30 AM
-2. **High Volatility**: 5-minute delay too slow for fast-moving squeezes  
-3. **Job Failure**: If discovery job fails, cache expires with no refresh
-4. **Weekend/Holidays**: Stale data displayed when markets closed
-
-**Mitigation Strategy:**
-```python
-# Enhanced cache strategy with health checks
-def get_cache_with_health_check(key):
-    data = redis_client.get(key)
-    if data:
-        parsed = json.loads(data)
-        cache_age = time.time() - parsed.get('timestamp', 0)
-        if cache_age > STALE_THRESHOLD:
-            trigger_refresh_job()
-    return data
-```
-
-### 3. Frontend Polling vs Data Availability Timing
-
-**Timing Conflict Analysis:**
-- **Discovery Job**: Runs at :00, :05, :10, :15, etc. (5-minute intervals)
-- **API Processing**: Takes 30-60 seconds to complete full scan
-- **Frontend Poll**: Occurs every 60 seconds, potentially mid-discovery
-- **Result**: Frontend might request data while discovery job is still running
-
-**Race Condition Scenarios:**
-1. **9:30:00**: Market opens, discovery starts
-2. **9:30:30**: Frontend polls, gets stale pre-market data
-3. **9:31:00**: Discovery completes, publishes fresh data
-4. **9:31:30**: Frontend polls again, gets fresh data
-
-**Solution - Polling Optimization:**
-```typescript
-// Intelligent polling with discovery sync
-const useDiscoverySync = () => {
-  const [lastUpdate, setLastUpdate] = useState<Date>();
-  
-  useEffect(() => {
-    const poll = async () => {
-      const health = await getJSON(`${API_BASE}/discovery/status`);
-      if (health.ts !== lastUpdate?.toISOString()) {
-        // Fresh data available, fetch immediately
-        loadRecommendations();
-        setLastUpdate(new Date(health.ts));
-      }
-    };
+class CatalystDetector:
+    def __init__(self, config=None):
+        self.weights = {
+            'news_sentiment': 0.4,     # Recent news sentiment score
+            'social_momentum': 0.3,    # Social media activity rank  
+            'event_proximity': 0.2,    # Upcoming catalyst events
+            'unusual_activity': 0.1    # Unusual volume/options activity
+        }
     
-    const interval = setInterval(poll, 15000); // Check status every 15s
-    return () => clearInterval(interval);
-  }, [lastUpdate]);
-};
+    async def analyze(self, symbol: str, enriched_data: Dict, providers: Dict) -> Dict:
+        # News sentiment analysis (0-1 score)
+        # Social media rank detection
+        # Event calendar proximity scoring
+        # Unusual activity detection
+        pass
 ```
 
-### 4. Mock Data Contamination Sources
+**Scoring Logic**:
+- **News Sentiment**: 0-1 based on recent article tone, volume, and source credibility
+- **Social Media Momentum**: Rank percentile of mention frequency and sentiment
+- **Event Proximity**: Distance-weighted scoring for upcoming catalysts (earnings, approvals)
+- **Unusual Activity**: Volume/options anomaly detection vs historical patterns
 
-**Potential Mock Data Locations:**
-1. **Fallback Data**: When Polygon API fails or has no data
-2. **Development Overrides**: Test data that wasn't properly removed
-3. **Default Values**: Placeholder data used when real data unavailable
-4. **Cache Poisoning**: Mock data accidentally cached and persisting
+**Confidence Factors**:
+- News source credibility (Reuters=0.9, Twitter=0.4)
+- Data freshness penalties (-10% per hour beyond 24hr threshold)
+- Source diversity bonus (+15% for multiple confirming sources)
 
-**Audit Trail Required:**
+#### B. Options Flow Detector (`options_flow.py`)
+
+**Purpose**: Analyze options flow, gamma walls, and unusual activity patterns
+
+**Data Integration**:
+- Alpha Vantage Options API (ATM IV, call/put ratios)
+- Derived gamma calculation from options chain
+- Unusual options activity detection
+
+**Core Components**:
 ```python
-# Add data provenance tracking
-def track_data_source(symbol, data_source):
-    return {
-        'symbol': symbol,
-        'data_source': data_source,  # 'polygon_api', 'fallback', 'cache'
-        'timestamp': datetime.utcnow(),
-        'is_live_data': data_source == 'polygon_api'
-    }
-```
-
-## Enhancement Strategy (Non-Disruptive)
-
-### 1. Shadow Testing Approach
-
-**Phase 1: Data Collection (Week 1-2)**
-- Deploy enhanced discovery alongside existing system
-- Store results in parallel Redis keys: `amc:discovery:v2:*`
-- Compare pattern detection rates between v1 and v2
-- No frontend changes, pure data collection
-
-**Phase 2: A/B Testing (Week 3-4)**  
-- Route 50% of frontend requests to v2 endpoints
-- Track user engagement and click-through rates
-- Monitor false positive rates and user feedback
-- Gradual rollout based on performance metrics
-
-**Phase 3: Full Migration (Week 5-6)**
-- Switch all traffic to v2 once validated
-- Keep v1 as hot standby for emergency rollback
-- Sunset v1 after 2 weeks of stable v2 operation
-
-**Shadow Testing Implementation:**
-```python
-# Enhanced discovery job with version tracking
-async def run_discovery_with_shadow():
-    # Run existing v1 discovery
-    v1_results = await run_v1_discovery()
-    publish_to_redis("amc:discovery:contenders.latest", v1_results)
-    
-    # Run enhanced v2 discovery in parallel
-    v2_results = await run_v2_discovery_enhanced()
-    publish_to_redis("amc:discovery:v2:contenders.latest", v2_results)
-    
-    # Log comparison metrics
-    log_discovery_comparison(v1_results, v2_results)
-```
-
-### 2. Additive Improvements Without Breaking Changes
-
-**New Endpoints (Non-Breaking):**
-```python
-# Add enhanced endpoints alongside existing ones
-@router.get("/discovery/enhanced-contenders")  # New endpoint
-@router.get("/discovery/squeeze-analysis")      # New endpoint  
-@router.get("/discovery/pattern-detection")    # New endpoint
-
-# Keep existing endpoints unchanged
-@router.get("/discovery/contenders")           # Unchanged
-@router.get("/discovery/squeeze-candidates")   # Enhanced but compatible
-```
-
-**Database Schema Additions:**
-```sql
--- Add new tables without modifying existing ones
-CREATE TABLE squeeze_patterns (
-    id SERIAL PRIMARY KEY,
-    symbol VARCHAR(10),
-    pattern_type VARCHAR(50),
-    confidence DECIMAL(5,4),
-    detected_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE discovery_metrics (
-    id SERIAL PRIMARY KEY,
-    run_timestamp TIMESTAMP,
-    candidates_found INTEGER,
-    processing_time_ms INTEGER,
-    universe_size INTEGER
-);
-```
-
-**Feature Flags for Gradual Rollout:**
-```python
-FEATURE_FLAGS = {
-    'enhanced_squeeze_detection': os.getenv('FF_ENHANCED_SQUEEZE', 'false').lower() == 'true',
-    'expanded_universe': os.getenv('FF_EXPANDED_UNIVERSE', 'false').lower() == 'true',
-    'dynamic_thresholds': os.getenv('FF_DYNAMIC_THRESHOLDS', 'false').lower() == 'true',
-}
-```
-
-### 3. Rollback Mechanisms
-
-**Immediate Rollback Triggers:**
-1. **API Error Rate > 5%**: Automatic rollback to v1
-2. **Discovery Results = 0**: For more than 2 consecutive runs  
-3. **Frontend Error Spike**: 50%+ increase in JavaScript errors
-4. **User Complaints**: Manual rollback trigger
-5. **Performance Degradation**: Response time > 2x baseline
-
-**Rollback Implementation:**
-```python
-class RollbackManager:
-    def __init__(self):
-        self.v1_backup_ready = True
-        self.rollback_triggers = ['api_errors', 'empty_results', 'performance']
-    
-    def check_rollback_conditions(self):
-        if self.should_rollback():
-            self.execute_rollback()
-            self.alert_team("Emergency rollback executed")
-    
-    def execute_rollback(self):
-        # Switch Redis keys back to v1
-        redis_client.rename("amc:discovery:contenders.latest.backup", 
-                           "amc:discovery:contenders.latest")
-        # Disable v2 feature flags
-        os.environ['FF_ENHANCED_SQUEEZE'] = 'false'
-```
-
-### 4. Backwards Compatibility Preservation
-
-**API Compatibility Strategy:**
-1. **Response Format**: Keep existing JSON structure, add new fields only
-2. **Endpoint Behavior**: Existing endpoints return same data types
-3. **Error Handling**: Maintain existing error response formats
-4. **Rate Limiting**: Preserve existing rate limit policies
-
-**Data Format Compatibility:**
-```python
-# Ensure new data includes all legacy fields
-def format_for_compatibility(enhanced_result):
-    return {
-        # Legacy fields (required for backwards compatibility)
-        'symbol': enhanced_result['symbol'],
-        'score': enhanced_result['score'],
-        'thesis': enhanced_result['thesis'],
-        'price': enhanced_result['price'],
-        'confidence': enhanced_result['confidence'],
+class OptionsFlowDetector:
+    def __init__(self, config=None):
+        self.weights = {
+            'gamma_potential': 0.4,    # Gamma squeeze potential
+            'call_put_flow': 0.3,      # Call/put ratio and flow
+            'iv_expansion': 0.2,       # IV percentile and expansion
+            'unusual_activity': 0.1    # Options volume anomalies
+        }
         
-        # New fields (optional, ignored by old frontend)
-        'squeeze_score': enhanced_result.get('squeeze_score'),
-        'pattern_type': enhanced_result.get('pattern_type'),
-        'volume_spike': enhanced_result.get('volume_spike'),
-        'enhanced': True
+    async def analyze(self, symbol: str, enriched_data: Dict, providers: Dict) -> Dict:
+        # Calculate gamma exposure levels
+        # Analyze call/put flow patterns  
+        # IV expansion potential scoring
+        # Detect unusual options activity
+        pass
+```
+
+**Scoring Components**:
+- **Gamma Potential**: Distance to nearest gamma wall, dealer positioning
+- **Call/Put Flow**: Ratio analysis with volume weighting (>2.0 ratio = bullish signal)
+- **IV Expansion**: Low IV percentile (<30%) with catalyst proximity
+- **Unusual Activity**: Options volume vs 30-day average (>3x = strong signal)
+
+#### C. Technical Indicators Detector (`technicals.py`)
+
+**Purpose**: EMA crosses, RSI bands, support/resistance, momentum oscillators
+
+**Technical Indicators**:
+- EMA 9/20 crossover detection
+- RSI 60-70 band analysis
+- VWAP reclaim confirmation
+- Support/resistance level testing
+
+**Core Components**:
+```python
+class TechnicalDetector:
+    def __init__(self, config=None):
+        self.weights = {
+            'ema_momentum': 0.4,       # 9/20 EMA cross and slope
+            'rsi_positioning': 0.3,    # RSI band analysis
+            'vwap_reclaim': 0.2,      # VWAP reclaim strength
+            'breakout_quality': 0.1    # Support/resistance breaks
+        }
+    
+    def analyze(self, symbol: str, enriched_data: Dict) -> Dict:
+        # EMA crossover detection and momentum
+        # RSI band positioning (60-70 target)
+        # VWAP reclaim strength analysis
+        # Key level breakout confirmation
+        pass
+```
+
+#### D. VIGL Pattern Detector (`vigl_pattern_detector.py`)
+
+**Purpose**: Updated VIGL similarity detection with confidence weighting
+
+**Pattern Matching**:
+- Float size similarity (target: 15M shares)
+- Volume surge matching (target: 20.9x average)
+- Short interest correlation (target: 18%)
+- Price range compatibility ($2.94 historical entry)
+
+**Enhanced Similarity Algorithm**:
+```python
+def calculate_vigl_similarity(enriched_data: Dict) -> Dict:
+    """Calculate similarity to VIGL pattern with confidence weighting"""
+    vigl_profile = {
+        'float_shares': 15_200_000,
+        'volume_multiple': 20.9,
+        'short_interest_pct': 18.0,
+        'entry_price': 2.94
     }
+    
+    # Multi-dimensional similarity scoring
+    # Confidence weighting based on data quality
+    # Historical pattern correlation analysis
 ```
 
-## Acceptance Criteria
+### 2. Advanced Gating System
 
-### 1. Discovery Performance Metrics
+#### Hard Gates (Must Pass - Zero Score if Failed)
 
-**Daily Opportunity Detection:**
-- **Target**: 3-7 monthly high-profit opportunities daily
-- **Quality**: Average confidence score ≥ 75%
-- **Accuracy**: 70%+ of recommendations achieve 10%+ gains within 30 days
-- **Coverage**: Scan 1000+ symbols vs current 14 symbols
-
-**Success Measurements:**
+**Gate Implementation**:
 ```python
-ACCEPTANCE_CRITERIA = {
-    'daily_opportunities': {'min': 3, 'max': 7, 'target': 5},
-    'avg_confidence': {'min': 0.75, 'target': 0.82},
-    'monthly_return_rate': {'min': 0.70, 'target': 0.75},  # 70-75% success rate
-    'false_positive_rate': {'max': 0.25, 'target': 0.18},  # <25% false positives
+class HardGateValidator:
+    def __init__(self, config: Dict):
+        self.gates = {
+            'min_relvol_30': config.get('min_relvol_30', 2.5),
+            'min_atr_pct': config.get('min_atr_pct', 0.04),
+            'vwap_reclaim': config.get('require_vwap_reclaim', True),
+            'rsi_band': config.get('rsi_band', [60, 70]),
+            'ema_cross_bullish': True
+        }
+    
+    def validate(self, enriched_data: Dict) -> Tuple[bool, List[str]]:
+        """Returns (passed, failed_gates)"""
+        failures = []
+        
+        # RelVol Gate
+        if enriched_data.get('relvol_30', 0) < self.gates['min_relvol_30']:
+            failures.append(f"relvol_30_insufficient_{enriched_data.get('relvol_30')}")
+        
+        # ATR Gate
+        if enriched_data.get('atr_pct', 0) < self.gates['min_atr_pct']:
+            failures.append(f"atr_expansion_insufficient_{enriched_data.get('atr_pct')}")
+        
+        # VWAP Reclaim Gate
+        if self.gates['vwap_reclaim']:
+            price = enriched_data.get('price', 0)
+            vwap = enriched_data.get('vwap', 0)
+            if not vwap or price < vwap * 0.995:  # Must be within 0.5% of VWAP
+                failures.append("vwap_reclaim_failed")
+        
+        return len(failures) == 0, failures
+```
+
+**Gate Categories**:
+1. **Volume Gates**: RelVol ≥ 2.5x, volume spike ≥ 1.5x
+2. **Volatility Gates**: ATR ≥ 4%, expanding volatility required  
+3. **Momentum Gates**: VWAP reclaim, 9/20 EMA bullish cross
+4. **Quality Gates**: RSI 60-70 band, not overbought condition
+
+#### Soft Gates (Confidence Reduction)
+
+**Soft Gate Penalties**:
+```python
+class SoftGateValidator:
+    def __init__(self, config: Dict):
+        self.penalties = {
+            'data_age_hourly': -0.10,      # -10% per hour beyond staleness
+            'missing_provider': -0.15,     # -15% per unavailable key metric
+            'low_confidence_data': -0.20,  # -20% for confidence < 0.5
+            'session_mismatch': -0.10      # -10% for non-optimal session
+        }
+    
+    def calculate_confidence_adjustment(self, enriched_data: Dict, providers: Dict) -> float:
+        """Calculate confidence reduction from soft gate failures"""
+        adjustment = 1.0
+        
+        # Data age penalties
+        data_age = enriched_data.get('data_age_minutes', 0)
+        if data_age > 60:  # Beyond 1 hour
+            hours_over = (data_age - 60) / 60
+            adjustment += self.penalties['data_age_hourly'] * hours_over
+        
+        # Missing provider penalties
+        required_providers = ['finra_short', 'polygon_live', 'alpha_vantage_options']
+        missing_count = sum(1 for p in required_providers if not providers.get(p))
+        adjustment += self.penalties['missing_provider'] * missing_count
+        
+        return max(0.1, adjustment)  # Minimum 10% confidence
+```
+
+### 3. Session-Aware Thresholds
+
+#### Market Session Adaptations
+
+**Session Configuration**:
+```python
+SESSION_CONFIGS = {
+    'premarket': {
+        'active_hours': '04:00-09:30 ET',
+        'threshold_adjustments': {
+            'min_relvol_30': 3.0,          # Higher volume requirement
+            'min_atr_pct': 0.05,           # Higher volatility requirement
+            'require_vwap_reclaim': False,  # VWAP less reliable
+            'min_dollar_volume': 2_000_000  # Higher liquidity requirement
+        },
+        'weight_adjustments': {
+            'volume_momentum': 0.45,        # Emphasize volume in premarket
+            'technical': 0.05               # Reduce technical reliability
+        }
+    },
+    'regular': {
+        'active_hours': '09:30-16:00 ET',
+        'threshold_adjustments': {
+            # Standard thresholds as configured
+        }
+    },
+    'afterhours': {
+        'active_hours': '16:00-20:00 ET',
+        'threshold_adjustments': {
+            'min_relvol_30': 2.8,          # Slightly higher volume
+            'min_dollar_volume': 1_000_000, # Moderate liquidity
+            'require_momentum_confirmation': True
+        },
+        'discovery_frequency': '30min'      # Reduce frequency
+    },
+    'overnight': {
+        'active_hours': '20:00-04:00 ET',
+        'status': 'SUSPENDED',              # No active discovery
+        'emergency_only': True
+    }
 }
 ```
 
-### 2. UI Responsiveness Requirements
+#### Session Detection Logic
 
-**Real-time Data Display:**
-- **Fresh Data Window**: UI displays data within 30 seconds of market events
-- **Loading States**: No more than 3 seconds of "scanning" messages
-- **Error Recovery**: Graceful fallbacks when API calls fail
-- **Offline Resilience**: Cache last known good data for 5 minutes
-
-**Performance Benchmarks:**
-```typescript
-const PERFORMANCE_TARGETS = {
-  apiResponseTime: 1500,      // <1.5s API response
-  dataFreshness: 30000,       // <30s data age
-  uiRenderTime: 100,          // <100ms render
-  pollingFrequency: 15000,    // 15s intelligent polling
-};
-```
-
-### 3. Trading Integration Capabilities
-
-**Trade Execution Features:**
-- **One-Click Trading**: Direct from squeeze alerts to live orders
-- **Risk Management**: Integrated stop-loss and take-profit orders
-- **Position Sizing**: Automatic calculation based on account size and risk tolerance
-- **Order Status**: Real-time feedback on trade execution
-
-**Integration Requirements:**
 ```python
-TRADING_INTEGRATION = {
-    'bracket_orders': True,          # Stop-loss + take-profit
-    'position_sizing': 'dynamic',    # Based on volatility and confidence
-    'risk_management': 'automatic',  # 2-3% account risk per trade
-    'execution_speed': '<5_seconds', # Order submission to fill
-}
+class SessionManager:
+    def get_current_session(self) -> str:
+        """Detect current market session based on ET timezone"""
+        now = datetime.now(timezone.utc)
+        et_time = now.astimezone(pytz.timezone('US/Eastern'))
+        hour_minute = et_time.hour + et_time.minute / 60.0
+        
+        if 4.0 <= hour_minute < 9.5:
+            return 'premarket'
+        elif 9.5 <= hour_minute < 16.0:
+            return 'regular'  
+        elif 16.0 <= hour_minute < 20.0:
+            return 'afterhours'
+        else:
+            return 'overnight'
+    
+    def get_session_config(self, session: str) -> Dict:
+        """Get session-specific configuration"""
+        return SESSION_CONFIGS.get(session, SESSION_CONFIGS['regular'])
 ```
 
-### 4. AI Thesis Generation Quality
+### 4. Free-Data Integration Strategy
 
-**Thesis Requirements:**
-- **Specificity**: Reference exact volume spikes, short interest, float data
-- **Historical Context**: Compare to similar patterns (VIGL, CRWV, AEVA)
-- **Risk Assessment**: Clear downside scenarios and stop-loss recommendations
-- **Time Horizon**: Expected timeline for thesis to play out (days/weeks)
+#### Provider Management System
 
-**Quality Metrics:**
+**Token Bucket Implementation**:
 ```python
-THESIS_QUALITY = {
-    'specificity_score': 0.8,        # 80% of thesis contain specific metrics
-    'historical_references': 0.6,    # 60% reference historical patterns
-    'risk_warnings': 1.0,           # 100% include risk management
-    'actionable_recommendations': 0.9 # 90% provide clear next steps
-}
+class ProviderManager:
+    def __init__(self):
+        self.rate_limits = {
+            'finra_short': TokenBucket(capacity=60, refill_rate=1),  # 60/min
+            'alpha_vantage_options': TokenBucket(capacity=5, refill_rate=0.083),  # 5/min
+            'polygon_live': TokenBucket(capacity=100, refill_rate=5)  # 100/min
+        }
+        
+        self.circuit_breakers = {
+            'finra_short': CircuitBreaker(failure_threshold=3, timeout=300),
+            'alpha_vantage_options': CircuitBreaker(failure_threshold=2, timeout=180),
+            'polygon_live': CircuitBreaker(failure_threshold=5, timeout=120)
+        }
+    
+    async def fetch_with_retry(self, provider: str, request_func, *args, **kwargs):
+        """Fetch data with rate limiting and circuit breaker protection"""
+        # Check rate limit
+        if not self.rate_limits[provider].consume():
+            raise RateLimitExceeded(f"Rate limit exceeded for {provider}")
+        
+        # Check circuit breaker
+        if self.circuit_breakers[provider].is_open():
+            raise CircuitBreakerOpen(f"Circuit breaker open for {provider}")
+        
+        try:
+            result = await request_func(*args, **kwargs)
+            self.circuit_breakers[provider].record_success()
+            return result
+        except Exception as e:
+            self.circuit_breakers[provider].record_failure()
+            raise
 ```
 
-### 5. System Reliability Standards
+#### Fallback Chain Strategy
 
-**Uptime and Performance:**
-- **API Availability**: 99.5% uptime during market hours
-- **Data Accuracy**: 95%+ correlation with third-party data sources
-- **Cache Hit Rate**: 80%+ Redis cache efficiency
-- **Error Recovery**: Automatic restart within 60 seconds of failures
+**Data Source Priority**:
+1. **Primary**: Fresh data from configured provider
+2. **Cache**: Recent cached data (within staleness threshold)
+3. **Skip**: Never fabricate or use default values
 
-**Monitoring and Alerting:**
+**Fallback Implementation**:
 ```python
-RELIABILITY_METRICS = {
-    'api_uptime': 0.995,            # 99.5% uptime
-    'data_accuracy': 0.95,          # 95% correlation
-    'cache_hit_rate': 0.80,         # 80% cache efficiency  
-    'error_recovery_time': 60,      # 60 seconds max downtime
-    'false_positive_alerts': 0.05   # <5% false alerts
-}
+class DataFallbackManager:
+    async def get_short_interest_data(self, symbol: str) -> Optional[Dict]:
+        """Get short interest with fallback chain"""
+        
+        # Try FINRA primary
+        try:
+            data = await self.provider_manager.fetch('finra_short', symbol)
+            if self._validate_freshness(data, max_age_hours=48):  # SI data bi-monthly
+                return self._enrich_with_metadata(data, 'finra_primary', confidence=0.95)
+        except Exception as e:
+            logger.warning(f"FINRA primary failed for {symbol}: {e}")
+        
+        # Try cache fallback
+        cached_data = await self.cache_manager.get(f"si:{symbol}")
+        if cached_data and self._validate_freshness(cached_data, max_age_hours=72):
+            return self._enrich_with_metadata(cached_data, 'cache', confidence=0.7)
+        
+        # No fallback - return None (never fabricate)
+        logger.info(f"No valid short interest data for {symbol}")
+        return None
 ```
 
-## Rollback Plan
+### 5. Confidence Scoring System
 
-### Immediate Rollback Procedures
+#### Composite Confidence Calculation
 
-**Automated Rollback Triggers:**
-1. **API Error Rate**: >10% of requests failing
-2. **Empty Results**: Zero candidates for >30 minutes during market hours
-3. **Performance Degradation**: Response times >3x baseline
-4. **Data Quality Issues**: >50% of displayed prices are stale/incorrect
-5. **User Experience**: Abnormal increase in user complaints or error reports
-
-**Manual Rollback Process:**
-```bash
-# Emergency rollback script (production)
-#!/bin/bash
-echo "🚨 EMERGENCY ROLLBACK INITIATED"
-
-# 1. Switch Redis keys back to v1
-redis-cli RENAME amc:discovery:contenders.latest amc:discovery:v2:backup
-redis-cli RENAME amc:discovery:v1:contenders.latest amc:discovery:contenders.latest
-
-# 2. Disable v2 feature flags
-export FF_ENHANCED_SQUEEZE=false
-export FF_EXPANDED_UNIVERSE=false  
-export FF_DYNAMIC_THRESHOLDS=false
-
-# 3. Restart discovery service
-sudo systemctl restart amc-discovery
-
-# 4. Verify v1 is working
-curl -s https://amc-trader.onrender.com/discovery/status | jq .
-
-echo "✅ Rollback complete - System restored to v1"
+**Formula**:
+```
+composite_confidence = min(
+    data_confidence * provider_weight * freshness_factor,
+    session_adjustment_factor,
+    soft_gate_adjustment
+)
 ```
 
-### Rollback Testing Protocol
+**Provider Confidence Weights**:
+- **FINRA**: 0.95 (regulatory source, high reliability)
+- **Polygon**: 0.98 (real-time market data, very reliable)
+- **Alpha Vantage**: 0.75 (third-party aggregator, good reliability)
+- **Borrow Proxy**: 0.60 (derived calculations, moderate reliability)
 
-**Pre-Production Rollback Tests:**
-1. **Simulate v2 Failure**: Intentionally break v2 system and verify automatic rollback
-2. **Data Consistency**: Ensure v1 data is preserved during v2 testing
-3. **User Experience**: Verify frontend continues working during rollback
-4. **Performance Impact**: Measure rollback execution time (<60 seconds)
-
-**Rollback Success Criteria:**
-- System restored to baseline performance within 60 seconds
-- No data loss during rollback process  
-- Frontend continues displaying valid recommendations
-- All monitoring alerts return to normal levels
-- User-facing features work identically to pre-enhancement state
-
-### Data Backup and Recovery
-
-**Backup Strategy:**
+**Freshness Factors**:
 ```python
-def create_rollback_snapshot():
-    """Create point-in-time backup before deploying enhancements"""
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+def calculate_freshness_factor(data_age_minutes: int, max_age_minutes: int) -> float:
+    """Calculate freshness factor with exponential decay"""
+    if data_age_minutes <= max_age_minutes:
+        return 1.0
     
-    # Backup Redis keys
-    backup_keys = [
-        'amc:discovery:contenders.latest',
-        'amc:discovery:explain.latest', 
-        'amc:discovery:status'
-    ]
-    
-    for key in backup_keys:
-        backup_key = f"{key}.rollback_{timestamp}"
-        redis_client.rename(key, backup_key)
-        redis_client.expire(backup_key, 86400)  # 24 hour retention
-    
-    # Backup database tables
-    pg_dump_tables(['recommendations', 'discovery_runs', 'squeeze_patterns'])
-    
-    logger.info(f"Rollback snapshot created: {timestamp}")
-    return timestamp
+    # Exponential decay beyond threshold
+    decay_ratio = data_age_minutes / max_age_minutes
+    return max(0.1, math.exp(-0.5 * (decay_ratio - 1)))
 ```
 
-**Recovery Validation:**
-1. **Data Integrity**: Verify all historical data is intact post-rollback
-2. **API Functionality**: Test all endpoints return expected responses  
-3. **Frontend Operation**: Confirm UI displays recommendations correctly
-4. **Trading Integration**: Ensure trade execution works normally
-5. **Performance Baseline**: Confirm response times match pre-enhancement levels
+### 6. Experimental Framework
 
----
+#### Shadow Testing Strategy
 
-## Implementation Timeline
+**Dual-Write Implementation**:
+```python
+class ShadowTestingManager:
+    def __init__(self):
+        self.strategies = ['legacy_v0', 'unified_detectors']
+        self.redis_keys = {
+            'legacy_v0': 'amc:discovery:contenders:legacy_v0',
+            'unified_detectors': 'amc:discovery:contenders:unified'
+        }
+        
+    async def run_parallel_discovery(self, universe: List[str]) -> Dict:
+        """Run both strategies in parallel for comparison"""
+        results = {}
+        
+        # Execute both strategies
+        for strategy in self.strategies:
+            try:
+                start_time = time.time()
+                candidates = await self._run_strategy(strategy, universe)
+                execution_time = time.time() - start_time
+                
+                results[strategy] = {
+                    'candidates': candidates,
+                    'count': len(candidates),
+                    'execution_time': execution_time,
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+                
+                # Write to strategy-specific Redis key
+                await self._store_results(strategy, results[strategy])
+                
+            except Exception as e:
+                logger.error(f"Strategy {strategy} failed: {e}")
+                results[strategy] = {'error': str(e)}
+        
+        # Store comparison metadata
+        await self._store_comparison(results)
+        return results
+```
 
-**Week 1-2: Shadow Testing**
-- Deploy enhanced discovery alongside existing system
-- Collect performance data and pattern detection rates
-- No user-facing changes
+#### A/B Testing Framework
 
-**Week 3-4: Limited Rollout** 
-- A/B test with 25% of traffic to enhanced system
-- Monitor user engagement and false positive rates
-- Refine thresholds based on real market performance
+**Traffic Splitting**:
+```python
+class ABTestingManager:
+    def __init__(self, test_config: Dict):
+        self.test_config = test_config
+        self.traffic_split = test_config.get('traffic_split', {'legacy_v0': 80, 'unified': 20})
+        
+    def get_strategy_for_request(self, request_id: str) -> str:
+        """Determine strategy based on consistent hashing"""
+        hash_value = hash(request_id) % 100
+        
+        cumulative_weight = 0
+        for strategy, weight in self.traffic_split.items():
+            cumulative_weight += weight
+            if hash_value < cumulative_weight:
+                return strategy
+        
+        return 'legacy_v0'  # Fallback
+```
 
-**Week 5-6: Full Migration**
-- Switch 100% of traffic to enhanced system after validation
-- Sunset legacy system after 2 weeks of stable operation
-- Implement full monitoring and alerting
+**Success Metrics Tracking**:
+- **Candidate Quality**: Overlap with manually validated opportunities (≥75% target)
+- **Latency Performance**: 90th percentile discovery time (<30s target)
+- **Error Rates**: System errors (<5% threshold for rollback)
+- **Coverage**: Percentage of legacy_v0 symbols evaluated (≥90% target)
 
-**Success Metrics:**
-- **Discovery Quality**: 5+ daily opportunities with 75%+ average confidence
-- **UI Performance**: <30 seconds fresh data, <1.5s API responses
-- **Trading Integration**: One-click execution with risk management
-- **System Reliability**: 99.5% uptime with automated rollback capability
+### 7. Performance Targets & Monitoring
 
-This enhancement plan preserves all existing functionality while systematically improving monthly profit potential through better squeeze detection, expanded opportunity discovery, and enhanced user experience.
+#### Key Performance Indicators
+
+**Operational Metrics**:
+- **Discovery Latency**: <30s (90th percentile)
+- **Data Freshness**: ≥80% within staleness thresholds
+- **System Availability**: 99% uptime during market hours
+- **Provider Success Rate**: ≥95% for critical providers
+
+**Quality Metrics**:
+- **Candidate Coverage**: ≥90% of legacy_v0 symbols evaluated
+- **Manual Validation Overlap**: ≥75% correlation with expert validation
+- **False Positive Rate**: <20% (based on 7-day follow-up analysis)
+- **Discovery Consistency**: <15% variance between discovery runs
+
+#### Monitoring Implementation
+
+**Real-time Dashboards**:
+```python
+class MonitoringCollector:
+    def collect_discovery_metrics(self, results: Dict) -> Dict:
+        """Collect comprehensive discovery metrics"""
+        return {
+            'execution_metrics': {
+                'total_candidates': len(results.get('candidates', [])),
+                'execution_time_ms': results.get('execution_time', 0) * 1000,
+                'hard_gate_failures': results.get('gate_failures', {}).get('hard', 0),
+                'soft_gate_penalties': results.get('gate_failures', {}).get('soft', 0)
+            },
+            'data_quality': {
+                'avg_confidence': self._calculate_avg_confidence(results),
+                'provider_success_rates': self._get_provider_success_rates(),
+                'freshness_score': self._calculate_freshness_score(results)
+            },
+            'detector_performance': {
+                'volume_momentum_avg': self._get_detector_avg_score('volume_momentum'),
+                'squeeze_avg': self._get_detector_avg_score('squeeze'),
+                'catalyst_avg': self._get_detector_avg_score('catalyst'),
+                'options_avg': self._get_detector_avg_score('options'),
+                'technical_avg': self._get_detector_avg_score('technical')
+            }
+        }
+```
+
+### 8. Implementation Roadmap
+
+#### Phase 1: Foundation (Week 1-2)
+1. **Complete Missing Detectors**: Implement catalyst_news.py, options_flow.py, technicals.py, vigl_pattern_detector.py
+2. **Advanced Gating System**: Hard/soft gate validation with confidence adjustments
+3. **Session Manager**: Market session detection and threshold adaptation
+4. **Provider Manager**: Rate limiting and circuit breakers
+
+#### Phase 2: Integration (Week 3)
+1. **Unified Discovery Pipeline**: Integrate all detectors with new gating system
+2. **Confidence Scoring**: Implement composite confidence calculation
+3. **Shadow Testing**: Parallel strategy execution for comparison
+4. **Monitoring Framework**: Real-time metrics collection and dashboards
+
+#### Phase 3: Testing & Validation (Week 4)
+1. **A/B Testing Framework**: Traffic splitting and success metrics tracking
+2. **Performance Optimization**: Latency improvements and caching strategies  
+3. **Quality Assurance**: Manual validation correlation testing
+4. **Documentation**: Operational runbooks and troubleshooting guides
+
+#### Phase 4: Production Rollout (Week 5-6)
+1. **Canary Deployment**: 10% traffic to unified system
+2. **Gradual Rollout**: Increase to 50%, then 100% based on success metrics
+3. **Performance Monitoring**: 24/7 monitoring with automatic rollback triggers
+4. **Optimization Feedback Loop**: Continuous calibration based on results
+
+### 9. Risk Management
+
+#### Technical Risks
+
+**Risk**: New detector failures causing system-wide issues
+**Mitigation**: Circuit breakers per detector, automatic fallback to legacy_v0
+
+**Risk**: Provider API failures disrupting discovery
+**Mitigation**: Comprehensive fallback chains, never fabricate missing data
+
+**Risk**: Performance degradation from complex scoring
+**Mitigation**: Async processing, Redis caching, timeout controls
+
+#### Operational Risks
+
+**Risk**: False positive increase degrading trade quality
+**Mitigation**: Conservative rollout with 75% overlap requirement
+
+**Risk**: Discovery latency impacting real-time trading
+**Mitigation**: <30s SLA with automatic degradation mode
+
+**Risk**: Configuration drift causing inconsistent results
+**Mitigation**: Version-controlled calibration with rollback capabilities
+
+### 10. Success Criteria
+
+#### Go-Live Requirements
+- [ ] All 5 detectors implemented and tested (volume_momentum, squeeze, catalyst, options, technical)
+- [ ] Hard/soft gating system operational with <5% error rate
+- [ ] Session-aware thresholds tested across all market sessions  
+- [ ] Provider integration with 95% success rate for critical providers
+- [ ] Shadow testing shows ≥75% overlap with legacy_v0 results
+- [ ] Performance targets met: <30s discovery time, 99% uptime
+- [ ] Monitoring dashboards operational with real-time alerting
+
+#### 30-Day Success Metrics
+- [ ] Discovery consistency <15% variance between runs
+- [ ] Manual validation correlation ≥75%
+- [ ] False positive rate <20% based on 7-day follow-up
+- [ ] System availability ≥99% during market hours
+- [ ] Provider success rates ≥95% for critical data sources
+
+This comprehensive plan provides the foundation for transforming AMC-TRADER's squeeze detection from basic pattern matching to a sophisticated, multi-dimensional analysis system capable of identifying explosive opportunities across various market conditions while maintaining strict data quality and operational reliability standards.

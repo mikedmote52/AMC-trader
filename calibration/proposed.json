@@ -1,11 +1,25 @@
 {
   "calibration_update": {
-    "version": "v2025.09.06_SQUEEZE_DISPLAY_RESTORATION",
-    "timestamp": "2025-09-06T18:30:00Z",
+    "version": "v2025.09.06_VALIDATION_ENGINE_TUNING",
+    "timestamp": "2025-09-06T23:45:00Z",
     "validation_engine": "AMC-TRADER Validation Engine",
-    "priority": "CRITICAL - SQUEEZE CANDIDATE DISPLAY FAILURE",
+    "priority": "CRITICAL - HYBRID_V1_AFTERHOURS_GATE_FIX",
     "confidence_level": 0.95,
-    "system_status": "PERMANENT_FIXES_IMPLEMENTED"
+    "system_status": "REDIS_KEY_ALIGNMENT_COMPLETE_TUNING_REQUIRED",
+    "validation_report": "/Users/michaelmote/Desktop/AMC-TRADER/validation/report.md",
+    "validation_findings": {
+      "redis_key_fix": "✅ RESOLVED - Discovery writers and API readers properly aligned",
+      "anti_fabrication": "✅ EXCELLENT - System returns empty arrays when degraded", 
+      "performance": "✅ EXCELLENT - 243-390ms API response times",
+      "strategy_comparison": "⚠️ CRITICAL - hybrid_v1: 0 candidates vs legacy_v0: 6 candidates",
+      "primary_issue": "hybrid_v1_gate_relvol30_below_afterhours: 7 rejections observed"
+    },
+    "immediate_action_required": {
+      "deploy_this_config": true,
+      "reason": "Existing proposed.json has appropriate relaxed thresholds",
+      "afterhours_relvol": "0.6 (proposed) vs 1.8 (active) - should resolve rejections",
+      "expected_outcome": "3-8 candidates per scan matching legacy_v0 performance"
+    }
   },
   
   "regimes": {
