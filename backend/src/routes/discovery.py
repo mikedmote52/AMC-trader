@@ -135,13 +135,10 @@ async def get_contenders(response: Response, strategy: str = Query("")):
     eff = resolve_effective_strategy(strategy)
     r = get_redis_client()
     
-    # Use unified key helper for perfect alignment
-    k_spec = get_contenders_key(eff)
-    k_fall = get_contenders_key(None)  # Base key fallback
-    
-    # Check which key actually has data
-    k_spec_hit = r.exists(k_spec) if eff else False
-    items = _get_json(r, k_spec) if k_spec_hit else _get_json(r, k_fall) or []
+    # REVERT: Use old working keys (V2_CONT/V1_CONT) temporarily
+    # The writer still uses these keys, so readers must match
+    items = _get_json(r, "amc:discovery:v2:contenders.latest") or _get_json(r, "amc:discovery:contenders.latest") or []
+    k_spec_hit = True  # Data found via old keys
     
     # Score normalization to 0-100
     def pct(v):
@@ -983,11 +980,8 @@ async def get_squeeze_candidates(min_score: float = Query(0.25, ge=0.0, le=1.0))
     try:
         r = get_redis_client()
         
-        # Get current discovery contenders using strategy-aware keys
-        strategy = resolve_effective_strategy("")
-        k_spec = get_contenders_key(strategy)
-        k_fall = get_contenders_key(None)
-        items = _get_json(r, k_spec) or _get_json(r, k_fall) or []
+        # REVERT: Use old working keys  
+        items = _get_json(r, "amc:discovery:v2:contenders.latest") or _get_json(r, "amc:discovery:contenders.latest") or []
         
         squeeze_candidates = []
         squeeze_detector = SqueezeDetector()
