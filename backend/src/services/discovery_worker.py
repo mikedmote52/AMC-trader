@@ -39,13 +39,16 @@ class DiscoveryWorker:
             self.redis = None
     
     async def run_discovery_cycle(self) -> Dict:
-        \"\"\"Run one complete discovery cycle\"\"\"
+        """Run one complete discovery cycle"""
         try:
             cycle_start = time.perf_counter()
             logger.info("🔄 Starting discovery cycle...")
             
             # Run discovery with early stop enabled
             candidates = await self.engine.discover_real_candidates(limit=100, enable_early_stop=True)
+            
+            # Re-validate existing cached candidates
+            candidates = await self._revalidate_candidates(candidates)
             
             # Calculate cycle metadata
             cycle_duration = time.perf_counter() - cycle_start
@@ -76,7 +79,7 @@ class DiscoveryWorker:
             return {'success': False, 'error': str(e)}
     
     async def _cache_results(self, candidates: List[Dict], meta: Dict):
-        \"\"\"Cache discovery results in Redis with TTL\"\"\"
+        """Cache discovery results in Redis with TTL"""
         try:
             if not self.redis:
                 return
@@ -116,8 +119,88 @@ class DiscoveryWorker:
         except Exception as e:
             logger.error(f"Failed to cache results: {e}")
     
+    async def _revalidate_candidates(self, new_candidates: List[Dict]) -> List[Dict]:
+        """Re-validate and promote/demote existing candidates"""
+        try:
+            # Get existing cached candidates
+            existing = await self.get_cached_candidates(limit=200)
+            if not existing.get('cached') or not existing.get('candidates'):
+                return new_candidates
+            
+            existing_candidates = existing['candidates']
+            revalidated = []
+            
+            logger.debug(f"Re-validating {len(existing_candidates)} cached candidates...")
+            
+            for candidate in existing_candidates:
+                symbol = candidate.get('symbol')
+                if not symbol:
+                    continue
+                
+                try:
+                    # Get fresh market data for re-validation
+                    market_data = await self.engine.get_real_market_data(symbol)
+                    if not market_data:
+                        continue
+                    
+                    # Check universe gates (price bounds, volume)
+                    passes, reason = self.engine._passes_universe_gates(market_data)
+                    if not passes:
+                        logger.debug(f"Dropping {symbol}: {reason}")
+                        continue  # Remove from candidates
+                    
+                    # Re-calculate BMS score
+                    fresh_candidate = self.engine._calculate_real_bms_score(market_data)
+                    if not fresh_candidate:
+                        continue
+                    
+                    # Apply promotion/demotion rules
+                    old_action = candidate.get('action', 'MONITOR')
+                    new_action = fresh_candidate['action']
+                    
+                    # Promotion: Monitor -> Trade-ready if momentum improves
+                    if (old_action == 'MONITOR' and new_action == 'TRADE_READY' and
+                        market_data.get('momentum_1d', 0) > 0 and
+                        market_data.get('rel_volume_30d', 0) >= 3.0):
+                        logger.info(f"🚀 Promoted {symbol}: MONITOR → TRADE_READY")
+                    
+                    # Demotion: Trade-ready -> Monitor if conditions degrade
+                    elif (old_action == 'TRADE_READY' and 
+                          (market_data.get('rel_volume_30d', 0) < 2.0 or
+                           market_data.get('atr_pct', 0) < 2.0)):
+                        logger.info(f"👁️ Demoted {symbol}: TRADE_READY → MONITOR")
+                    
+                    revalidated.append(fresh_candidate)
+                    
+                except Exception as e:
+                    logger.debug(f"Error revalidating {symbol}: {e}")
+                    continue
+            
+            # Combine new discoveries with revalidated existing
+            combined = new_candidates + revalidated
+            
+            # Remove duplicates (prefer new candidates)
+            seen = set()
+            final_candidates = []
+            for candidate in combined:
+                symbol = candidate.get('symbol')
+                if symbol and symbol not in seen:
+                    final_candidates.append(candidate)
+                    seen.add(symbol)
+            
+            # Sort by score
+            final_candidates.sort(key=lambda x: x.get('bms_score', 0), reverse=True)
+            
+            logger.debug(f"Re-validation complete: {len(revalidated)} existing + {len(new_candidates)} new = {len(final_candidates)} total")
+            
+            return final_candidates[:100]  # Limit total
+            
+        except Exception as e:
+            logger.error(f"Error in candidate revalidation: {e}")
+            return new_candidates
+    
     async def get_cached_candidates(self, action_filter: str = None, limit: int = 50) -> Dict:
-        \"\"\"Get candidates from cache with optional filtering\"\"\"
+        """Get candidates from cache with optional filtering"""
         try:
             if not self.redis:
                 return {'candidates': [], 'cached': False}
@@ -160,7 +243,7 @@ class DiscoveryWorker:
             return {'candidates': [], 'cached': False}
     
     async def scheduler_loop(self):
-        \"\"\"Main scheduler loop - runs discovery cycles continuously\"\"\"
+        """Main scheduler loop - runs discovery cycles continuously"""
         logger.info(f"🚀 Discovery scheduler starting (cycle: {self.cycle_seconds}s)...")
         self.running = True
         
@@ -182,12 +265,12 @@ class DiscoveryWorker:
                 await asyncio.sleep(min(self.cycle_seconds, 30))
     
     def stop(self):
-        \"\"\"Stop the scheduler loop\"\"\"
+        """Stop the scheduler loop"""
         logger.info("🛑 Stopping discovery scheduler...")
         self.running = False
     
     async def health_check(self) -> Dict:
-        \"\"\"Check worker health and cache status\"\"\"
+        """Check worker health and cache status"""
         try:
             health = {
                 'worker_running': self.running,
@@ -221,18 +304,18 @@ class DiscoveryWorker:
 _worker_instance = None
 
 def get_worker() -> DiscoveryWorker:
-    \"\"\"Get the global worker instance\"\"\"
+    """Get the global worker instance"""
     global _worker_instance
     return _worker_instance
 
 def initialize_worker(engine: RealBMSEngine, redis_url: str = None) -> DiscoveryWorker:
-    \"\"\"Initialize the global worker instance\"\"\"
+    """Initialize the global worker instance"""
     global _worker_instance
     _worker_instance = DiscoveryWorker(engine, redis_url)
     return _worker_instance
 
 async def start_background_worker(engine: RealBMSEngine, redis_url: str = None):
-    \"\"\"Start the background discovery worker\"\"\"
+    """Start the background discovery worker"""
     worker = initialize_worker(engine, redis_url)
     
     # Start the scheduler in the background
