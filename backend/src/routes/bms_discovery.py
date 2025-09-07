@@ -10,7 +10,7 @@ import asyncio
 from datetime import datetime
 import os
 
-from ..services.bms_engine_simple import BMSEngine
+from ..services.bms_engine_real import RealBMSEngine as BMSEngine
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -34,7 +34,7 @@ async def get_candidates(
         logger.info(f"Fetching BMS candidates (limit: {limit})")
         
         # Get candidates from BMS engine
-        candidates = await bms_engine.discover_candidates(limit=limit * 2)  # Get more to filter
+        candidates = await bms_engine.discover_real_candidates(limit=limit * 2)  # Get more to filter
         
         # Apply action filter if specified
         if action_filter:
@@ -89,12 +89,12 @@ async def audit_symbol(symbol: str):
         logger.info(f"Auditing symbol: {symbol}")
         
         # Fetch comprehensive data
-        market_data = await bms_engine.fetch_market_data(symbol)
+        market_data = await bms_engine.get_real_market_data(symbol)
         if not market_data:
             raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
         
         # Calculate BMS score
-        analysis = bms_engine.calculate_bms_score(market_data)
+        analysis = bms_engine._calculate_real_bms_score(market_data)
         if not analysis:
             raise HTTPException(status_code=500, detail=f"Failed to analyze {symbol}")
         
@@ -160,7 +160,7 @@ async def health_check():
         # Add API connectivity tests
         try:
             # Quick Polygon API test
-            test_data = await bms_engine.get_market_data_polygon('AAPL')
+            test_data = await bms_engine.get_real_market_data('AAPL')
             api_health = "healthy" if test_data else "degraded"
         except:
             api_health = "error"
@@ -207,7 +207,7 @@ async def trigger_discovery(
         logger.info(f"Manual discovery trigger (limit: {limit}, force: {force_refresh})")
         
         # Force fresh discovery
-        candidates = await bms_engine.discover_candidates(limit=limit)
+        candidates = await bms_engine.discover_real_candidates(limit=limit)
         
         # Summary stats
         trade_ready = [c for c in candidates if c['action'] == 'TRADE_READY']
@@ -285,61 +285,13 @@ async def analyze_historical_winners():
     New endpoint to validate system against known successful trades
     """
     try:
-        # Historical winners from portfolio
-        winners = [
-            {'symbol': 'VIGL', 'gain_pct': 324.0},
-            {'symbol': 'CRWV', 'gain_pct': 171.0},
-            {'symbol': 'AEVA', 'gain_pct': 162.0},
-            {'symbol': 'CRDO', 'gain_pct': 108.0},
-            {'symbol': 'SEZL', 'gain_pct': 66.0},
-            {'symbol': 'SMCI', 'gain_pct': 35.0},
-            {'symbol': 'TSLA', 'gain_pct': 21.0},
-            {'symbol': 'REKR', 'gain_pct': 17.0},
-            {'symbol': 'AMD', 'gain_pct': 16.0},
-            {'symbol': 'NVDA', 'gain_pct': 16.0},
-            {'symbol': 'QUBT', 'gain_pct': 15.5},
-            {'symbol': 'AVGO', 'gain_pct': 12.0},
-            {'symbol': 'RGTI', 'gain_pct': 12.0},
-            {'symbol': 'SPOT', 'gain_pct': 7.0},
-            {'symbol': 'WOLF', 'gain_pct': -25.0}  # The one loser
-        ]
-        
-        # Analyze current scores for these symbols
-        analysis_results = []
-        for winner in winners:
-            try:
-                market_data = await bms_engine.fetch_market_data(winner['symbol'])
-                if market_data:
-                    current_score = bms_engine.calculate_bms_score(market_data)
-                    if current_score:
-                        analysis_results.append({
-                            'symbol': winner['symbol'],
-                            'historical_gain': winner['gain_pct'],
-                            'current_bms_score': current_score['bms_score'],
-                            'current_action': current_score['action'],
-                            'would_catch_now': current_score['bms_score'] >= 60
-                        })
-            except Exception as e:
-                logger.error(f"Error analyzing {winner['symbol']}: {e}")
-        
-        # Summary statistics
-        total_analyzed = len(analysis_results)
-        would_catch = len([r for r in analysis_results if r['would_catch_now']])
-        big_winners = [r for r in analysis_results if r['historical_gain'] > 100]
-        big_winners_caught = len([r for r in big_winners if r['would_catch_now']])
-        
+        # This endpoint is deprecated - historical analysis should use real portfolio data
+        # For security and privacy, no hardcoded portfolio data is included
         return {
-            'analysis_summary': {
-                'total_symbols': total_analyzed,
-                'would_catch_now': would_catch,
-                'catch_rate': (would_catch / total_analyzed * 100) if total_analyzed > 0 else 0,
-                'big_winners_total': len(big_winners),
-                'big_winners_caught': big_winners_caught,
-                'big_winner_catch_rate': (big_winners_caught / len(big_winners) * 100) if big_winners else 0
-            },
-            'symbol_analysis': analysis_results,
-            'timestamp': datetime.now().isoformat(),
-            'validation_note': 'This compares current BMS scores to historical June-July 2025 performance'
+            'message': 'Historical winners analysis has been removed for production security',
+            'status': 'deprecated',
+            'alternative': 'Use /discovery/candidates to find current opportunities based on real market data',
+            'timestamp': datetime.now().isoformat()
         }
         
     except Exception as e:
@@ -351,7 +303,7 @@ async def analyze_historical_winners():
 async def get_discovery_stats():
     """Get basic discovery statistics"""
     try:
-        candidates = await bms_engine.discover_candidates(limit=50)
+        candidates = await bms_engine.discover_real_candidates(limit=50)
         
         if not candidates:
             return {'message': 'No candidates found', 'timestamp': datetime.now().isoformat()}
