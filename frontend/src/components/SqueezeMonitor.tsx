@@ -46,6 +46,7 @@ export default function SqueezeMonitor({
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [lastApiCall, setLastApiCall] = useState<{url: string, candidateCount: number, timestamp: string} | null>(null);
 
   const getRefreshInterval = () => {
     const now = new Date();
@@ -95,8 +96,8 @@ export default function SqueezeMonitor({
       if (useTestEndpoint) {
         discoveryResponse = await getJSON<any>(`${API_BASE}/discovery/test?strategy=legacy_v0&limit=20`);
       } else {
-        // Use fetch to capture headers
-        const response = await fetch(`${API_BASE}/discovery/contenders?strategy=legacy_v0&cache=${Date.now()}`, {
+        // Use fetch to capture headers - FIXED: Use squeeze-candidates endpoint with min_score
+        const response = await fetch(`${API_BASE}/discovery/squeeze-candidates?min_score=0.1&cache=${Date.now()}`, {
           cache: 'no-store'
         });
         
@@ -106,6 +107,13 @@ export default function SqueezeMonitor({
         reasonStats = reasonStatsHeader ? JSON.parse(reasonStatsHeader) : {};
         
         discoveryResponse = await response.json();
+        
+        // FIXED: Track API call details for debugging
+        setLastApiCall({
+          url: `${API_BASE}/discovery/squeeze-candidates?min_score=0.1`,
+          candidateCount: discoveryResponse?.candidates?.length || 0,
+          timestamp: new Date().toLocaleTimeString()
+        });
       }
       
       // Also get portfolio optimization actions
@@ -118,7 +126,7 @@ export default function SqueezeMonitor({
       
       const response: SqueezeOpportunity[] = candidates.map((candidate: any) => ({
             symbol: candidate.symbol,
-            squeeze_score: candidate.score || 0, // Use raw score (already 0-1 range)
+            squeeze_score: candidate.squeeze_score || candidate.score || 0, // Use squeeze_score first, then fallback to score
             volume_spike: candidate.factors?.volume_spike_ratio || candidate.volume_spike || 0,
             short_interest: candidate.short_interest_data?.percent * 100 || candidate.short_interest || 0,
             price: candidate.price || 0,
@@ -149,7 +157,7 @@ export default function SqueezeMonitor({
           action: item.action,
           vigl_similarity: item.vigl_similarity,
           position_size_pct: item.position_size_pct
-        })).filter(opp => opp.advanced_score >= 0.25); // Show candidates with 25%+ score (realistic threshold)
+        })).filter(opp => opp.advanced_score >= 0.1); // Show candidates with 10%+ score (matches API min_score)
       }
       
       if (watchedSymbols.length > 0) {
@@ -207,11 +215,11 @@ export default function SqueezeMonitor({
     setTimeout(loadSqueezeOpportunities, 2000);
   };
 
-  // Categorize opportunities by advanced score tiers (realistic thresholds)
+  // Categorize opportunities by advanced score tiers (FIXED: More realistic thresholds)
   const categorizeOpportunities = (opportunities: SqueezeOpportunity[]) => {
-    const critical = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.40); // STRONG_BUY
-    const developing = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.32 && (opp.advanced_score || opp.squeeze_score) < 0.40); // BUY
-    const early = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.25 && (opp.advanced_score || opp.squeeze_score) < 0.32); // WATCH
+    const critical = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.30); // STRONG_BUY (30%+)
+    const developing = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.20 && (opp.advanced_score || opp.squeeze_score) < 0.30); // BUY (20-30%)
+    const early = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.10 && (opp.advanced_score || opp.squeeze_score) < 0.20); // WATCH (10-20%)
     
     return { critical, developing, early };
   };
@@ -278,6 +286,31 @@ export default function SqueezeMonitor({
           <span style={{ color: '#fcd34d', fontWeight: '500' }}>
             TEST MODE - Using development endpoint
           </span>
+        </div>
+      )}
+
+      {/* Debug Overlay - Show API call details */}
+      {import.meta.env.DEV && lastApiCall && (
+        <div style={{
+          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+          border: '1px solid rgba(59, 130, 246, 0.3)',
+          borderRadius: '8px',
+          padding: '12px',
+          marginBottom: '16px',
+          fontSize: '14px'
+        }}>
+          <div style={{ color: '#93c5fd', fontWeight: '500', marginBottom: '8px' }}>
+            🔍 API Debug Info
+          </div>
+          <div style={{ color: '#e5e7eb', fontSize: '13px', lineHeight: '1.4' }}>
+            <div>Endpoint: {lastApiCall.url}</div>
+            <div>Candidates received: {lastApiCall.candidateCount}</div>
+            <div>Candidates displayed: {squeezeOpportunities.length}</div>
+            <div>Last call: {lastApiCall.timestamp}</div>
+            <div style={{ marginTop: '4px', color: '#9ca3af', fontSize: '12px' }}>
+              System State: {systemState}
+            </div>
+          </div>
         </div>
       )}
 
@@ -523,7 +556,7 @@ export default function SqueezeMonitor({
           
           <div style={{...noOpportunitiesSubTextStyle, marginBottom: 16}}>
             <strong>Why no squeezes right now:</strong><br/>
-            • Advanced scores below 0.25 threshold (need 25%+ probability)<br/>
+            • Advanced scores below 0.10 threshold (need 10%+ probability)<br/>
             • Volume patterns not meeting discovery criteria<br/>
             • Current market conditions limiting squeeze setups<br/>
             • System recently updated - scanning for new opportunities<br/>
