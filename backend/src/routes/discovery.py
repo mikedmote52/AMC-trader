@@ -974,8 +974,11 @@ async def get_squeeze_candidates(min_score: float = Query(0.25, ge=0.0, le=1.0))
     try:
         r = get_redis_client()
         
-        # Get current discovery contenders
-        items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
+        # Get current discovery contenders using strategy-aware keys
+        strategy = resolve_effective_strategy("")
+        k_spec = get_contenders_key(strategy)
+        k_fall = get_contenders_key(None)
+        items = _get_json(r, k_spec) or _get_json(r, k_fall) or []
         
         squeeze_candidates = []
         squeeze_detector = SqueezeDetector()
