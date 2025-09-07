@@ -976,9 +976,10 @@ async def get_squeeze_candidates(min_score: float = Query(0.25, ge=0.0, le=1.0))
         # REVERT: Use old working keys  
         items = _get_json(r, "amc:discovery:v2:contenders.latest") or _get_json(r, "amc:discovery:contenders.latest") or []
         
+        # SIMPLIFIED: Return all candidates with squeeze_score >= min_score 
         squeeze_candidates = []
-        squeeze_detector = SqueezeDetector()
         
+        # SIMPLIFIED FILTERING: Just use existing squeeze_score
         for item in items:
             if not isinstance(item, dict):
                 continue
@@ -987,66 +988,35 @@ async def get_squeeze_candidates(min_score: float = Query(0.25, ge=0.0, le=1.0))
             if not symbol:
                 continue
             
-            # Extract data for squeeze detection
-            # Fix data mapping - calculate missing values from available data
-            price = item.get('price', 0.0)
-            dollar_volume = item.get('dollar_vol', 0.0)
-            
-            # Calculate share volume from dollar volume and price
-            current_volume = dollar_volume / price if price > 0 else 0.0
-            volume_spike_ratio = item.get('volume_spike', 1.0)
-            
-            # Reverse calculate avg_volume_30d from current volume and spike ratio
-            if volume_spike_ratio and volume_spike_ratio > 0 and current_volume > 0:
-                calculated_avg_volume = max(current_volume / volume_spike_ratio, 100000)
-            else:
-                # Skip symbols without sufficient volume data
-                logger.debug(f"Excluding {symbol} - insufficient volume history")
+            # Use existing squeeze_score from discovery results
+            existing_squeeze_score = item.get('squeeze_score', 0.0)
+            if existing_squeeze_score < min_score:
                 continue
-            
-            squeeze_data = {
+            # SIMPLIFIED: Build candidate from existing discovery data
+            candidate = {
                 'symbol': symbol,
                 'price': item.get('price', 0.0),
-                'volume': current_volume,
-                'avg_volume_30d': calculated_avg_volume,  # Calculated from spike ratio
-                # NO DEFAULTS - Skip stocks without real market data
-                'short_interest': None,  # Must have real short interest data
-                'float': None,          # Must have real float data
-                'borrow_rate': None,    # Must have real borrow rate data
-                'shares_outstanding': None,  # Must have real shares outstanding data
-                # Market cap based on enhanced tight float estimate
-                'market_cap': item.get('price', 0.0) * 15_000_000  # Using tighter float
+                'squeeze_score': existing_squeeze_score,
+                'squeeze_pattern': item.get('squeeze_pattern', 'detected'),
+                'confidence': existing_squeeze_score,  # Use squeeze_score as confidence
+                'volume_spike': item.get('volume_spike', 1.0),
+                'short_interest': (item.get('short_interest_data', {}).get('short_interest', 0) * 100),
+                'float_shares': item.get('float_shares', 0),
+                'borrow_rate': 0,  # Not available in current data
+                'thesis': item.get('squeeze_thesis', item.get('thesis', 'Squeeze opportunity detected')),
+                
+                # Preserve original discovery data
+                'original_score': item.get('score', 0.0),
+                'original_reason': item.get('reason', ''),
+                'factors': item.get('factors', {}),
+                
+                # Add VIGL classification  
+                'is_vigl_class': existing_squeeze_score >= 0.85,
+                'is_high_confidence': existing_squeeze_score >= 0.75,
+                'explosive_potential': 'EXTREME' if existing_squeeze_score >= 0.85 else 'HIGH'
             }
             
-            # Detect squeeze pattern
-            squeeze_result = squeeze_detector.detect_vigl_pattern(symbol, squeeze_data)
-            
-            if squeeze_result and squeeze_result.squeeze_score >= min_score:
-                # Build enhanced candidate record
-                candidate = {
-                    'symbol': symbol,
-                    'price': squeeze_result.price,
-                    'squeeze_score': squeeze_result.squeeze_score,
-                    'squeeze_pattern': squeeze_result.pattern_match,
-                    'confidence': squeeze_result.confidence,
-                    'volume_spike': squeeze_result.volume_spike,
-                    'short_interest': squeeze_result.short_interest * 100,  # Convert to percentage
-                    'float_shares': squeeze_result.float_shares,
-                    'borrow_rate': squeeze_result.borrow_rate * 100,  # Convert to percentage
-                    'thesis': squeeze_result.thesis,
-                    
-                    # Preserve original discovery data
-                    'original_score': item.get('score', 0.0),
-                    'original_reason': item.get('reason', ''),
-                    'factors': item.get('factors', {}),
-                    
-                    # Add VIGL classification
-                    'is_vigl_class': squeeze_result.squeeze_score >= 0.85,
-                    'is_high_confidence': squeeze_result.squeeze_score >= 0.75,
-                    'explosive_potential': 'EXTREME' if squeeze_result.squeeze_score >= 0.85 else 'HIGH'
-                }
-                
-                squeeze_candidates.append(candidate)
+            squeeze_candidates.append(candidate)
         
         # Sort by squeeze score descending (best first)
         squeeze_candidates.sort(key=lambda x: x['squeeze_score'], reverse=True)
