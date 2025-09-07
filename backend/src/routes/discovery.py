@@ -119,102 +119,35 @@ def to_pct(v):
     return v * 100 if v <= 1 else v
 
 @router.get("/contenders")
-async def get_contenders(
-    request: Request,
-    response: Response,
-    strategy: str = Query("", description="Scoring strategy: legacy_v0 or hybrid_v1")
-):
-    """
-    Returns candidates from Redis exactly as stored by discovery job
-    No additional filtering - let job/UI handle thresholds
-    """
-    from datetime import datetime, timezone
-    
-    # Set cache control headers
-    response.headers["Cache-Control"] = "no-store"
-    
-    # Get unified strategy suffix
-    suffix = get_strategy_suffix(strategy)
-    effective_strategy = resolve_effective_strategy(strategy)
-    
-    # Use canonical Redis keys (same as writer)
-    from backend.src.lib.redis_client import get_redis_keys
-    keys = get_redis_keys(effective_strategy)
-    
+async def get_contenders(response: Response, strategy: str = Query("")):
+    eff = resolve_effective_strategy(strategy)
     r = get_redis_client()
-    
-    # Try strategy-specific key first, then fallback
-    items = _get_json(r, keys['K_V2_SPEC']) or _get_json(r, keys['K_V2_FALL'])
-    
-    if not items:
-        items = []
-    
-    # Normalize scores for UI compatibility  
-    for item in items:
-        if isinstance(item, dict):
-            # Convert score to 0-100 format expected by UI
-            item["meta_score"] = to_pct(item.get("meta_score") or item.get("score"))
-            item["score"] = item["meta_score"]  # Legacy UI expects 'score' 0-100
-    
-    # System state assessment
+    k_spec = f"amc:discovery:v2:contenders.latest:{eff}"
+    k_fall = "amc:discovery:v2:contenders.latest"
+    items = _get_json(r, k_spec) or _get_json(r, k_fall) or []
+
+    def pct(v):
+        if v is None: return None
+        return v*100 if v <= 1 else v
+    for it in items:
+        it["meta_score"] = pct(it.get("meta_score") or it.get("score"))
+        it["score"] = it["meta_score"]  # UI expects 0–100
+
+    # truthful headers
     system_state = "HEALTHY"
     reason_stats = {"stale": 0, "gate": 0, "error": 0, "scored": len(items)}
-    
-    # Check data age
-    status = _get_json(r, keys.get('K_STATUS', STATUS))
-    if status and status.get('last_run'):
-        try:
-            last_run_time = datetime.fromisoformat(status['last_run'].replace('Z', '+00:00'))
-            age_seconds = (datetime.now(timezone.utc) - last_run_time).total_seconds()
-            if age_seconds > 300:  # 5 minutes
-                system_state = "DEGRADED"
-        except:
-            system_state = "DEGRADED"
-    
-    # Always set headers before return
     response.headers["X-System-State"] = system_state
     response.headers["X-Reason-Stats"] = json.dumps(reason_stats)
     response.headers["Cache-Control"] = "no-store"
-    
     return items
 
 @router.get("/contenders/raw")
-async def get_contenders_raw(
-    request: Request,
-    strategy: str = Query("", description="Scoring strategy")
-):
-    """
-    Raw Redis view - returns candidates exactly as stored without any processing
-    """
-    effective_strategy = resolve_effective_strategy(strategy)
-    logger.info(f"🔍 RAW VIEW: strategy={effective_strategy}")
-    
+async def contenders_raw(strategy: str = Query("")):
+    eff = resolve_effective_strategy(strategy)
     r = get_redis_client()
-    
-    # Use same canonical keys as writer
-    keys = get_redis_keys(effective_strategy)
-    
-    # Try keys in priority order (same as contenders endpoint)
-    raw_data = None
-    key_used = None
-    for key_name, key in keys.items():
-        raw_data = _get_json(r, key)
-        if raw_data:
-            key_used = key
-            logger.info(f"🔍 RAW: Found {len(raw_data)} items in {key}")
-            break
-    
-    if not raw_data:
-        logger.warning("🔍 RAW: No data found in any Redis key")
-        raw_data = []
-    
-    return {
-        "raw_candidates": raw_data,
-        "count": len(raw_data),
-        "strategy": effective_strategy,
-        "redis_key_used": key_used,
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
+    k_spec = f"amc:discovery:v2:contenders.latest:{eff}"
+    k_fall = "amc:discovery:v2:contenders.latest"
+    return _get_json(r, k_spec) or _get_json(r, k_fall) or []
 
 @router.get("/contenders/debug")
 async def debug_contenders(
