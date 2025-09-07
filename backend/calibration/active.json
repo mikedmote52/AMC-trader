@@ -1,0 +1,56 @@
+{
+  "providers": {
+    "price_volume": "polygon",
+    "options": "polygon",
+    "short_interest": "finra",
+    "short_volume": "finra",
+    "borrow": "proxy_only"
+  },
+  "freshness_thresholds": {
+    "quotes_sec": 2,
+    "bars_1m_sec": 15,
+    "options_sec": 60,
+    "short_interest_days": 20,
+    "short_volume_hours": 36
+  },
+  "weights_override": {
+    "options_flow": 0.12,
+    "squeeze": 0.20,
+    "volume": 0.25,
+    "vigl": 0.18,
+    "catalyst": 0.15,
+    "technicals": 0.10
+  },
+  "market_sessions": {
+    "premarket": {
+      "enabled": true,
+      "freshness_multiplier": 2.5,
+      "quotes_sec": 5,
+      "bars_1m_sec": 30
+    },
+    "regular": {
+      "enabled": true,
+      "freshness_multiplier": 1.0,
+      "quotes_sec": 2,
+      "bars_1m_sec": 15
+    },
+    "afterhours": {
+      "enabled": true,
+      "freshness_multiplier": 2.5,
+      "quotes_sec": 5,
+      "bars_1m_sec": 30
+    }
+  },
+  "fail_closed": {
+    "enabled": true,
+    "max_stale_percent": 40,
+    "degraded_action": "return_empty"
+  },
+  "scoring": {
+    "strategy": "legacy_v0",
+    "entry_rules": {
+      "watchlist_min": 0.15,
+      "trade_ready_min": 0.25
+    }
+  }
+}

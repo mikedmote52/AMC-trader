@@ -1,27 +1,25 @@
-# AMC-TRADER System Validation Report
-**Generated:** 2025-09-06 18:30:00 UTC  
-**Validation Engine:** AMC-TRADER Validation Engine v1.0  
-**System Version:** Trace v3 (commit: 40108de)  
-**Status:** 🟢 CRITICAL FAILURE RESOLVED
+# AMC-TRADER Validation Engine Report
+**Generated:** 2025-09-07 05:05:00 UTC  
+**Validation Engine:** AMC-TRADER Validation Engine v2.0  
+**System Version:** Trace v3 (commit: 5a51e7560ce25bdb460461e2409fff449740b6cc)  
+**Status:** ⚠️ CALIBRATION ISSUES IDENTIFIED
 
 ## Executive Summary
 
-**CRITICAL SYSTEM FAILURE RESOLVED:** The AMC-TRADER discovery system has been experiencing complete failure to display squeeze candidates on the frontend. After comprehensive analysis, root causes have been identified and permanent fixes implemented.
+### System Health Assessment: **DEGRADED** ⚠️
+The AMC-TRADER system is operationally healthy with all core components functional, but the hybrid_v1 strategy implementation has critical calibration issues preventing candidate discovery. The system is currently defaulting to legacy_v0 in practice due to overly restrictive gates in hybrid_v1.
 
 ### Key Findings
-- **Discovery Pipeline:** Functional but filtered out 100% of candidates due to unrealistic thresholds
-- **Frontend Integration:** Broken due to dependency on failing `/advanced-ranking/rank` endpoint
-- **Configuration Mismatch:** System configured for `legacy_v0` but attempting `hybrid_v1` strategy
-- **Threshold Misalignment:** Entry rules required 50-55% scores, actual candidates scoring 9-38%
+- **Discovery Pipeline**: ✅ Operational - processes 2,441 stocks through 5-stage pipeline
+- **Redis Integration**: ✅ Functional - Redis keys properly aligned, data flows correctly
+- **Strategy Resolution**: ✅ Working - `FORCE_STRATEGY=hybrid_v1` correctly enforced
+- **Calibration Issues**: ❌ **CRITICAL** - hybrid_v1 produces 0 candidates vs legacy_v0's 6 candidates
+- **API Endpoints**: ✅ Functional - /contenders, /diagnostics, /strategy-validation all working
 
-### Validation Results
-| Component | Status | Issues Found | Fixes Applied |
-|-----------|--------|-------------|---------------|
-| Discovery Pipeline | ✅ FUNCTIONAL | 2 Critical | ✅ RESOLVED |
-| Scoring System | ⚠️ MISCONFIGURED | 3 Critical | ✅ RESOLVED |
-| Frontend Integration | 🔴 BROKEN | 1 Critical | ✅ RESOLVED |
-| Redis Persistence | ✅ WORKING | 0 Issues | N/A |
-| API Endpoints | ✅ WORKING | 1 Minor | ✅ RESOLVED |
+### Immediate Actions Required
+1. **Fix hybrid_v1 entry rules** - threshold values misaligned by 100x factor
+2. **Relax RelVol gates** - 20+ candidates rejected due to afterhours restrictions
+3. **Adjust minimum thresholds** - scores 26-38% being rejected as "too low"
 
 ---
 

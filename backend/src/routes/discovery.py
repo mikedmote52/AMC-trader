@@ -10,6 +10,9 @@ from pydantic import BaseModel
 from backend.src.shared.redis_client import get_redis_client
 from backend.src.lib.redis_client import get_redis_keys
 from backend.src.services.squeeze_detector import SqueezeDetector
+from backend.src.providers.polygon_ws import get_ws_stats
+from backend.src.providers.options_polygon import get_options_stats
+from backend.src.discovery.feature_store import get_feature_store_stats
 from ..services.short_interest_service import get_short_interest_service
 from ..services.short_interest_validator import get_short_interest_validator
 from ..strategy_resolver import resolve_effective_strategy, get_strategy_metadata
@@ -171,6 +174,7 @@ async def get_contenders(
     # Always set headers before return
     response.headers["X-System-State"] = system_state
     response.headers["X-Reason-Stats"] = json.dumps(reason_stats)
+    response.headers["Cache-Control"] = "no-store"
     
     return items
 
@@ -347,16 +351,28 @@ async def debug_contenders(
 
 @router.get("/health")
 async def discovery_health():
-    """Minimal health endpoint for system monitoring"""
+    """Enhanced health endpoint with Redis, market session, and provider stats"""
     r = get_redis_client()
+    
+    # Get Redis URL (redacted for security)
+    redis_url = os.getenv('REDIS_URL', 'not_configured')
+    redis_info = "configured" if redis_url != 'not_configured' else "missing"
+    if '://' in redis_url:
+        # Extract DB index for debugging
+        db_index = redis_url.split('/')[-1] if redis_url.count('/') >= 3 else '0'
+    else:
+        db_index = 'unknown'
     
     # Check universe availability
     universe_status = "DOWN"
+    last_run = None
+    age_seconds = None
+    
     try:
         status = _get_json(r, STATUS)
         if status and status.get('last_run'):
-            from datetime import datetime, timezone
-            last_run_time = datetime.fromisoformat(status['last_run'].replace('Z', '+00:00'))
+            last_run = status['last_run']
+            last_run_time = datetime.fromisoformat(last_run.replace('Z', '+00:00'))
             age_seconds = (datetime.now(timezone.utc) - last_run_time).total_seconds()
             if age_seconds < 600:  # 10 minutes
                 universe_status = "LIVE"
@@ -365,16 +381,136 @@ async def discovery_health():
     except:
         universe_status = "DOWN"
     
-    # Check market data (simplified)
-    market_data = "LIVE"  # Assume live unless proven otherwise
+    # Determine market session
+    from backend.src.discovery.feature_store import FeatureStore
+    try:
+        dummy_store = FeatureStore(r, {})
+        current_session = dummy_store.get_market_session().value
+    except:
+        current_session = "unknown"
+    
+    # Check live data providers
+    ws_stats = get_ws_stats()
+    options_stats = get_options_stats()
+    feature_stats = get_feature_store_stats()
+    
+    # Market data assessment
+    ws_connected = ws_stats.get('is_connected', False) if isinstance(ws_stats, dict) else False
+    market_data = "LIVE" if ws_connected else "REST_FALLBACK"
     
     # Overall system state
-    system_state = "HEALTHY" if universe_status == "LIVE" else "DEGRADED"
+    system_state = "HEALTHY" if universe_status == "LIVE" and ws_connected else "DEGRADED"
     
     return {
         "universe": universe_status,
         "market_data": market_data,
-        "system_state": system_state
+        "system_state": system_state,
+        "redis_info": redis_info,
+        "redis_db": db_index,
+        "last_run": last_run,
+        "last_run_age_sec": age_seconds,
+        "market_session": current_session,
+        "providers": {
+            "polygon_ws": {
+                "connected": ws_connected,
+                "subscribed_symbols": ws_stats.get('subscribed_symbols', 0) if isinstance(ws_stats, dict) else 0,
+                "messages_received": ws_stats.get('messages_received', 0) if isinstance(ws_stats, dict) else 0
+            },
+            "polygon_options": {
+                "requests_made": options_stats.get('requests_made', 0) if isinstance(options_stats, dict) else 0,
+                "options_processed": options_stats.get('options_processed', 0) if isinstance(options_stats, dict) else 0
+            },
+            "feature_store": {
+                "features_requested": feature_stats.get('features_requested', 0) if isinstance(feature_stats, dict) else 0,
+                "freshness_failures": feature_stats.get('freshness_failures', 0) if isinstance(feature_stats, dict) else 0
+            }
+        }
+    }
+
+@router.get("/freshness/sample")
+async def freshness_sample(symbols: str = Query("SPY,QQQ,AAPL", description="Comma-separated symbols to check")):
+    """Check freshness of WebSocket feeds for sample symbols"""
+    r = get_redis_client()
+    symbol_list = [s.strip().upper() for s in symbols.split(",")][:10]  # Max 10 symbols
+    
+    now_ms = time.time() * 1000
+    results = []
+    
+    for symbol in symbol_list:
+        symbol_data = {"symbol": symbol}
+        
+        # Check quote freshness
+        quote_key = f"feat:quotes:{symbol}"
+        quote_data = _get_json(r, quote_key)
+        if quote_data:
+            quote_age_sec = (now_ms - quote_data['ts']) / 1000
+            symbol_data["quote"] = {
+                "age_sec": quote_age_sec,
+                "fresh": quote_age_sec <= 2,  # RTH threshold
+                "source": quote_data.get('source', 'unknown')
+            }
+        else:
+            symbol_data["quote"] = {"missing": True}
+        
+        # Check bar freshness
+        bar_key = f"feat:bars_1m:{symbol}"
+        bar_data = _get_json(r, bar_key)
+        if bar_data:
+            bar_age_sec = (now_ms - bar_data['close_time']) / 1000
+            symbol_data["bar"] = {
+                "age_sec": bar_age_sec,
+                "fresh": bar_age_sec <= 15,  # RTH threshold
+                "source": bar_data.get('source', 'unknown')
+            }
+        else:
+            symbol_data["bar"] = {"missing": True}
+        
+        # Check VWAP freshness
+        vwap_key = f"feat:vwap:{symbol}"
+        vwap_data = _get_json(r, vwap_key)
+        if vwap_data:
+            vwap_age_sec = (now_ms - vwap_data['ts']) / 1000
+            symbol_data["vwap"] = {
+                "age_sec": vwap_age_sec,
+                "fresh": vwap_age_sec <= 15,
+                "source": vwap_data.get('source', 'unknown')
+            }
+        else:
+            symbol_data["vwap"] = {"missing": True}
+            
+        results.append(symbol_data)
+    
+    # Calculate freshness stats
+    total_feeds = len(results) * 3  # quote, bar, vwap per symbol
+    fresh_feeds = 0
+    missing_feeds = 0
+    
+    for r_data in results:
+        for feed_type in ['quote', 'bar', 'vwap']:
+            feed_data = r_data.get(feed_type, {})
+            if feed_data.get('missing'):
+                missing_feeds += 1
+            elif feed_data.get('fresh'):
+                fresh_feeds += 1
+    
+    stale_percentage = ((total_feeds - fresh_feeds - missing_feeds) / total_feeds) * 100 if total_feeds > 0 else 0
+    
+    return {
+        "symbols_checked": symbol_list,
+        "freshness_stats": {
+            "total_feeds": total_feeds,
+            "fresh_feeds": fresh_feeds,
+            "stale_feeds": total_feeds - fresh_feeds - missing_feeds,
+            "missing_feeds": missing_feeds,
+            "stale_percentage": stale_percentage,
+            "freshness_ok": stale_percentage <= 40  # Fail-closed threshold
+        },
+        "details": results,
+        "thresholds": {
+            "quotes_sec": 2,
+            "bars_1m_sec": 15,
+            "fail_closed_threshold": 40
+        }
     }
 
 @router.get("/strategy/effective")
