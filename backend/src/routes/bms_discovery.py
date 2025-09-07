@@ -197,7 +197,13 @@ async def health_check():
     """
     try:
         health_status = bms_engine.get_health_status()
-        u = bms_engine.config["universe"]
+        
+        # Safely access config
+        u = getattr(bms_engine, 'config', {}).get('universe', {
+            'min_price': 0.5, 
+            'max_price': 100.0, 
+            'min_dollar_volume_m': 10.0
+        })
         
         # Add API connectivity tests
         try:
@@ -214,8 +220,8 @@ async def health_check():
         return {
             'status': 'healthy',
             'engine': health_status['engine'],
-            'price_bounds': {'min': u['min_price'], 'max': u['max_price']},
-            'dollar_volume_min_m': u['min_dollar_volume_m'],
+            'price_bounds': {'min': u.get('min_price', 0.5), 'max': u.get('max_price', 100.0)},
+            'dollar_volume_min_m': u.get('min_dollar_volume_m', 10.0),
             'universe': health_status.get('universe', {}),
             'performance': health_status.get('performance', {}),
             'timings_ms': health_status.get('timings_ms', {}),
