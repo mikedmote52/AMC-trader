@@ -698,8 +698,11 @@ async def get_discovery_diagnostics():
     trace_data = _get_json(r, V2_TRACE) or _get_json(r, V1_TRACE) or {}
     status_data = _get_json(r, STATUS) or {}
     
-    # Get current contenders count
-    contenders = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
+    # Get current contenders count using strategy-aware keys  
+    strategy = resolve_effective_strategy("")
+    k_spec = get_contenders_key(strategy)
+    k_fall = get_contenders_key(None)
+    contenders = _get_json(r, k_spec) or _get_json(r, k_fall) or []
     
     # Build diagnostic response
     return {
@@ -813,7 +816,10 @@ async def discovery_audit():
     """Returns list of candidates with factors, score, thesis"""
     try:
         r = get_redis_client()
-        items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
+        strategy = resolve_effective_strategy("")
+        k_spec = get_contenders_key(strategy)
+        k_fall = get_contenders_key(None)
+        items = _get_json(r, k_spec) or _get_json(r, k_fall) or []
         result = []
         for item in items:
             if isinstance(item, dict):
@@ -845,7 +851,10 @@ async def discovery_audit_symbol(symbol: str):
     """Returns single full record including factors and latest trace slice"""
     try:
         r = get_redis_client()
-        items = _get_json(r, V2_CONT) or _get_json(r, V1_CONT) or []
+        strategy = resolve_effective_strategy("")
+        k_spec = get_contenders_key(strategy)
+        k_fall = get_contenders_key(None)
+        items = _get_json(r, k_spec) or _get_json(r, k_fall) or []
         
         # Find the symbol
         item = None
