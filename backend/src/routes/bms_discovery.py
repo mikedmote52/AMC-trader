@@ -11,6 +11,7 @@ from datetime import datetime
 import os
 
 from ..services.bms_engine_real import RealBMSEngine as BMSEngine
+from ..services.discovery_worker import get_worker
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -22,19 +23,45 @@ bms_engine = BMSEngine(polygon_key)
 @router.get("/candidates")
 async def get_candidates(
     limit: int = Query(20, description="Maximum number of candidates to return"),
-    action_filter: Optional[str] = Query(None, description="Filter by action: TRADE_READY, MONITOR")
+    action_filter: Optional[str] = Query(None, description="Filter by action: TRADE_READY, MONITOR"),
+    force_refresh: bool = Query(False, description="Force fresh discovery (bypasses cache)")
 ):
     """
-    Get current BMS candidates
+    Get current BMS candidates - returns cached results for speed
     
     Replaces: /discovery/contenders, /discovery/squeeze-candidates
-    Returns: Clean candidate list with BMS scores
+    Returns: Clean candidate list with BMS scores and cache metadata
     """
     try:
-        logger.info(f"Fetching BMS candidates (limit: {limit})")
+        worker = get_worker()
         
-        # Get candidates from BMS engine
-        candidates = await bms_engine.discover_real_candidates(limit=limit * 2)  # Get more to filter
+        # Try cache first unless force refresh requested
+        if not force_refresh and worker:
+            cached_result = await worker.get_cached_candidates(action_filter, limit)
+            if cached_result.get('cached') and cached_result.get('candidates'):
+                logger.info(f"Returning {len(cached_result['candidates'])} cached candidates")
+                
+                response = {
+                    'candidates': cached_result['candidates'],
+                    'count': cached_result['count'],
+                    'engine': 'BMS v1.1 - Cached',
+                    'cached': True,
+                    'updated_at': cached_result.get('updated_at'),
+                    'duration_ms': cached_result.get('duration_ms'),
+                    'filters_applied': {
+                        'limit': limit,
+                        'action_filter': action_filter
+                    },
+                    'universe': cached_result.get('universe_counts', {}),
+                    'timings_ms': cached_result.get('stage_timings', {})
+                }
+                
+                return response
+        
+        # Fallback to live discovery
+        logger.info(f"Running live discovery (limit: {limit}, force: {force_refresh})")
+        
+        candidates = await bms_engine.discover_real_candidates(limit=limit * 2, enable_early_stop=True)
         
         # Apply action filter if specified
         if action_filter:
@@ -47,10 +74,19 @@ async def get_candidates(
             'candidates': candidates,
             'count': len(candidates),
             'timestamp': datetime.now().isoformat(),
-            'engine': 'BMS v1.0',
+            'engine': 'BMS v1.1 - Live',
+            'cached': False,
+            'duration_ms': bms_engine.stage_timings.total_ms,
             'filters_applied': {
                 'limit': limit,
                 'action_filter': action_filter
+            },
+            'universe': bms_engine.last_universe_counts,
+            'timings_ms': {
+                'prefilter': bms_engine.stage_timings.prefilter_ms,
+                'intraday': bms_engine.stage_timings.intraday_ms,
+                'scoring': bms_engine.stage_timings.scoring_ms,
+                'total': bms_engine.stage_timings.total_ms
             }
         }
         
@@ -61,20 +97,26 @@ async def get_candidates(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/candidates/trade-ready")
-async def get_trade_ready_candidates(limit: int = Query(10, description="Max trade-ready candidates")):
+async def get_trade_ready_candidates(
+    limit: int = Query(10, description="Max trade-ready candidates"),
+    force_refresh: bool = Query(False, description="Force fresh discovery")
+):
     """
     Get only TRADE_READY candidates (score 75+)
     Quick endpoint for immediate execution opportunities
     """
-    return await get_candidates(limit=limit, action_filter="TRADE_READY")
+    return await get_candidates(limit=limit, action_filter="TRADE_READY", force_refresh=force_refresh)
 
 @router.get("/candidates/monitor")
-async def get_monitor_candidates(limit: int = Query(15, description="Max monitor candidates")):
+async def get_monitor_candidates(
+    limit: int = Query(15, description="Max monitor candidates"),
+    force_refresh: bool = Query(False, description="Force fresh discovery")
+):
     """
     Get only MONITOR candidates (score 60-74)
     Watchlist opportunities to track
     """
-    return await get_candidates(limit=limit, action_filter="MONITOR")
+    return await get_candidates(limit=limit, action_filter="MONITOR", force_refresh=force_refresh)
 
 @router.get("/audit/{symbol}")
 async def audit_symbol(symbol: str):
@@ -165,16 +207,29 @@ async def health_check():
         except:
             api_health = "error"
         
+        # Get worker health if available
+        worker = get_worker()
+        worker_health = await worker.health_check() if worker else {'worker_running': False}
+        
         return {
             'status': 'healthy',
             'engine': health_status['engine'],
             'price_bounds': {'min': u['min_price'], 'max': u['max_price']},
             'dollar_volume_min_m': u['min_dollar_volume_m'],
-            'options_required': u['require_liquid_options'],
+            'universe': health_status.get('universe', {}),
+            'performance': health_status.get('performance', {}),
+            'timings_ms': health_status.get('timings_ms', {}),
             'components': {
                 'bms_engine': 'healthy',
                 'polygon_api': api_health,
-                'config': 'loaded'
+                'config': 'loaded',
+                'background_worker': 'running' if worker_health.get('worker_running') else 'stopped',
+                'redis_cache': 'connected' if worker_health.get('redis_connected') else 'disconnected'
+            },
+            'cache_status': {
+                'last_update': worker_health.get('last_cache_update'),
+                'candidates_count': worker_health.get('cached_candidates', 0),
+                'age_seconds': worker_health.get('cache_age_seconds')
             },
             'config_summary': {
                 'scoring_weights': health_status['config']['weights'],
@@ -228,6 +283,54 @@ async def trigger_discovery(
     except Exception as e:
         logger.error(f"Discovery trigger error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/progress")
+async def get_discovery_progress():
+    """
+    Get real-time discovery progress
+    
+    Returns current scan progress for UI progress bars
+    """
+    try:
+        worker = get_worker()
+        
+        if worker:
+            # Get cache metadata for progress info
+            cached_meta = await worker.get_cached_candidates(limit=1)
+            if cached_meta.get('cached'):
+                return {
+                    'status': 'cached',
+                    'updated_at': cached_meta.get('updated_at'),
+                    'candidates_found': cached_meta.get('count', 0),
+                    'trade_ready': cached_meta.get('trade_ready', 0),
+                    'monitor': cached_meta.get('monitor', 0),
+                    'duration_ms': cached_meta.get('duration_ms', 0),
+                    'universe_counts': cached_meta.get('universe_counts', {}),
+                    'stage_timings': cached_meta.get('stage_timings', {}),
+                    'next_cycle_seconds': worker.cycle_seconds
+                }
+        
+        # Fallback to current engine state
+        return {
+            'status': 'live',
+            'engine': 'BMS v1.1',
+            'universe_counts': bms_engine.last_universe_counts,
+            'timings_ms': {
+                'prefilter': bms_engine.stage_timings.prefilter_ms,
+                'intraday': bms_engine.stage_timings.intraday_ms,
+                'scoring': bms_engine.stage_timings.scoring_ms,
+                'total': bms_engine.stage_timings.total_ms
+            },
+            'timestamp': datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting progress: {e}")
+        return {
+            'status': 'error',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }
 
 @router.get("/config")
 async def get_configuration():

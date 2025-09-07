@@ -552,9 +552,21 @@ async def refresh_short_interest(symbols: str = Query("", description="Comma-sep
         if symbols.strip():
             symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
         else:
-            # Use discovery fallback universe if no symbols specified
-            from backend.src.jobs.discover import UNIVERSE_FALLBACK
-            symbol_list = UNIVERSE_FALLBACK[:20]  # Limit to first 20 to avoid rate limits
+            # Get real universe from Polygon if no symbols specified
+            try:
+                from ..services.bms_engine_real import RealBMSEngine
+                import os
+                
+                polygon_key = os.getenv('POLYGON_API_KEY', '1ORwpSzeOV20X6uaA8G3Zuxx7hLJ0KIC')
+                bms_engine = RealBMSEngine(polygon_key)
+                
+                # Get current candidates for analysis
+                candidates = await bms_engine.discover_real_candidates(limit=20)
+                symbol_list = [c['symbol'] for c in candidates] if candidates else []
+                
+            except Exception as e:
+                logger.error(f"Error fetching real symbols: {e}")
+                symbol_list = ['AAPL', 'TSLA', 'NVDA', 'AMD', 'MSFT']  # Basic fallback
         
         results = await short_interest_service.refresh_all_short_interest(symbol_list)
         

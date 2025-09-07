@@ -11,7 +11,7 @@ import asyncio
 # Add backend to path
 sys.path.append('/Users/michaelmote/Desktop/AMC-TRADER/backend')
 
-from src.services.bms_engine_simple import BMSEngine
+from src.services.bms_engine_real import RealBMSEngine as BMSEngine
 
 async def test_price_bounds():
     """Test the price bounds implementation"""

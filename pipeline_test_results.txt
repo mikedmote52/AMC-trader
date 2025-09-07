@@ -1,0 +1,99 @@
+INFO:src.services.bms_engine_real:Fetching complete universe of active stocks...
+INFO:src.services.bms_engine_real:Fetching page 1 of stock universe...
+INFO:src.services.bms_engine_real:Page 1: +1000 symbols (total: 1000)
+INFO:src.services.bms_engine_real:Fetching page 2 of stock universe...
+INFO:src.services.bms_engine_real:Page 2: +999 symbols (total: 1999)
+INFO:src.services.bms_engine_real:Fetching page 3 of stock universe...
+INFO:src.services.bms_engine_real:Page 3: +1000 symbols (total: 2999)
+INFO:src.services.bms_engine_real:Fetching page 4 of stock universe...
+INFO:src.services.bms_engine_real:Page 4: +1000 symbols (total: 3999)
+INFO:src.services.bms_engine_real:Fetching page 5 of stock universe...
+INFO:src.services.bms_engine_real:Page 5: +999 symbols (total: 4998)
+INFO:src.services.bms_engine_real:Fetching page 6 of stock universe...
+INFO:src.services.bms_engine_real:Page 6: +209 symbols (total: 5207)
+INFO:src.services.bms_engine_real:✅ Fetched 5207 active stocks from Polygon
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 35.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.2s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.2s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.2s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.2s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.2s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 32.5s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.3s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.2s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.2s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.2s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.2s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 1.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s
+INFO:src.services.bms_engine_real:Rate limiting: sleeping 0.0s

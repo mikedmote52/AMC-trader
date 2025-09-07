@@ -11,15 +11,76 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 import requests
 import time
+import aiohttp
+from dataclasses import dataclass
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Universe filtering constants
+ALLOWED_EXCHANGES = {"XNYS", "XNAS", "XASE", "ARCX", "BATS"}
+FUND_KEYWORDS = ("ETF", "ETN", "TRUST", "FUND", "SPDR", "INDEX", "BDC", 
+                "CLOSED-END", "PREFERRED", "PFD", "UNIT", "WARRANT", "SPAC")
+
+def _is_common_equity_ref(r: dict) -> bool:
+    """Properly identify common stocks, exclude funds/warrants/ETFs"""
+    if r.get("type") != "CS":
+        return False
+    ex = r.get("primary_exchange") or r.get("primaryExchange")
+    if ex not in ALLOWED_EXCHANGES:
+        return False
+    name = (r.get("name") or "").upper()
+    if any(k in name for k in FUND_KEYWORDS):
+        return False
+    return True
+
+class TokenBucket:
+    """Rate limiter for API calls - 5 req/sec max"""
+    def __init__(self, rate_per_sec=5, capacity=5):
+        self.rate, self.capacity = rate_per_sec, capacity
+        self.tokens, self.ts = capacity, time.monotonic()
+        self.lock = asyncio.Lock()
+    
+    async def take(self):
+        async with self.lock:
+            now = time.monotonic()
+            self.tokens = min(self.capacity, self.tokens + (now - self.ts) * self.rate)
+            self.ts = now
+            while self.tokens < 1:
+                await asyncio.sleep(0.05)
+                now = time.monotonic()
+                self.tokens = min(self.capacity, self.tokens + (now - self.ts) * self.rate)
+                self.ts = now
+            self.tokens -= 1
+
+async def fetch_json(session, url, params, bucket: TokenBucket):
+    """Fetch JSON with rate limiting"""
+    await bucket.take()
+    async with session.get(url, params=params, timeout=30) as resp:
+        resp.raise_for_status()
+        return await resp.json()
+
+@dataclass
+class StageTimings:
+    prefilter_ms: int = 0
+    intraday_ms: int = 0
+    features_ms: int = 0
+    scoring_ms: int = 0
+    total_ms: int = 0
 
 def _float_env(name: str, default: float) -> float:
     """Helper to read float from environment with fallback"""
     try:
         v = os.getenv(name)
         return float(v) if v is not None else default
+    except ValueError:
+        return default
+
+def _int_env(name: str, default: int) -> int:
+    """Helper to read int from environment with fallback"""
+    try:
+        v = os.getenv(name)
+        return int(v) if v is not None else default
     except ValueError:
         return default
 
@@ -39,13 +100,21 @@ class RealBMSEngine:
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': 'AMC-TRADER/1.0'})
         
-        # Real BMS Configuration - no mocks
+        # Real BMS Configuration with environment overrides
         self.config = {
             'universe': {
-                'min_price': _float_env('BMS_MIN_PRICE', 0.5),
-                'max_price': _float_env('BMS_MAX_PRICE', 100.0),
+                'min_price': _float_env('BMS_PRICE_MIN', 0.5),
+                'max_price': _float_env('BMS_PRICE_MAX', 100.0),
                 'min_dollar_volume_m': _float_env('BMS_MIN_DOLLAR_VOLUME_M', 10.0),
-                'require_liquid_options': os.getenv('BMS_REQUIRE_LIQUID_OPTIONS', 'true').lower() == 'true'
+                'require_liquid_options': os.getenv('BMS_REQUIRE_LIQUID_OPTIONS', 'true').lower() == 'true',
+                'universe_k': _int_env('BMS_UNIVERSE_K', 2500)
+            },
+            'performance': {
+                'concurrency': _int_env('BMS_CONCURRENCY', 8),
+                'req_per_sec': _int_env('BMS_REQ_PER_SEC', 5),
+                'cycle_seconds': _int_env('BMS_CYCLE_SECONDS', 60),
+                'early_stop_scan': _int_env('BMS_EARLY_STOP_SCAN', 1200),
+                'target_trade_ready': _int_env('BMS_TARGET_TRADE_READY', 25)
             },
             'weights': {
                 'volume_surge': 0.40,      # 40% - Volume breakout detection
@@ -70,9 +139,11 @@ class RealBMSEngine:
             }
         }
         
-        # Rate limiting
+        # Rate limiting and performance tracking
         self.api_calls = []
         self.last_call_time = 0
+        self.stage_timings = StageTimings()
+        self.last_universe_counts = {'total_grouped': 0, 'prefiltered': 0, 'intraday_pass': 0}
     
     def _rate_limit(self):
         """Enforce Polygon API rate limits"""
@@ -135,11 +206,14 @@ class RealBMSEngine:
                 volume = int(result['v'])  # Volume
                 dollar_volume_m = (close_price * volume) / 1_000_000
                 
-                # Apply universe filters at API level
+                # Apply universe filters at API level (no symbol length hack)
                 if (min_price <= close_price <= max_price and 
-                    dollar_volume_m >= min_volume_m and
-                    len(symbol) <= 5):  # Filter out complex tickers
+                    dollar_volume_m >= min_volume_m):
                     filtered_symbols.append(symbol)
+            
+            # Update universe counts for health reporting
+            self.last_universe_counts['total_grouped'] = len(data['results'])
+            self.last_universe_counts['prefiltered'] = len(filtered_symbols)
             
             logger.info(f"✅ Pre-filtered to {len(filtered_symbols)} stocks from {len(data['results'])} total")
             logger.info(f"   Price range: ${min_price}-${max_price}")
@@ -150,6 +224,62 @@ class RealBMSEngine:
             logger.error(f"Error in filtered fetch: {e}")
             logger.info("Falling back to full universe fetch...")
             return await self.fetch_all_active_stocks_fallback()
+    
+    async def intraday_snapshot_filter(self, symbols: List[str]) -> List[str]:
+        """Second-pass filter using real-time snapshot data"""
+        try:
+            start_time = time.perf_counter()
+            u = self.config['universe']
+            min_price, max_price = u['min_price'], u['max_price'] 
+            min_dv_m = u['min_dollar_volume_m']
+            
+            logger.info(f"Intraday snapshot filter for {len(symbols)} symbols...")
+            
+            self._rate_limit()
+            url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
+            response = self.session.get(url, params={"apikey": self.polygon_api_key}, timeout=60)
+            response.raise_for_status()
+            
+            by_ticker = {t["ticker"]: t for t in response.json().get("tickers", [])}
+            
+            kept = []
+            for sym in symbols:
+                row = by_ticker.get(sym)
+                if not row:
+                    continue
+                    
+                # Get current price from last trade or day data
+                last = row.get("lastTrade") or {}
+                day = row.get("day") or {}
+                price = last.get("p") or day.get("c")
+                vol = day.get("v")
+                
+                if not price or vol is None:
+                    continue
+                    
+                # Check current price and volume bounds
+                price = float(price)
+                vol = float(vol)
+                dv_m = (price * vol) / 1_000_000
+                
+                if min_price <= price <= max_price and dv_m >= min_dv_m:
+                    kept.append(sym)
+            
+            # Track timing and counts
+            self.stage_timings.intraday_ms = int((time.perf_counter() - start_time) * 1000)
+            self.last_universe_counts['intraday_pass'] = len(kept)
+            
+            logger.info(f"✅ Intraday pass: {len(kept)} symbols kept from {len(symbols)}")
+            logger.info(f"⏱️ Intraday filter time: {self.stage_timings.intraday_ms}ms")
+            
+            return kept
+            
+        except Exception as e:
+            logger.error(f"Intraday filter error: {e}")
+            # Fallback to original list if snapshot fails
+            self.stage_timings.intraday_ms = 0
+            self.last_universe_counts['intraday_pass'] = len(symbols)
+            return symbols
 
     async def fetch_all_active_stocks_fallback(self) -> List[str]:
         """Fallback: Fetch ALL active stock symbols from Polygon"""
@@ -190,12 +320,10 @@ class RealBMSEngine:
                     logger.info("No more results, universe fetch complete")
                     break
                 
-                # Extract symbols from this page
+                # Extract symbols from this page using proper filtering
                 page_symbols = [
                     ticker['ticker'] for ticker in data['results']
-                    if ticker.get('market') == 'stocks' and 
-                       ticker.get('active', True) and
-                       len(ticker['ticker']) <= 5  # Filter out complex tickers
+                    if _is_common_equity_ref(ticker)
                 ]
                 
                 all_symbols.extend(page_symbols)
@@ -400,116 +528,213 @@ class RealBMSEngine:
             logger.error(f"Error calculating BMS for {data.get('symbol', 'unknown')}: {e}")
             return None
     
-    async def discover_real_candidates(self, limit: int = 50) -> List[Dict]:
-        """REAL discovery - optimized with early filtering"""
+    async def _score_one_parallel(self, symbol: str, session: aiohttp.ClientSession, 
+                                 bucket: TokenBucket, semaphore: asyncio.Semaphore) -> Optional[Dict]:
+        """Score one symbol using parallel async requests"""
+        async with semaphore:
+            try:
+                # Get market data with rate limiting
+                await bucket.take()
+                url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/prev"
+                params = {'apikey': self.polygon_api_key}
+                
+                async with session.get(url, params=params, timeout=10) as response:
+                    if response.status != 200:
+                        return None
+                    
+                    data = await response.json()
+                    if not data.get('results') or len(data['results']) == 0:
+                        return None
+                    
+                    result = data['results'][0]
+                    
+                    # Convert to market data format
+                    price = float(result['c'])
+                    volume = int(result['v'])
+                    high = float(result['h'])
+                    low = float(result['l'])
+                    open_price = float(result['o'])
+                    dollar_volume = price * volume
+                    
+                    momentum_1d = ((price - open_price) / open_price) * 100 if open_price > 0 else 0
+                    atr_pct = ((high - low) / price) * 100 if price > 0 else 0
+                    volume_m = volume / 1_000_000
+                    rel_vol_estimate = max(1.0, volume_m / 10.0)
+                    
+                    market_data = {
+                        'symbol': symbol,
+                        'price': price,
+                        'volume': volume,
+                        'dollar_volume': dollar_volume,
+                        'high': high,
+                        'low': low,
+                        'open': open_price,
+                        'rel_volume_30d': rel_vol_estimate,
+                        'atr_pct': atr_pct,
+                        'momentum_1d': momentum_1d,
+                        'momentum_5d': 0.0,      # TODO: From precomputed cache
+                        'momentum_30d': 0.0,     # TODO: From precomputed cache
+                        'float_shares': 50_000_000,  # TODO: From precomputed cache
+                        'short_ratio': 2.0,      # TODO: From precomputed cache
+                        'market_cap': price * 50_000_000,
+                        'has_liquid_options': dollar_volume > 10_000_000,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+                    # Apply universe gates
+                    passes, _ = self._passes_universe_gates(market_data)
+                    if not passes:
+                        return None
+                    
+                    # Calculate BMS score
+                    candidate = self._calculate_real_bms_score(market_data)
+                    if candidate and candidate['action'] in ['TRADE_READY', 'MONITOR']:
+                        return candidate
+                    
+                    return None
+                    
+            except Exception as e:
+                logger.debug(f"Error scoring {symbol}: {e}")
+                return None
+
+    async def discover_real_candidates(self, limit: int = 50, enable_early_stop: bool = True) -> List[Dict]:
+        """REAL discovery - parallel processing with early stop"""
         try:
-            logger.info("🔍 Starting OPTIMIZED BMS discovery scan...")
-            start_time = time.time()
+            logger.info("🔍 Starting PARALLEL BMS discovery scan...")
+            total_start = time.perf_counter()
             
-            # Step 1: Get pre-filtered universe (price bounds + volume filtering)
+            # Step 1: Pre-filter universe (grouped aggregates)
+            prefilter_start = time.perf_counter()
             filtered_symbols = await self.fetch_filtered_stocks()
             if not filtered_symbols:
                 logger.error("Failed to fetch filtered stock universe")
                 return []
+            self.stage_timings.prefilter_ms = int((time.perf_counter() - prefilter_start) * 1000)
             
-            logger.info(f"📊 Processing {len(filtered_symbols)} PRE-FILTERED stocks through BMS pipeline...")
-            logger.info(f"⚡ OPTIMIZATION: Eliminated ~{5000 - len(filtered_symbols)} stocks at API level")
+            # Step 2: Intraday snapshot second-pass
+            intraday_symbols = await self.intraday_snapshot_filter(filtered_symbols)
             
-            # Statistics tracking
-            stats = {
-                'total_symbols': len(filtered_symbols),
-                'processed': 0,
-                'universe_rejected': 0,  # Should be minimal with pre-filtering
-                'scored_candidates': 0,
-                'api_errors': 0,
-                'rejection_reasons': {}
-            }
+            # Limit to universe_k if configured
+            universe_limit = self.config['universe']['universe_k']
+            if len(intraday_symbols) > universe_limit:
+                logger.info(f"Limiting universe to {universe_limit} symbols (from {len(intraday_symbols)})")
+                intraday_symbols = intraday_symbols[:universe_limit]
+            
+            logger.info(f"📊 Processing {len(intraday_symbols)} symbols with parallel scoring...")
+            
+            # Step 3: Parallel scoring with early stop
+            scoring_start = time.perf_counter()
+            
+            # Early stop configuration
+            early_stop_scan = self.config['performance']['early_stop_scan'] if enable_early_stop else len(intraday_symbols)
+            target_trade_ready = self.config['performance']['target_trade_ready']
+            concurrency = self.config['performance']['concurrency']
+            req_per_sec = self.config['performance']['req_per_sec']
             
             candidates = []
-            batch_size = self.config['limits']['batch_size']
+            scanned = 0
+            trade_ready_count = 0
             
-            # Process in batches to manage API limits
-            for i in range(0, len(filtered_symbols), batch_size):
-                batch = filtered_symbols[i:i+batch_size]
-                batch_num = (i // batch_size) + 1
-                total_batches = (len(filtered_symbols) + batch_size - 1) // batch_size
+            # Create async session with rate limiting
+            connector = aiohttp.TCPConnector(limit=concurrency * 2)
+            timeout = aiohttp.ClientTimeout(total=30)
+            
+            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+                bucket = TokenBucket(rate_per_sec=req_per_sec, capacity=req_per_sec)
+                semaphore = asyncio.Semaphore(concurrency)
                 
-                logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} symbols)...")
+                # Process symbols in chunks for progress tracking
+                chunk_size = min(100, len(intraday_symbols) // 10) if len(intraday_symbols) > 100 else len(intraday_symbols)
                 
-                # Process batch
-                for symbol in batch:
-                    try:
-                        stats['processed'] += 1
-                        
-                        # Get real market data (most should pass universe gates now)
-                        market_data = await self.get_real_market_data(symbol)
-                        if not market_data:
-                            stats['api_errors'] += 1
-                            continue
-                        
-                        # Apply remaining universe gates (should be minimal rejects)
-                        passes, reason = self._passes_universe_gates(market_data)
-                        if not passes:
-                            stats['universe_rejected'] += 1
-                            stats['rejection_reasons'][reason] = stats['rejection_reasons'].get(reason, 0) + 1
-                            continue
-                        
-                        # Calculate BMS score
-                        candidate = self._calculate_real_bms_score(market_data)
-                        if candidate and candidate['action'] in ['TRADE_READY', 'MONITOR']:
-                            candidates.append(candidate)
-                            stats['scored_candidates'] += 1
-                        
-                        # Progress update
-                        if stats['processed'] % 50 == 0:  # More frequent updates for smaller set
-                            elapsed = time.time() - start_time
-                            rate = stats['processed'] / elapsed
-                            logger.info(f"Progress: {stats['processed']}/{len(filtered_symbols)} ({rate:.1f}/sec), "
-                                      f"Found: {len(candidates)} candidates")
+                for i in range(0, min(early_stop_scan, len(intraday_symbols)), chunk_size):
+                    chunk_end = min(i + chunk_size, early_stop_scan, len(intraday_symbols))
+                    chunk = intraday_symbols[i:chunk_end]
                     
-                    except Exception as e:
-                        logger.error(f"Error processing {symbol}: {e}")
-                        stats['api_errors'] += 1
-                
-                # Smaller delay between batches for optimized flow
-                await asyncio.sleep(0.1)
+                    # Process chunk in parallel
+                    tasks = [
+                        self._score_one_parallel(symbol, session, bucket, semaphore)
+                        for symbol in chunk
+                    ]
+                    
+                    chunk_results = await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    # Process results
+                    for result in chunk_results:
+                        if isinstance(result, dict):  # Valid candidate
+                            candidates.append(result)
+                            if result['action'] == 'TRADE_READY':
+                                trade_ready_count += 1
+                    
+                    scanned += len(chunk)
+                    
+                    # Progress logging
+                    elapsed = time.perf_counter() - scoring_start
+                    rate = scanned / elapsed if elapsed > 0 else 0
+                    logger.info(f"Progress: {scanned}/{min(early_stop_scan, len(intraday_symbols))} "
+                              f"({rate:.1f}/sec) | Found: {len(candidates)} total, {trade_ready_count} trade-ready")
+                    
+                    # Early stop check
+                    if enable_early_stop and scanned >= early_stop_scan and trade_ready_count >= target_trade_ready:
+                        logger.info(f"🎯 Early stop triggered: {trade_ready_count} trade-ready candidates found")
+                        break
+                        
+                    # Small delay between chunks
+                    await asyncio.sleep(0.1)
             
-            # Sort by BMS score and limit results
+            self.stage_timings.scoring_ms = int((time.perf_counter() - scoring_start) * 1000)
+            
+            # Sort and limit results
             candidates.sort(key=lambda x: x['bms_score'], reverse=True)
-            final_candidates = candidates[:min(limit, self.config['limits']['max_candidates'])]
+            final_candidates = candidates[:limit]
             
-            # Log final statistics
-            elapsed = time.time() - start_time
-            logger.info(f"🎯 OPTIMIZED Discovery complete in {elapsed:.1f}s:")
-            logger.info(f"  ⚡ Pre-filtered: {len(filtered_symbols)} stocks (vs ~5000 total)")
-            logger.info(f"  📊 Processed: {stats['processed']}/{stats['total_symbols']} stocks")
+            # Calculate total timing
+            self.stage_timings.total_ms = int((time.perf_counter() - total_start) * 1000)
+            
+            # Final statistics
+            logger.info(f"🎯 PARALLEL Discovery complete in {self.stage_timings.total_ms}ms:")
+            logger.info(f"  ⚡ Pre-filtered: {len(filtered_symbols)} → {len(intraday_symbols)} stocks")
+            logger.info(f"  📊 Scanned: {scanned}/{len(intraday_symbols)} stocks")
             logger.info(f"  ✅ Found: {len(final_candidates)} candidates")
             logger.info(f"  🚀 Trade Ready: {len([c for c in final_candidates if c['action'] == 'TRADE_READY'])}")
             logger.info(f"  👁️ Monitor: {len([c for c in final_candidates if c['action'] == 'MONITOR'])}")
-            logger.info(f"  📈 Processing rate: {stats['processed'] / elapsed:.1f} stocks/sec")
-            
-            # Efficiency metrics
-            if elapsed > 0:
-                total_time_saved = ((5000 - len(filtered_symbols)) * 0.8)  # Estimated 0.8s per stock
-                logger.info(f"  ⏱️ Estimated time saved: {total_time_saved:.1f}s ({total_time_saved/60:.1f} min)")
-            
-            if stats['rejection_reasons']:
-                logger.info("  🚫 Remaining rejection reasons:")
-                for reason, count in sorted(stats['rejection_reasons'].items(), key=lambda x: x[1], reverse=True)[:5]:
-                    logger.info(f"    {reason}: {count}")
+            logger.info(f"  📈 Rate: {rate:.1f} stocks/sec")
+            logger.info(f"  🕐 Timings: prefilter={self.stage_timings.prefilter_ms}ms, "
+                      f"intraday={self.stage_timings.intraday_ms}ms, scoring={self.stage_timings.scoring_ms}ms")
             
             return final_candidates
             
         except Exception as e:
-            logger.error(f"Error in optimized discovery: {e}")
+            logger.error(f"Error in parallel discovery: {e}")
             return []
     
     def get_health_status(self) -> Dict:
-        """Get system health status"""
+        """Get system health status with detailed timings and counts"""
         return {
             'status': 'healthy',
-            'engine': 'Real BMS v1.0 - No Mocks',
-            'config': self.config,
+            'engine': 'Real BMS v1.1 - Parallel + Early Stop',
+            'price_bounds': {
+                'min': self.config['universe']['min_price'],
+                'max': self.config['universe']['max_price']
+            },
+            'dollar_volume_min_m': self.config['universe']['min_dollar_volume_m'],
+            'universe': {
+                'total_grouped': self.last_universe_counts.get('total_grouped', 0),
+                'prefiltered': self.last_universe_counts.get('prefiltered', 0),
+                'intraday_pass': self.last_universe_counts.get('intraday_pass', 0),
+                'universe_k_limit': self.config['universe']['universe_k']
+            },
+            'performance': {
+                'concurrency': self.config['performance']['concurrency'],
+                'req_per_sec': self.config['performance']['req_per_sec'],
+                'early_stop_scan': self.config['performance']['early_stop_scan'],
+                'target_trade_ready': self.config['performance']['target_trade_ready']
+            },
+            'timings_ms': {
+                'prefilter': self.stage_timings.prefilter_ms,
+                'intraday': self.stage_timings.intraday_ms,
+                'scoring': self.stage_timings.scoring_ms,
+                'total': self.stage_timings.total_ms
+            },
             'api_calls_last_minute': len(self.api_calls),
             'timestamp': datetime.now().isoformat()
         }

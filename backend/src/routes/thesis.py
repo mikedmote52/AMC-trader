@@ -359,23 +359,37 @@ async def squeeze_scanner():
         thesis_gen = ThesisGenerator()
         
         for symbol in watchlist_symbols:
-            # Mock squeeze metrics - would come from real data in production
-            mock_metrics = {
-                'symbol': symbol,
-                'squeeze_score': 0.85 if symbol == 'QUBT' else 0.45,
-                'volume_spike': 22.3 if symbol == 'QUBT' else 3.1,
-                'short_interest': 0.19 if symbol == 'QUBT' else 0.08,
-                'float': 25e6 if symbol == 'QUBT' else 45e6,
-                'price': 4.85 if symbol == 'QUBT' else 6.20,
-                'momentum': 'bullish' if symbol == 'QUBT' else 'neutral'
-            }
-            
-            squeeze_thesis = await thesis_gen.generate_squeeze_thesis(symbol, mock_metrics)
+            # Get real market data for the symbol
+            try:
+                from ..services.bms_engine_real import RealBMSEngine
+                import os
+                
+                polygon_key = os.getenv('POLYGON_API_KEY', '1ORwpSzeOV20X6uaA8G3Zuxx7hLJ0KIC')
+                bms_engine = RealBMSEngine(polygon_key)
+                
+                market_data = await bms_engine.get_real_market_data(symbol)
+                if not market_data:
+                    continue
+                
+                real_metrics = {
+                    'symbol': symbol,
+                    'squeeze_score': market_data.get('rel_volume_30d', 1.0) / 10.0,  # Simplified scoring
+                    'volume_spike': market_data.get('rel_volume_30d', 1.0),
+                    'short_interest': market_data.get('short_ratio', 0.0) / 10.0,
+                    'float': market_data.get('float_shares', 50_000_000),
+                    'price': market_data.get('price', 0.0),
+                    'momentum': 'bullish' if market_data.get('momentum_1d', 0) > 2 else 'neutral'
+                }
+                
+                squeeze_thesis = await thesis_gen.generate_squeeze_thesis(symbol, real_metrics)
+            except Exception as e:
+                logger.error(f"Error getting real data for {symbol}: {e}")
+                continue
             
             if squeeze_thesis.get('pattern_type') in ['VIGL_SQUEEZE', 'SQUEEZE_WATCH']:
                 squeeze_opportunities.append({
                     'symbol': symbol,
-                    'squeeze_score': mock_metrics['squeeze_score'],
+                    'squeeze_score': real_metrics['squeeze_score'],
                     'thesis': squeeze_thesis.get('thesis', ''),
                     'confidence': squeeze_thesis.get('confidence', 0.5),
                     'pattern_similarity': squeeze_thesis.get('pattern_match', {}).get('similarity', 0.0),

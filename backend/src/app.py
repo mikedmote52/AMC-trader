@@ -100,6 +100,10 @@ import asyncpg
 from prometheus_client import CollectorRegistry, Counter, make_asgi_app
 import redis.asyncio as redis
 
+# Discovery worker imports
+from backend.src.services.bms_engine_real import RealBMSEngine
+from backend.src.services.discovery_worker import start_background_worker
+
 DISCOVERY_TRIGGERED = Counter("amc_discovery_triggered_total", "manual discovery trigger calls")
 DISCOVERY_ERRORS = Counter("amc_discovery_errors_total", "manual discovery trigger errors")
 
@@ -109,9 +113,31 @@ app.mount("/metrics", metrics_app)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # On startup - you could initialize DB pools here
+    # On startup - initialize background discovery worker
+    try:
+        polygon_key = os.getenv('POLYGON_API_KEY')
+        redis_url = os.getenv('REDIS_URL')
+        
+        if polygon_key and redis_url:
+            bms_engine = RealBMSEngine(polygon_key)
+            await start_background_worker(bms_engine, redis_url)
+            log.info("✅ Background discovery worker started")
+        else:
+            log.warning("⚠️ Background worker not started - missing POLYGON_API_KEY or REDIS_URL")
+    except Exception as e:
+        log.error(f"❌ Failed to start background worker: {e}")
+    
     yield
+    
     # On shutdown
+    try:
+        from backend.src.services.discovery_worker import get_worker
+        worker = get_worker()
+        if worker:
+            worker.stop()
+            log.info("🛑 Background discovery worker stopped")
+    except Exception as e:
+        log.error(f"Error stopping worker: {e}")
 
 app.lifespan = lifespan
 
