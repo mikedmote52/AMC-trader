@@ -32,6 +32,31 @@ async def get_candidates(
     Replaces: /discovery/contenders, /discovery/squeeze-candidates
     Returns: Clean candidate list with BMS scores and cache metadata
     """
+    return await _get_candidates_impl(limit, action_filter, force_refresh)
+
+@router.get("/contenders")  
+async def get_contenders_alias(
+    limit: int = Query(20, description="Maximum number of contenders to return"),
+    action_filter: Optional[str] = Query(None, description="Filter by action: TRADE_READY, MONITOR"),
+    force_refresh: bool = Query(False, description="Force fresh discovery (bypasses cache)")
+):
+    """
+    Compatibility alias for /candidates endpoint
+    Maintains backward compatibility with existing frontend code
+    """
+    return await _get_candidates_impl(limit, action_filter, force_refresh)
+
+async def _get_candidates_impl(
+    limit: int = 20,
+    action_filter: Optional[str] = None,
+    force_refresh: bool = False
+):
+    """
+    Get current BMS candidates - returns cached results for speed
+    
+    Replaces: /discovery/contenders, /discovery/squeeze-candidates
+    Returns: Clean candidate list with BMS scores and cache metadata
+    """
     try:
         worker = get_worker()
         
@@ -238,9 +263,9 @@ async def health_check():
                 'age_seconds': worker_health.get('cache_age_seconds')
             },
             'config_summary': {
-                'scoring_weights': health_status['config']['weights'],
-                'thresholds': health_status['config']['thresholds'],
-                'action_levels': health_status['config']['scoring']
+                'scoring_weights': health_status.get('config', {}).get('weights', {}),
+                'thresholds': health_status.get('config', {}).get('thresholds', {}),
+                'action_levels': health_status.get('config', {}).get('scoring', {})
             },
             'time': datetime.utcnow().isoformat() + 'Z'
         }
