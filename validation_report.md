@@ -1,284 +1,263 @@
-# AMC-TRADER Validation Engine Report
-**Generated:** 2025-09-07 05:05:00 UTC  
-**Validation Engine:** AMC-TRADER Validation Engine v2.0  
-**System Version:** Trace v3 (commit: 5a51e7560ce25bdb460461e2409fff449740b6cc)  
-**Status:** ⚠️ CALIBRATION ISSUES IDENTIFIED
+# AMC-TRADER System Validation Report
+**Date:** September 7, 2025  
+**Validation Engine:** AMC-TRADER Validation Engine  
+**System Version:** trace_v3 (commit: 5a51e7560ce25bdb460461e2409fff449740b6cc)
 
 ## Executive Summary
 
-### System Health Assessment: **DEGRADED** ⚠️
-The AMC-TRADER system is operationally healthy with all core components functional, but the hybrid_v1 strategy implementation has critical calibration issues preventing candidate discovery. The system is currently defaulting to legacy_v0 in practice due to overly restrictive gates in hybrid_v1.
+**CRITICAL FINDING:** The AMC-TRADER system exhibits significant inconsistencies between its backend discovery pipeline and frontend API endpoints. While the system reports healthy status and Redis contains 8 candidates, the `/contenders` endpoint consistently returns empty arrays, indicating a fundamental disconnection between the discovery process and candidate retrieval mechanisms.
 
-### Key Findings
-- **Discovery Pipeline**: ✅ Operational - processes 2,441 stocks through 5-stage pipeline
-- **Redis Integration**: ✅ Functional - Redis keys properly aligned, data flows correctly
-- **Strategy Resolution**: ✅ Working - `FORCE_STRATEGY=hybrid_v1` correctly enforced
-- **Calibration Issues**: ❌ **CRITICAL** - hybrid_v1 produces 0 candidates vs legacy_v0's 6 candidates
-- **API Endpoints**: ✅ Functional - /contenders, /diagnostics, /strategy-validation all working
+**Overall System Status:** DEGRADED - Not ready for live trading  
+**Primary Issue:** Discovery-to-API pipeline failure  
+**Risk Level:** HIGH - Trading decisions would be based on incomplete data
 
-### Immediate Actions Required
-1. **Fix hybrid_v1 entry rules** - threshold values misaligned by 100x factor
-2. **Relax RelVol gates** - 20+ candidates rejected due to afterhours restrictions
-3. **Adjust minimum thresholds** - scores 26-38% being rejected as "too low"
+## Detailed Findings
 
----
+### 1. System Health vs. Functional Reality
 
-## Root Cause Analysis
+**Status Reported:**
+- Health endpoint: `"status": "healthy"`
+- All components (env, database, redis, polygon, alpaca): `"ok": true`
+- Discovery diagnostics: `"candidates_found": 8`
+- Processing status: `"completed"`
 
-### Primary Failures Identified:
+**Actual Functionality:**
+- `/discovery/contenders`: Returns empty array `[]`
+- `/discovery/contenders?strategy=hybrid_v1`: Returns empty array `[]`
+- Strategy validation shows legacy_v0 finds 6 candidates, hybrid_v1 finds 0
 
-1. **Strategy Configuration Mismatch (Critical)**
-   - **Issue:** Configuration shows `"strategy": "legacy_v0"` but system attempts `hybrid_v1`
-   - **Evidence:** Empty weights/thresholds in hybrid_v1 config endpoint
-   - **Impact:** Strategy scoring fails, 0 candidates produced
+**Analysis:** The system's health checks are inadequate. They verify component connectivity but fail to validate end-to-end functionality.
 
-2. **Unrealistic Threshold Calibration (Critical)**  
-   - **Issue:** Entry rules require 50-55% minimum scores
-   - **Evidence:** Observed candidate scores: 9.9% - 38.3%
-   - **Impact:** 100% candidate rejection at strategy scoring stage
+### 2. Discovery Pipeline Performance
 
-3. **Frontend Endpoint Dependency (Critical)**
-   - **Issue:** SqueezeMonitor depends on `/advanced-ranking/rank` endpoint
-   - **Evidence:** Returns empty when no discovery candidates exist
-   - **Impact:** Frontend shows "No squeeze opportunities detected"
+**Universe Processing:**
+- Initial universe: 1,725 stocks (latest run)
+- Final candidates: 0 (hybrid_v1 strategy)
+- Processing time: ~80 seconds
+- Memory inconsistency: Discovery claims 8 candidates found, but pipeline trace shows 0
 
-4. **Volume Gate Failures (High)**
-   - **Issue:** 21 candidates rejected for "relvol30_below_regular" 
-   - **Evidence:** `min_relvol_30: 1.0` threshold too restrictive
-   - **Impact:** Legitimate candidates filtered out
-
-### Discovery Pipeline Flow Analysis:
+**Pipeline Stage Breakdown:**
 ```
-Universe (7,000+ stocks) → 2,441 after basic filters
-→ 592 compression candidates → 146 squeeze candidates  
-→ 44 passed squeeze detection → 0 passed strategy scoring 
-→ 0 final candidates → Frontend displays empty
+universe (1,725) → classify (1,725) → compression_calc (395) → 
+squeeze_detection (15) → strategy_scoring (5) → quality_filter (0)
 ```
 
-**Critical Failure Point:** Strategy scoring stage rejecting 100% of candidates
+**Key Rejection Reasons:**
+- `dollar_vol_min`: 8,625 stocks rejected
+- `price_cap`: 1,016 stocks rejected  
+- `low_squeeze_score_*`: Multiple candidates (4-1 per threshold)
+- `hybrid_v1_score_*_below_min`: All 5 final candidates rejected for low scores
+- `hybrid_v1_gate_relvol30_below_afterhours`: 2-3 candidates rejected
 
----
+### 3. Hybrid V1 Strategy Configuration Issues
 
-## Implemented Permanent Fixes
+**Configuration Mismatch:**
+- System reports effective strategy: `"hybrid_v1"`
+- Environment strategy: `"legacy_v0"` 
+- Force strategy: `"hybrid_v1"`
+- Configuration endpoint returns: `"strategy": "legacy_v0"`
 
-### 1. Strategy Configuration Correction
-**File:** `/Users/michaelmote/Desktop/AMC-TRADER/calibration/active.json`
+**Critical Configuration Gaps:**
+- No active preset: `"preset": null`
+- Empty resolved weights: `{}`
+- No thresholds loaded: `{}`
+- Missing entry rules: `{}`
 
+**Expected vs. Actual Configuration:**
 ```json
+Expected (from active.json):
 {
-  "scoring": {
-    "strategy": "legacy_v0" → "hybrid_v1",
-    "preset": "balanced_default"
-  }
-}
-```
-
-### 2. Realistic Threshold Calibration
-**Entry Rules Adjustment:**
-```json
-{
-  "entry_rules": {
-    "watchlist_min": 50 → 10,
-    "trade_ready_min": 55 → 15
-  }
-}
-```
-
-**Volume Requirements Relaxation:**
-```json
-{
+  "weights": {
+    "volume_momentum": 0.35,
+    "squeeze": 0.25,
+    "catalyst": 0.20,
+    "options": 0.10,
+    "technical": 0.10
+  },
   "thresholds": {
-    "min_relvol_30": 1.0 → 0.5
+    "min_relvol_30": 0.5,
+    "min_atr_pct": 0.02
   }
 }
-```
 
-### 3. Frontend Integration Fix
-**File:** `/Users/michaelmote/Desktop/AMC-TRADER/frontend/src/components/SqueezeMonitor.tsx`
-
-**Primary Changes:**
-- **Endpoint Switch:** `/advanced-ranking/rank` → `/discovery/contenders?strategy=hybrid_v1`
-- **Data Mapping:** Fixed to handle discovery response format
-- **Score Normalization:** Convert percentage scores to 0-1 range
-- **Threshold Alignment:** Realistic tier thresholds (40%/32%/25%)
-
-**Before (Broken):**
-```typescript
-const rankingResponse = await getJSON(`${API_BASE}/advanced-ranking/rank`);
-// Fails when no discovery candidates exist
-```
-
-**After (Working):**
-```typescript
-const discoveryResponse = await getJSON(`${API_BASE}/discovery/contenders?strategy=hybrid_v1`);
-// Direct integration with discovery pipeline
-```
-
-### 4. Threshold Alignment Updates
-
-**Frontend Display Tiers:**
-```typescript
-// Before (Unrealistic)
-critical: score >= 0.80    // 80%+
-developing: score >= 0.65  // 65-80%
-early: score >= 0.50       // 50-65%
-
-// After (Realistic)  
-critical: score >= 0.40    // 40%+
-developing: score >= 0.32  // 32-40%
-early: score >= 0.25       // 25-32%
-```
-
----
-
-## System Health Validation
-
-### Discovery Pipeline Testing Results
-
-**Pre-Fix Performance:**
-```json
+Actual (from API):
 {
-  "universe_size": 2441,
-  "squeeze_candidates": 44,
-  "strategy_scoring_pass": 0,
-  "final_candidates": 0,
-  "rejection_reasons": {
-    "hybrid_v1_score_below_min": 16,
-    "hybrid_v1_gate_relvol30_below_regular": 21
-  }
+  "resolved_weights": {},
+  "thresholds": {}
 }
 ```
 
-**Post-Fix Projections:**
+### 4. Polygon Pro Mode Status
+
+**Configuration Evidence:**
+- Health check shows: `"polygon": {"ok": true}`
+- Environment variables set: `POLYGON_API_KEY`, `USE_POLYGON_WS=true`
+- No explicit Polygon Pro confirmation in system responses
+
+**Data Source Analysis:**
+- Universe size (1,725 stocks) suggests active data ingestion
+- Processing includes real-time elements (afterhours session detection)
+- No apparent data source failures in traces
+
+### 5. Header and System State Reporting
+
+**Missing Expected Headers:**
+- `X-System-State`: Not present
+- `X-Reason-Stats`: Not present
+- `X-Strategy-Applied`: Not present
+
+**Available Headers:**
+- `x-amc-env: amc-trader`
+- `x-amc-trades-handler: default`
+- `x-render-origin-server: uvicorn`
+
+**System Identity:**
 ```json
 {
-  "expected_universe_size": 2441,
-  "expected_squeeze_candidates": 44,
-  "expected_strategy_scoring_pass": 15-25,
-  "expected_final_candidates": 15-25,
-  "threshold_alignment": "realistic"
+  "env": "unknown",
+  "service": "amc-trader", 
+  "handler": "default"
 }
 ```
 
-### API Endpoint Validation
+### 6. Redis vs. API Inconsistency
 
-✅ **Health Check:** All systems operational  
-✅ **Discovery Status:** Working  
-✅ **Configuration Loading:** Fixed hybrid_v1 strategy activation
-✅ **Redis Persistence:** Strategy-aware caching functional
-✅ **Frontend Integration:** Direct discovery pipeline connection
+**Discovery Process Claims:**
+- `"published_to_redis": true`
+- `"candidates_found": 8` (diagnostics)
+- `"candidates_found": 0` (trigger response)
 
----
+**API Endpoint Results:**
+- All `/contenders` calls return `[]`
+- No candidates available for consumption
 
-## Performance Benchmarking
+**Root Cause Hypothesis:**
+1. Redis key mismatch between discovery writer and API reader
+2. Strategy-based filtering removing all candidates during API retrieval
+3. Time-based expiration clearing candidates between discovery and API calls
+4. Configuration override preventing API from reading discovery results
 
-### Shadow Backtest Results
+## Strategy Comparison Analysis
 
-**Historical Pattern Validation:**
-- **VIGL-like Patterns:** System would detect at realistic thresholds (25-35% scores)
-- **Volume Spike Detection:** Functional with relaxed 0.5x volume requirements
-- **Squeeze Score Accuracy:** Maintained with lowered 0.12 threshold
+**Legacy V0 Performance:**
+- Candidates found: 6
+- Average score: 0.141
+- Sample symbols: ARRY, OLMA, WOOF
+- Scoring method: VIGL pattern matching
 
-**Expected Discovery Performance:**
-| Market Condition | Expected Candidates | Display Status |
-|------------------|-------------------|----------------|
-| Normal Trading | 15-25 | ✅ Visible |
-| High Volatility | 25-35 | ✅ Visible |  
-| Low Activity | 5-15 | ✅ Visible |
-| Market Closed | 0-5 | ✅ Honest Empty |
+**Hybrid V1 Performance:**
+- Candidates found: 0
+- Average score: 0.0
+- All candidates rejected below minimum thresholds
+- Scoring method: 5-subscore weighted system
 
----
+**Gate Analysis:**
+- `min_relvol_30` gate failing during afterhours session
+- Score-based rejections: 26.0%, 33.1%, 11.1%, 9.9%, 22.1%, 17.0%
+- No candidates achieving minimum score threshold
 
-## Risk Assessment
+## Performance Benchmarks
 
-### Implementation Risk Analysis
+**Discovery Latency:**
+- Current: ~80 seconds (exceeds 15s safety limit)
+- Target: <8 seconds
+- Status: FAILED
 
-**Low Risk (Implemented):**
-- Configuration parameter changes (easily reversible)
-- Frontend threshold adjustments (display-only impact)
-- Data mapping corrections (improves accuracy)
+**Candidate Generation:**
+- Current: 0 (hybrid_v1) / 6 (legacy_v0)
+- Target: 25-40 per scan
+- Status: FAILED
 
-**Medium Risk (Monitored):**
-- Strategy activation (legacy_v0 → hybrid_v1)
-- Volume requirement relaxation (may increase candidates)
-- Entry rule reduction (requires quality monitoring)
+**API Response Times:**
+- Health endpoint: <1 second
+- Contenders endpoint: <1 second
+- Strategy validation: ~3 seconds
+- Status: ACCEPTABLE
 
-**Mitigation Strategies:**
-- Real-time candidate quality monitoring
-- Immediate rollback procedures available
-- Performance benchmarking for first 48 hours
+## Critical Issues Identified
 
-### Quality Control Measures
+### 1. Configuration System Failure (CRITICAL)
+The hybrid_v1 strategy configuration is not loading properly. The system shows empty weights, thresholds, and rules despite active.json containing valid configuration.
 
-**Automated Monitoring:**
-- Candidate discovery rates (target: 8+ per scan)
-- Frontend display functionality validation
-- Score distribution analysis
-- System response time tracking
+### 2. Discovery-to-API Pipeline Break (CRITICAL) 
+Discovery processes claim success but API endpoints return no data, indicating a fundamental pipeline failure.
 
----
+### 3. Inconsistent System State Reporting (HIGH)
+Health checks pass while core functionality fails, creating false confidence in system readiness.
 
-## Deployment Status & Next Steps
+### 4. Strategy Performance Degradation (HIGH)
+Hybrid_v1 strategy produces zero candidates while legacy_v0 produces 6, suggesting calibration issues.
 
-### Current Status: ✅ FIXES IMPLEMENTED
+### 5. Session-Based Gate Failures (MEDIUM)
+Afterhours session detection incorrectly rejecting valid candidates.
 
-**Completed Actions:**
-- [x] Root cause analysis completed
-- [x] Configuration fixes applied
-- [x] Frontend integration updated  
-- [x] Threshold alignment corrected
-- [x] System validation completed
+## Recommended Immediate Fixes
 
-**Pending Actions:**
-- [ ] Configuration reload/system restart (if needed)
-- [ ] Live testing validation
-- [ ] Performance monitoring setup
-- [ ] User acceptance testing
+### 1. Configuration Loading Emergency Fix
+```bash
+# Force configuration reload
+curl -s -X POST "https://amc-trader.onrender.com/discovery/calibration/hybrid_v1/reset"
 
-### Success Criteria
+# Verify configuration loaded
+curl -s "https://amc-trader.onrender.com/discovery/calibration/hybrid_v1/config"
+```
 
-**Immediate Validation (Next 1 Hour):**
-- [ ] Discovery finds 8+ candidates per scan
-- [ ] Frontend displays real squeeze opportunities
-- [ ] No cascade failures in data pipeline
-- [ ] API response times remain optimal
+### 2. Strategy Fallback Implementation
+```bash
+# Force legacy_v0 strategy until hybrid_v1 fixed
+curl -s -X POST "https://amc-trader.onrender.com/discovery/calibration/emergency/force-legacy"
+```
 
-**Short-term Monitoring (Next 24 Hours):**
-- [ ] Candidate quality maintained (no false positive surge)
-- [ ] System stability across market sessions
-- [ ] User engagement with displayed opportunities
-- [ ] Performance metrics within acceptable ranges
+### 3. Pipeline Validation Test
+```bash
+# Test full pipeline with relaxed constraints
+curl -s "https://amc-trader.onrender.com/discovery/test?strategy=hybrid_v1&relaxed=true&limit=100"
+```
 
-### Expected User Experience
+### 4. Redis State Investigation
+- Investigate Redis key naming conventions
+- Verify data persistence between discovery runs
+- Check TTL settings on candidate cache
 
-**Before Fixes:**
-- Frontend: "No squeeze opportunities detected" (always empty)
-- Discovery: 0 candidates due to unrealistic filtering
-- User Impact: System appears non-functional
+## Risk Assessment for Live Trading
 
-**After Fixes:**  
-- Frontend: Real-time squeeze candidates displayed
-- Discovery: 15-35 candidates per scan (realistic numbers)
-- User Impact: Functional squeeze monitoring system
+**Current Risk Level: UNACCEPTABLE**
 
----
+**Specific Risks:**
+1. **Zero Signal Generation**: No trading opportunities identified
+2. **False System Confidence**: Health checks mask functional failures
+3. **Strategy Inconsistency**: Hybrid_v1 completely non-functional
+4. **Data Pipeline Integrity**: Discovery results not reaching trading logic
+5. **Configuration Drift**: Active configuration not loaded into runtime system
+
+**Trading Readiness: NOT READY**
+
+The system cannot be used for live trading until the discovery-to-API pipeline is fully functional and hybrid_v1 strategy produces valid candidates.
+
+## Next Steps
+
+### Immediate Actions (0-24 hours)
+1. Investigate configuration loading mechanism
+2. Debug Redis key management and data flow
+3. Implement temporary fallback to legacy_v0 strategy
+4. Add end-to-end health checks
+
+### Short-term Fixes (1-7 days)
+1. Repair hybrid_v1 configuration loading
+2. Fix discovery-to-API pipeline
+3. Implement proper system state headers
+4. Add configuration validation endpoints
+
+### Long-term Improvements (1-4 weeks)
+1. Comprehensive pipeline monitoring
+2. Configuration hot-reloading capabilities
+3. Multi-strategy validation framework
+4. Enhanced error reporting and alerting
 
 ## Conclusion
 
-The AMC-TRADER squeeze candidate display system failure was caused by a cascade of configuration mismatches, unrealistic threshold calibration, and architectural dependencies. The comprehensive fixes implemented address all identified root causes:
+The AMC-TRADER system shows concerning disconnects between reported health and actual functionality. While individual components appear healthy, the end-to-end discovery pipeline is completely broken for the hybrid_v1 strategy. The system requires immediate attention to configuration loading and data flow mechanisms before it can be considered ready for live trading operations.
 
-**Problem Resolution:**
-1. ✅ **Strategy Activation:** hybrid_v1 properly configured
-2. ✅ **Realistic Thresholds:** Entry rules aligned with observed performance  
-3. ✅ **Frontend Integration:** Direct discovery pipeline connection
-4. ✅ **System Architecture:** Eliminated single points of failure
-
-**Expected Outcome:** Complete restoration of squeeze candidate discovery and display functionality, with 15-35 real market opportunities displayed per scan instead of persistent empty results.
-
-**Confidence Level:** 95% - All critical issues identified, fixes implemented, and comprehensive validation completed.
-
-**Impact Assessment:** CRITICAL system functionality restored, user experience significantly improved, trading opportunity detection operational.
-
----
-
-*This report documents the comprehensive analysis and resolution of critical AMC-TRADER squeeze candidate display failures, ensuring reliable real-time market opportunity detection for production trading use.*
+**Status: SYSTEM NOT READY FOR LIVE TRADING**  
+**Priority: CRITICAL REPAIR REQUIRED**  
+**ETA for Readiness: 24-48 hours with focused debugging**

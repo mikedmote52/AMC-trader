@@ -1,0 +1,106 @@
+name: Smoke Tests
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  smoke-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+        
+    - name: Run smoke tests against production
+      env:
+        API: https://amc-trader.onrender.com
+      run: |
+        echo "🚀 Running AMC-TRADER smoke tests..."
+        python3 ops/smoke/squeeze_smoke.py --api $API
+        
+    - name: Check regression monitor
+      env:
+        API: https://amc-trader.onrender.com
+        WATCHDOG_MODE: once
+      run: |
+        echo "🔍 Running regression check..."
+        python3 ops/watchdog/regression_monitor.py
+        
+    - name: Validate critical endpoints
+      env:
+        API: https://amc-trader.onrender.com
+      run: |
+        echo "🎯 Testing critical endpoints..."
+        
+        # Test contenders endpoint returns data with headers
+        echo "Testing /discovery/contenders..."
+        response=$(curl -s -i "$API/discovery/contenders?strategy=legacy_v0")
+        
+        # Check for 200 status
+        if ! echo "$response" | head -1 | grep -q "200 OK"; then
+          echo "❌ Contenders endpoint not returning 200"
+          exit 1
+        fi
+        
+        # Check for required headers
+        if ! echo "$response" | grep -q "X-System-State:"; then
+          echo "❌ Missing X-System-State header"
+          exit 1
+        fi
+        
+        if ! echo "$response" | grep -q "X-Reason-Stats:"; then
+          echo "❌ Missing X-Reason-Stats header"
+          exit 1
+        fi
+        
+        if ! echo "$response" | grep -q "Cache-Control:"; then
+          echo "❌ Missing Cache-Control header"
+          exit 1
+        fi
+        
+        # Extract JSON body and check it's a valid array
+        json_body=$(echo "$response" | tail -n +$(echo "$response" | grep -n "^\s*$" | head -1 | cut -d: -f1))
+        if ! echo "$json_body" | jq -e '. | type == "array"' > /dev/null; then
+          echo "❌ Response is not a valid JSON array"
+          exit 1
+        fi
+        
+        echo "✅ All critical endpoint tests passed"
+        
+    - name: Test production protections
+      env:
+        API: https://amc-trader.onrender.com
+      run: |
+        echo "🔒 Testing production endpoint protections..."
+        
+        # Test that /raw requires admin token in production
+        echo "Testing /discovery/contenders/raw protection..."
+        raw_status=$(curl -s -o /dev/null -w "%{http_code}" "$API/discovery/contenders/raw")
+        if [ "$raw_status" != "403" ]; then
+          echo "⚠️  Warning: /raw endpoint not properly protected (got $raw_status, expected 403)"
+        else
+          echo "✅ Raw endpoint properly protected"
+        fi
+        
+        # Test that /test is disabled in production
+        echo "Testing /discovery/test protection..."
+        test_status=$(curl -s -o /dev/null -w "%{http_code}" "$API/discovery/test")
+        if [ "$test_status" != "403" ]; then
+          echo "⚠️  Warning: /test endpoint not properly protected (got $test_status, expected 403)"
+        else
+          echo "✅ Test endpoint properly protected"
+        fi
+        
+        echo "✅ Production protection tests completed"

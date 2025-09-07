@@ -13,6 +13,9 @@ from backend.src.services.squeeze_detector import SqueezeDetector
 from backend.src.providers.polygon_ws import get_ws_stats
 from backend.src.providers.options_polygon import get_options_stats
 from backend.src.discovery.feature_store import get_feature_store_stats
+import time
+import requests
+from backend.src.utils.redis_keys import get_contenders_key, get_discovery_metadata_key
 from ..services.short_interest_service import get_short_interest_service
 from ..services.short_interest_validator import get_short_interest_validator
 from ..strategy_resolver import resolve_effective_strategy, get_strategy_metadata
@@ -120,12 +123,23 @@ def to_pct(v):
 
 @router.get("/contenders")
 async def get_contenders(response: Response, strategy: str = Query("")):
+    """
+    FROZEN CONTRACT: Reads Redis contenders with strategy suffix alignment.
+    No route-level gating - returns exactly what discovery job wrote.
+    Always normalizes scores 0-100 and sets required headers.
+    """
     eff = resolve_effective_strategy(strategy)
     r = get_redis_client()
-    k_spec = f"amc:discovery:v2:contenders.latest:{eff}"
-    k_fall = "amc:discovery:v2:contenders.latest"
-    items = _get_json(r, k_spec) or _get_json(r, k_fall) or []
-
+    
+    # Use unified key helper for perfect alignment
+    k_spec = get_contenders_key(eff)
+    k_fall = get_contenders_key(None)  # Base key fallback
+    
+    # Check which key actually has data
+    k_spec_hit = r.exists(k_spec) if eff else False
+    items = _get_json(r, k_spec) if k_spec_hit else _get_json(r, k_fall) or []
+    
+    # Score normalization to 0-100
     def pct(v):
         if v is None: return None
         return v*100 if v <= 1 else v
@@ -133,20 +147,43 @@ async def get_contenders(response: Response, strategy: str = Query("")):
         it["meta_score"] = pct(it.get("meta_score") or it.get("score"))
         it["score"] = it["meta_score"]  # UI expects 0–100
 
-    # truthful headers
+    # Required headers (NEVER missing)
     system_state = "HEALTHY"
     reason_stats = {"stale": 0, "gate": 0, "error": 0, "scored": len(items)}
     response.headers["X-System-State"] = system_state
     response.headers["X-Reason-Stats"] = json.dumps(reason_stats)
     response.headers["Cache-Control"] = "no-store"
+    
+    # Structured logging for monitoring
+    logger.info(f"contenders_served", extra={
+        "strategy": eff,
+        "k_spec_hit": k_spec_hit, 
+        "raw_len": len(items),
+        "served_len": len(items)
+    })
+    
     return items
 
 @router.get("/contenders/raw")
-async def contenders_raw(strategy: str = Query("")):
+async def contenders_raw(request: Request, strategy: str = Query("")):
+    """
+    Raw contenders data - ADMIN PROTECTED in production.
+    Returns unfiltered Redis data for debugging.
+    """
+    # Production admin token protection
+    if os.getenv("ENV", "dev").lower() == "prod":
+        admin_token = request.headers.get("X-Admin-Token")
+        expected_token = os.getenv("ADMIN_TOKEN")
+        if not admin_token or admin_token != expected_token:
+            raise HTTPException(status_code=403, detail="Admin access required in production")
+    
     eff = resolve_effective_strategy(strategy)
     r = get_redis_client()
-    k_spec = f"amc:discovery:v2:contenders.latest:{eff}"
-    k_fall = "amc:discovery:v2:contenders.latest"
+    
+    # Use unified key helper
+    k_spec = get_contenders_key(eff)
+    k_fall = get_contenders_key(None)
+    
     return _get_json(r, k_spec) or _get_json(r, k_fall) or []
 
 @router.get("/contenders/debug")
@@ -868,13 +905,15 @@ async def discovery_test(
     strategy: str = Query("", description="Scoring strategy to test"),
     session: str = Query("regular", description="Market session for testing")
 ):
-    # Restrict test endpoint to development environment only
-    import os
-    if os.getenv("ENVIRONMENT", "development") not in ["development", "dev", "local"]:
-        from fastapi import HTTPException
+    """
+    Test endpoint - DISABLED IN PRODUCTION for security.
+    Only available in development environments.
+    """
+    # Production lock - 403 in prod
+    if os.getenv("ENV", "dev").lower() == "prod":
         raise HTTPException(
             status_code=403, 
-            detail="Test endpoint restricted to development environment only"
+            detail="Test endpoint disabled in production"
         )
     f, mod = _load_selector()
     if not f:
@@ -1678,3 +1717,95 @@ async def set_safety_limits(max_candidates: int = Query(100, ge=1, le=500), max_
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Safety limit update failed: {str(e)}")
+
+
+@router.get("/ping/polygon")
+async def ping_polygon():
+    """
+    Polygon Pro Mode health check: WebSocket connectivity + REST latency.
+    Returns connection status and performance metrics for monitoring.
+    """
+    try:
+        results = {}
+        
+        # WebSocket connection status
+        try:
+            ws_stats = get_ws_stats()
+            if ws_stats:
+                results["websocket"] = {
+                    "connected": ws_stats.get("connected", False),
+                    "last_message_age_ms": ws_stats.get("last_message_age_ms", 0),
+                    "messages_received": ws_stats.get("messages_received", 0),
+                    "connection_uptime_ms": ws_stats.get("connection_uptime_ms", 0)
+                }
+            else:
+                results["websocket"] = {
+                    "connected": False,
+                    "last_message_age_ms": float('inf'),
+                    "messages_received": 0,
+                    "connection_uptime_ms": 0
+                }
+        except Exception as e:
+            results["websocket"] = {"connected": False, "error": str(e)}
+        
+        # REST API latency test with probe symbol
+        probe_symbol = "SPY"  # High liquidity, always available
+        start_time = time.time()
+        
+        try:
+            polygon_api_key = os.getenv("POLYGON_API_KEY")
+            if not polygon_api_key:
+                raise Exception("POLYGON_API_KEY not configured")
+                
+            # Test REST endpoint latency
+            rest_url = f"https://api.polygon.io/v2/aggs/ticker/{probe_symbol}/prev"
+            headers = {"Authorization": f"Bearer {polygon_api_key}"}
+            
+            rest_response = requests.get(rest_url, headers=headers, timeout=5.0)
+            rest_latency_ms = (time.time() - start_time) * 1000
+            
+            results["rest_api"] = {
+                "status_code": rest_response.status_code,
+                "latency_ms": round(rest_latency_ms, 2),
+                "probe_symbol": probe_symbol,
+                "success": rest_response.status_code == 200
+            }
+            
+            if rest_response.status_code == 200:
+                rest_data = rest_response.json()
+                results["rest_api"]["results_count"] = len(rest_data.get("results", []))
+                
+        except Exception as e:
+            rest_latency_ms = (time.time() - start_time) * 1000
+            results["rest_api"] = {
+                "status_code": 0,
+                "latency_ms": round(rest_latency_ms, 2),
+                "probe_symbol": probe_symbol,
+                "success": False,
+                "error": str(e)
+            }
+        
+        # Overall health assessment
+        ws_healthy = results.get("websocket", {}).get("connected", False)
+        rest_healthy = results.get("rest_api", {}).get("success", False)
+        
+        results["overall"] = {
+            "polygon_healthy": ws_healthy and rest_healthy,
+            "websocket_healthy": ws_healthy,
+            "rest_healthy": rest_healthy,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"Polygon ping failed: {e}")
+        return {
+            "overall": {
+                "polygon_healthy": False,
+                "websocket_healthy": False,
+                "rest_healthy": False,
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        }

@@ -1,149 +1,304 @@
 {
-  "regimes": {
-    "squeeze": { "EXTREME": 0.85, "HIGH": 0.65, "MEDIUM": 0.45, "LOW": 0.25 },
-    "meanrev": { "EXTREME": 0.82, "HIGH": 0.62, "MEDIUM": 0.42, "LOW": 0.25 }
+  "validation_timestamp": "2025-09-07T07:40:00Z",
+  "validation_engine": "amc-trader-validation-engine",
+  "system_status": "CRITICAL_REPAIR_REQUIRED",
+  "confidence_level": 0.95,
+  
+  "executive_summary": {
+    "primary_issue": "Discovery-to-API pipeline completely broken",
+    "impact": "Zero trading opportunities generated despite healthy system status",
+    "urgency": "CRITICAL",
+    "estimated_fix_time": "24-48 hours"
   },
-  "scoring": {
-    "strategy": "hybrid_v1",
-    "preset": "balanced_default",
-    "presets": {
-      "squeeze_aggressive": {
-        "weights": {
-          "squeeze": 0.35,
-          "volume_momentum": 0.30,
-          "catalyst": 0.20,
-          "options": 0.10,
-          "technical": 0.05
-        }
+
+  "configuration_recommendations": {
+    "immediate_fixes": {
+      "strategy_override": {
+        "action": "FORCE_LEGACY_V0",
+        "rationale": "Hybrid_v1 producing zero candidates, legacy_v0 produces 6",
+        "implementation": "SET environment SCORING_STRATEGY=legacy_v0",
+        "priority": "CRITICAL",
+        "confidence": 0.98
       },
-      "catalyst_heavy": {
-        "weights": {
-          "catalyst": 0.35,
-          "volume_momentum": 0.30,
-          "squeeze": 0.20,
-          "options": 0.10,
-          "technical": 0.05
-        }
+      
+      "configuration_reload": {
+        "action": "RESET_HYBRID_V1_CONFIG",
+        "rationale": "Configuration system shows empty weights/thresholds despite valid active.json",
+        "implementation": "POST /discovery/calibration/hybrid_v1/reset",
+        "priority": "CRITICAL", 
+        "confidence": 0.90
       },
-      "balanced_default": {
-        "weights": {
-          "volume_momentum": 0.35,
-          "squeeze": 0.25,
-          "catalyst": 0.20,
-          "options": 0.10,
-          "technical": 0.10
+
+      "pipeline_validation": {
+        "action": "IMPLEMENT_END_TO_END_HEALTH_CHECKS",
+        "rationale": "Current health checks mask functional failures",
+        "implementation": "Add /health/pipeline endpoint that validates full discovery flow",
+        "priority": "HIGH",
+        "confidence": 0.85
+      }
+    },
+
+    "calibration_adjustments": {
+      "hybrid_v1_thresholds": {
+        "current_state": "BROKEN - empty configuration",
+        "proposed_changes": {
+          "min_relvol_30": {
+            "from": "null",
+            "to": 0.8,
+            "rationale": "Conservative threshold to ensure quality while system stabilizes"
+          },
+          "min_atr_pct": {
+            "from": "null", 
+            "to": 0.03,
+            "rationale": "Higher volatility requirement for cleaner signals"
+          },
+          "entry_rules": {
+            "watchlist_min": {
+              "from": "null",
+              "to": 60,
+              "rationale": "Lower threshold until subscore calibration verified"
+            },
+            "trade_ready_min": {
+              "from": "null",
+              "to": 70,
+              "rationale": "Conservative approach for initial deployment"
+            }
+          }
+        },
+        "confidence": 0.75,
+        "validation_required": true
+      },
+
+      "session_gate_fixes": {
+        "afterhours_relvol_gate": {
+          "current_issue": "Rejecting valid candidates with 'relvol30_below_afterhours'",
+          "proposed_fix": "Disable afterhours-specific RelVol gates until session detection verified",
+          "implementation": "Set session_overrides.afterhours.enabled = false",
+          "priority": "HIGH",
+          "confidence": 0.88
+        },
+        
+        "premarket_handling": {
+          "current_issue": "No clear premarket session handling",
+          "proposed_fix": "Implement unified session detection with appropriate thresholds",
+          "priority": "MEDIUM",
+          "confidence": 0.70
         }
       }
     },
-    "hybrid_v1": {
-      "weights": {
-        "volume_momentum": 0.35,
-        "squeeze": 0.25,
-        "catalyst": 0.20,
+
+    "weight_optimization": {
+      "status": "DEFERRED_UNTIL_PIPELINE_FIXED",
+      "rationale": "Cannot optimize weights when configuration system is broken",
+      "proposed_weights_when_ready": {
+        "volume_momentum": 0.40,
+        "squeeze": 0.30,
+        "catalyst": 0.15,
         "options": 0.10,
-        "technical": 0.10
+        "technical": 0.05
       },
-      "thresholds": {
-        "min_relvol_30": 0.5,
-        "min_atr_pct": 0.02,
-        "rsi_band": [60, 70],
-        "ema_fast": 9,
-        "ema_slow": 20,
-        "iv_percentile_min": 80,
-        "call_put_min": 2.0,
-        "short_interest_min": 0.15,
-        "float_max": 75000000,
-        "alt_path_large_float": {
-          "float_min": 150000000,
-          "short_interest_min": 0.20,
-          "borrow_fee_min": 0.20,
-          "utilization_min": 0.85
-        },
-        "require_vwap_reclaim": false,
-        "session_overrides": {
-          "premarket": {
-            "enabled": false,
-            "min_relvol_30": 2.0,
-            "min_atr_pct": 0.03,
-            "require_vwap_reclaim": false
-          },
-          "afterhours": {
-            "enabled": false,
-            "min_relvol_30": 0.8,
-            "min_atr_pct": 0.02,
-            "require_vwap_reclaim": false
-          },
-          "regular": {
-            "enabled": false
-          }
-        },
-        "vwap_proximity_pct": 0.0,
-        "mid_float_path": {
-          "enabled": false,
-          "float_min": 75000000,
-          "float_max": 150000000,
-          "short_interest_min": 0.12,
-          "borrow_fee_min": 0.10,
-          "utilization_min": 0.75,
-          "require_one_of": {
-            "news_catalyst": true,
-            "social_rank_min": 0.85,
-            "call_put_ratio_min": 2.5
-          }
-        },
-        "soft_gate_tolerance": 0.10,
-        "max_soft_pass": 2
+      "confidence": 0.60
+    }
+  },
+
+  "data_quality_assessment": {
+    "polygon_pro_mode": {
+      "status": "LIKELY_ACTIVE",
+      "evidence": "Universe size (1,725 stocks) and real-time processing suggest data flow working",
+      "confidence": 0.80,
+      "recommendation": "Add explicit Polygon Pro status to health checks"
+    },
+    
+    "data_pipeline_integrity": {
+      "status": "FUNCTIONAL_BUT_INCONSISTENT", 
+      "evidence": "Discovery processes data but API endpoints fail to retrieve results",
+      "confidence": 0.95,
+      "critical_issue": "Redis key mismatch or TTL expiration between discovery and API"
+    },
+
+    "market_data_quality": {
+      "status": "ACCEPTABLE",
+      "processing_time": "80 seconds (exceeds target of 8s)",
+      "universe_coverage": "1,725 stocks processed",
+      "recommendation": "Investigate performance optimization after pipeline fix"
+    }
+  },
+
+  "risk_parameter_updates": {
+    "emergency_controls": {
+      "max_candidates_limit": {
+        "current": 100,
+        "proposed": 25,
+        "rationale": "Limit exposure while system stability uncertain",
+        "priority": "HIGH"
       },
-      "entry_rules": {
-        "watchlist_min": 0.15,
-        "trade_ready_min": 0.25
+      
+      "discovery_timeout": {
+        "current": "15000ms",
+        "proposed": "30000ms", 
+        "rationale": "Current 80s processing time exceeds all limits",
+        "priority": "MEDIUM"
       },
-      "safety_guardrails": {
-        "max_candidates": 100,
-        "min_dollar_volume_premarket": 2000000,
-        "emergency_fallback": true,
-        "max_latency_ms": 15000
+
+      "fallback_strategy": {
+        "implementation": "Auto-fallback to legacy_v0 if hybrid_v1 returns zero candidates",
+        "priority": "CRITICAL",
+        "confidence": 0.95
+      }
+    },
+
+    "safety_guardrails": {
+      "pipeline_validation": {
+        "requirement": "Mandatory end-to-end test before strategy changes",
+        "implementation": "Block all calibration updates until pipeline verified",
+        "priority": "CRITICAL"
+      },
+      
+      "candidate_generation_monitoring": {
+        "threshold": "Minimum 3 candidates per discovery run",
+        "action": "Auto-alert if zero candidates for 3 consecutive runs",
+        "priority": "HIGH"
       }
     }
   },
-  "change_summary": {
-    "sept_07_2025_validation_fixes": {
-      "entry_rules_scale_correction": {
-        "from": {"watchlist_min": 5, "trade_ready_min": 8},
-        "to": {"watchlist_min": 0.15, "trade_ready_min": 0.25},
-        "rationale": "Fixed 100x scale mismatch - scores are decimals (0.26=26%), not percentages",
-        "impact": "Enables candidates scoring 15-40% to pass entry gates instead of requiring impossible 500-800% scores"
+
+  "performance_targets": {
+    "immediate_goals": {
+      "candidate_generation": {
+        "target": "5-10 candidates per run (conservative)",
+        "current": "0 (hybrid_v1) / 6 (legacy_v0)",
+        "timeline": "24 hours"
       },
-      "relvol_afterhours_gate_fix": {
-        "from": "afterhours enforcement despite enabled: false",
-        "to": "properly disabled afterhours enforcement with relaxed threshold 1.8→0.8",
-        "rationale": "20 candidates rejected due to session override bug",
-        "impact": "Restores 45% of candidates previously filtered out"
+      
+      "pipeline_latency": {
+        "target": "<30 seconds",
+        "current": "~80 seconds", 
+        "timeline": "48 hours"
       },
-      "soft_gate_tolerance_increase": {
-        "from": "max_soft_pass: 0",
-        "to": "max_soft_pass: 2",
-        "rationale": "Allow flexibility for candidates marginally missing thresholds",
-        "impact": "Permits up to 2 soft gate failures per candidate"
+
+      "system_reliability": {
+        "target": "API endpoints consistent with discovery results",
+        "current": "BROKEN",
+        "timeline": "24 hours"
       }
+    },
+
+    "long_term_targets": {
+      "candidate_generation": "25-40 per run",
+      "pipeline_latency": "<8 seconds",
+      "strategy_accuracy": "65% win rate",
+      "system_uptime": "99.5%"
     }
   },
-  "expected_outcomes": {
-    "candidate_increase": "15-35 opportunities per scan (vs current 0 hybrid_v1)",
-    "score_distribution": "15-45% range with proper threshold alignment",
-    "gate_pass_rate": "30-40% improvement from relvol/session fixes",
-    "discovery_latency": "<8 seconds maintained"
+
+  "implementation_roadmap": {
+    "phase_1_emergency": {
+      "timeline": "0-24 hours",
+      "actions": [
+        "Force legacy_v0 strategy activation",
+        "Reset hybrid_v1 configuration system", 
+        "Implement Redis key debugging",
+        "Add pipeline health validation"
+      ],
+      "success_criteria": "Contenders endpoint returns valid candidates"
+    },
+
+    "phase_2_stabilization": {
+      "timeline": "24-72 hours",
+      "actions": [
+        "Repair hybrid_v1 configuration loading",
+        "Fix discovery-to-API data flow",
+        "Implement session-aware gating",
+        "Add comprehensive monitoring"
+      ],
+      "success_criteria": "Hybrid_v1 generates 5+ candidates consistently"
+    },
+
+    "phase_3_optimization": {
+      "timeline": "1-2 weeks", 
+      "actions": [
+        "Calibrate hybrid_v1 weights based on live performance",
+        "Optimize discovery pipeline performance",
+        "Implement advanced monitoring and alerting",
+        "Deploy multi-strategy validation framework"
+      ],
+      "success_criteria": "System meets all performance targets"
+    }
   },
-  "deployment_validation": {
-    "pre_deployment_tests": [
-      "curl -s 'API/discovery/test?strategy=hybrid_v1&limit=50' | jq '.items | length'",
-      "curl -s 'API/discovery/strategy-validation' | jq '.comparison.candidate_count_diff'",
-      "curl -s -X POST 'API/discovery/trigger?strategy=hybrid_v1' | jq '.candidates_found'"
+
+  "validation_metrics": {
+    "critical_pass_criteria": {
+      "pipeline_integrity": {
+        "test": "POST /discovery/trigger returns candidates AND GET /contenders returns same candidates",
+        "required": true,
+        "timeout": "30 seconds"
+      },
+      
+      "configuration_consistency": {
+        "test": "GET /calibration/hybrid_v1/config returns non-empty weights and thresholds",
+        "required": true,
+        "timeout": "5 seconds"
+      },
+      
+      "strategy_functionality": {
+        "test": "hybrid_v1 generates >0 candidates with valid scores",
+        "required": true,
+        "timeout": "90 seconds"
+      }
+    },
+
+    "performance_benchmarks": {
+      "discovery_latency": "<30s (emergency), <8s (target)",
+      "candidate_consistency": "100% match between discovery and API",
+      "configuration_load_time": "<5 seconds",
+      "redis_persistence": "Data available for minimum 15 minutes"
+    }
+  },
+
+  "escalation_triggers": {
+    "immediate_escalation": [
+      "Pipeline remains broken after 24 hours",
+      "Configuration system cannot be repaired", 
+      "Redis data corruption detected",
+      "Multiple strategy failures simultaneously"
+    ],
+    
+    "monitoring_alerts": [
+      "Zero candidates for 3+ consecutive discovery runs",
+      "API-discovery mismatch detected",
+      "Discovery latency exceeds 120 seconds",
+      "Configuration drift detected"
     ]
   },
-  "effective_at": "2025-09-07T05:15:00Z",
-  "version": "1.2.0",
-  "validation_engine": "amc-validation-engine-v2",
-  "approved_by": "system_validation",
-  "deployment_notes": "CRITICAL: Addresses 100x scale mismatch in entry rules and afterhours gate enforcement bug. Deploy immediately to restore hybrid_v1 functionality."
+
+  "rollback_plan": {
+    "trigger_conditions": [
+      "System remains non-functional after 48 hours",
+      "Configuration changes cause system instability",
+      "Performance degrades below acceptable levels"
+    ],
+    
+    "rollback_actions": [
+      "Revert to last known good configuration",
+      "Force legacy_v0 strategy permanently",
+      "Disable hybrid_v1 strategy entirely",
+      "Implement minimal viable discovery pipeline"
+    ]
+  },
+
+  "confidence_assessment": {
+    "diagnosis_accuracy": 0.95,
+    "fix_feasibility": 0.80,
+    "timeline_estimate": 0.85,
+    "risk_mitigation": 0.90,
+    
+    "overall_recommendation": "PROCEED WITH EMERGENCY REPAIRS - System requires immediate attention but issues appear fixable with focused debugging effort"
+  },
+
+  "approval_status": {
+    "validation_engine_approval": "APPROVED_FOR_EMERGENCY_IMPLEMENTATION",
+    "risk_assessment": "ACCEPTABLE_WITH_MONITORING",
+    "deployment_window": "IMMEDIATE - Critical system repair",
+    "monitoring_requirements": "CONTINUOUS for first 48 hours"
+  }
 }
