@@ -107,13 +107,13 @@ class RealBMSEngine:
                 'max_price': _float_env('BMS_PRICE_MAX', 100.0),
                 'min_dollar_volume_m': _float_env('BMS_MIN_DOLLAR_VOLUME_M', 10.0),
                 'require_liquid_options': os.getenv('BMS_REQUIRE_LIQUID_OPTIONS', 'true').lower() == 'true',
-                'universe_k': _int_env('BMS_UNIVERSE_K', 2500)
+                'universe_k': _int_env('BMS_UNIVERSE_K', 3000)  # Increased for more recall
             },
             'performance': {
                 'concurrency': _int_env('BMS_CONCURRENCY', 8),
                 'req_per_sec': _int_env('BMS_REQ_PER_SEC', 5),
                 'cycle_seconds': _int_env('BMS_CYCLE_SECONDS', 60),
-                'early_stop_scan': _int_env('BMS_EARLY_STOP_SCAN', 1200),
+                'early_stop_scan': _int_env('BMS_EARLY_STOP_SCAN', 1500),  # Increased for more coverage
                 'target_trade_ready': _int_env('BMS_TARGET_TRADE_READY', 25)
             },
             'weights': {
@@ -144,6 +144,8 @@ class RealBMSEngine:
         self.last_call_time = 0
         self.stage_timings = StageTimings()
         self.last_universe_counts = {'total_grouped': 0, 'prefiltered': 0, 'intraday_pass': 0}
+        self.last_scanned_count = 0
+        self.last_total_universe = 0
     
     def _rate_limit(self):
         """Enforce Polygon API rate limits"""
@@ -495,6 +497,15 @@ class RealBMSEngine:
                 (scores['risk_filter'] * weights['risk_filter'])
             )
             
+            # Explosive-bias bonus for June-July style winners
+            float_shares = data.get('float_shares', 50_000_000)
+            float_m = float_shares / 1_000_000
+            rel_vol = data.get('rel_volume_30d', 1.0)
+            
+            if float_m <= 50 and rel_vol >= 4.0:
+                bms += 4.0  # +4 point bonus for small float + high volume
+                logger.debug(f"Explosive bonus applied to {data['symbol']}: float={float_m:.1f}M, relvol={rel_vol:.1f}x")
+            
             # Determine action
             if bms >= self.config['scoring']['trade_ready_min']:
                 action = 'TRADE_READY'
@@ -666,6 +677,10 @@ class RealBMSEngine:
                                 trade_ready_count += 1
                     
                     scanned += len(chunk)
+                    
+                    # Update tracking for UI
+                    self.last_scanned_count = scanned
+                    self.last_total_universe = len(intraday_symbols)
                     
                     # Progress logging
                     elapsed = time.perf_counter() - scoring_start
