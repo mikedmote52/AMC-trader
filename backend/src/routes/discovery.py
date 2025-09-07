@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timezone
 from pydantic import BaseModel
 from backend.src.shared.redis_client import get_redis_client
+from backend.src.lib.redis_client import get_redis_keys
 from backend.src.services.squeeze_detector import SqueezeDetector
 from ..services.short_interest_service import get_short_interest_service
 from ..services.short_interest_validator import get_short_interest_validator
