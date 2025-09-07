@@ -190,8 +190,8 @@ app.include_router(trades_router)
 app.include_router(polygon_debug, prefix="/debug")
 
 # Include discovery, portfolio, learning, daily updates, thesis, analytics, and pattern memory routers
-from backend.src.routes import discovery as discovery_routes
-from backend.src.routes import calibration as calibration_routes
+from backend.src.routes import bms_discovery as discovery_routes
+# Remove calibration routes - not needed with unified BMS system
 from backend.src.routes import portfolio as portfolio_routes
 from backend.src.routes import learning as learning_routes
 from backend.src.routes import daily_updates as daily_updates_routes
@@ -207,7 +207,7 @@ from backend.src.routes import data_integrity as data_integrity_routes
 from backend.src.routes import advanced_ranking as advanced_ranking_routes
 
 app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery"])
-app.include_router(calibration_routes.router, prefix="/calibration", tags=["calibration"])
+# Calibration routes removed - unified BMS system
 app.include_router(advanced_ranking_routes.router, prefix="/advanced-ranking", tags=["advanced-ranking"])
 app.include_router(portfolio_routes.router, prefix="/portfolio", tags=["portfolio"])
 app.include_router(learning_routes.router, prefix="/learning", tags=["learning"])
@@ -216,7 +216,7 @@ app.include_router(daily_updates_routes.router, prefix="/daily-updates", tags=["
 app.include_router(thesis_routes.router, prefix="/thesis", tags=["thesis"])
 app.include_router(analytics_routes.router, prefix="/analytics", tags=["analytics"])
 app.include_router(performance_analytics_routes.router, prefix="/performance", tags=["performance-analytics"])
-app.include_router(data_quality_routes.router, prefix="/discovery", tags=["data-quality"])
+app.include_router(data_quality_routes.router, prefix="/data-quality", tags=["data-quality"])
 app.include_router(pattern_memory_routes.router, prefix="/pattern-memory", tags=["pattern-memory"])
 app.include_router(notification_routes.router, prefix="/notifications", tags=["notifications"])
 app.include_router(monitoring_routes.router, prefix="/monitoring", tags=["monitoring"])
@@ -237,9 +237,9 @@ async def compat_holdings():
 
 @app.get("/api/contenders")
 async def api_contenders():
-    # Non-breaking alias route - returns same data as /discovery/contenders  
-    from backend.src.routes.discovery import get_contenders
-    return await get_contenders()
+    # Non-breaking alias route - returns BMS candidates
+    from backend.src.routes.bms_discovery import get_candidates
+    return await get_candidates(limit=20)
 
 # Optional buy-now alias if the UI ever posts here:
 from fastapi import Body
