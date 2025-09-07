@@ -103,176 +103,61 @@ def _load_selector():
             continue
     return None, None
 
+def get_strategy_suffix(strategy: str = "") -> str:
+    """Get unified strategy suffix for Redis keys"""
+    effective_strategy = resolve_effective_strategy(strategy)
+    return f":{effective_strategy}" if effective_strategy else ""
+
+def to_pct(v):
+    """Convert score to percentage format (0-100)"""
+    if v is None:
+        return None
+    return v * 100 if v <= 1 else v
+
 @router.get("/contenders")
 async def get_contenders(
     request: Request,
     response: Response,
-    strategy: str = Query("", description="Scoring strategy: legacy_v0 or hybrid_v1"),
-    session: str = Query("regular", description="Market session: premarket, regular, afterhours")
+    strategy: str = Query("", description="Scoring strategy: legacy_v0 or hybrid_v1")
 ):
     """
-    PRODUCTION ENDPOINT: Returns live market data only with system state monitoring
-    Enforces data freshness, drops stale symbols, and provides diagnostic headers
+    Returns candidates from Redis exactly as stored by discovery job
+    No additional filtering - let job/UI handle thresholds
     """
     from datetime import datetime, timezone
-    import time
     
     # Set cache control headers
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    # Resolve effective strategy (production enforcement)
+    response.headers["Cache-Control"] = "no-store"
+    
+    # Get unified strategy suffix
+    suffix = get_strategy_suffix(strategy)
     effective_strategy = resolve_effective_strategy(strategy)
+    
+    # Use canonical Redis keys (same as writer)
+    from backend.src.lib.redis_client import get_redis_keys
+    keys = get_redis_keys(effective_strategy)
     
     r = get_redis_client()
     
-    # Strategy-aware Redis keys
-    strategy_suffix = f":{effective_strategy}" if effective_strategy and effective_strategy in ["legacy_v0", "hybrid_v1"] else ""
-    v2_cont_key = f"{V2_CONT}{strategy_suffix}"
-    v2_trace_key = f"{V2_TRACE}{strategy_suffix}"
-    v1_cont_key = f"{V1_CONT}{strategy_suffix}"
-    v1_trace_key = f"{V1_TRACE}{strategy_suffix}"
-    
-    # CRITICAL INTEGRITY CHECK: Validate discovery pipeline execution
-    trace = _get_json(r, v2_trace_key) or _get_json(r, v2_trace_key) or _get_json(r, V2_TRACE) or _get_json(r, V1_TRACE)
-    if trace:
-        initial_universe = trace.get("counts_in", {}).get("universe", 0)
-        
-        # CRITICAL: If initial universe is empty/tiny, discovery failed - return empty
-        if initial_universe < 100:
-            logger.error(f"❌ CRITICAL FAILURE: Initial universe only {initial_universe} stocks - discovery failed!")
-            logger.error("❌ Returning empty list to prevent serving stale/fake data")
-            return []
-    
-    # Check data freshness FIRST
-    status = _get_json(r, STATUS)
-    if status:
-        last_run = status.get('last_run')
-        if last_run:
-            try:
-                from datetime import datetime
-                last_run_time = datetime.fromisoformat(last_run.replace('Z', '+00:00'))
-                age_seconds = (datetime.now(timezone.utc) - last_run_time).total_seconds()
-                
-                # CRITICAL: Reject data older than 5 minutes
-                if age_seconds > 300:
-                    logger.warning(f"❌ Discovery data is {age_seconds:.0f}s old - TOO STALE! Returning empty.")
-                    return []
-            except:
-                pass
-    
-    # Get candidates but validate freshness (try strategy-specific first, then fallback)
-    items = _get_json(r, v2_cont_key) or _get_json(r, v1_cont_key) or _get_json(r, V2_CONT) or _get_json(r, V1_CONT)
+    # Try strategy-specific key first, then fallback
+    items = _get_json(r, keys['K_V2_SPEC']) or _get_json(r, keys['K_V2_FALL'])
     
     if not items:
-        logger.error("❌ No discovery data available - returning empty list")
-        return []
+        items = []
     
-    # CRITICAL DATA INTEGRITY: Check for contaminated fake data
-    contaminated_count = 0
+    # Normalize scores for UI compatibility  
     for item in items:
         if isinstance(item, dict):
-            si_data = item.get('short_interest_data', {})
-            # Count items with fake sector_fallback data
-            if si_data.get('source') == 'sector_fallback':
-                contaminated_count += 1
+            # Convert score to 0-100 format expected by UI
+            item["meta_score"] = to_pct(item.get("meta_score") or item.get("score"))
+            item["score"] = item["meta_score"]  # Legacy UI expects 'score' 0-100
     
-    # ABSOLUTE REJECTION: Never serve data with ANY fake short interest
-    if contaminated_count > 0:
-        logger.error(f"❌ CONTAMINATED DATA DETECTED: {contaminated_count}/{len(items)} items have fake sector_fallback data!")
-        logger.error("❌ ABSOLUTE REJECTION: Returning empty list to maintain data integrity")
-        return []
-    
-    # Validate we have real data, not stale fallback patterns
-    if len(items) == 33 or len(items) == 20:  # Suspicious - likely stale fallback data
-        logger.warning(f"⚠️ Detected suspicious data pattern ({len(items)} items) - verifying integrity...")
-        
-        # Additional integrity checks
-        fake_patterns = 0
-        for item in items:
-            if isinstance(item, dict):
-                # Check for fake 15% short interest pattern
-                si_data = item.get('short_interest_data', {})
-                if (si_data.get('percent', 0) == 0.15 and 
-                    si_data.get('confidence', 1) == 0.3):
-                    fake_patterns += 1
-        
-        # If >50% of data shows fake patterns, reject it
-        if fake_patterns > len(items) * 0.5:
-            logger.error(f"❌ FAKE DATA PATTERN: {fake_patterns}/{len(items)} items show 15%/0.3 fake pattern!")
-            logger.error("❌ INTEGRITY FAILURE: Returning empty list")
-            return []
-    
-    # Final validation: Ensure all items have real, verified data
-    validated_items = []
-    for item in items:
-        if isinstance(item, dict):
-            si_data = item.get('short_interest_data', {})
-            
-            # Only include items with real, verified short interest data
-            if (si_data.get('source') and 
-                si_data.get('source') not in ['sector_fallback', 'default_fallback'] and
-                si_data.get('confidence', 0) > 0.3):
-                
-                # Ensure score exists (0..100) and set confidence = score/100 if missing
-                if "score" not in item:
-                    item["score"] = 0
-                if "confidence" not in item:
-                    item["confidence"] = item["score"] / 100.0
-                    
-                validated_items.append(item)
-    
-    # Return only validated items with real data
-    if not validated_items:
-        logger.error("❌ NO REAL DATA: All items failed validation - returning empty list")
-        return []
-    
-    # Get current configuration for telemetry
-    try:
-        config = _load_calibration_config()
-        scoring_config = config.get("scoring", {})
-        preset_name = scoring_config.get("preset")
-        hybrid_weights = scoring_config.get("hybrid_v1", {}).get("weights", {})
-        weights_hash = hash(frozenset(hybrid_weights.items()))
-    except:
-        preset_name = None
-        weights_hash = None
-    
-    # Calculate thresholds hash for metadata
-    try:
-        thresholds = config.get("scoring", {}).get("hybrid_v1", {}).get("thresholds", {})
-        thresholds_hash = hash(frozenset(str(thresholds).encode()))
-    except:
-        thresholds_hash = None
-    
-    # Add telemetry metadata to response
-    response_data = {
-        "candidates": validated_items,
-        "count": len(validated_items),
-        "strategy": effective_strategy,
-        "filtered_from": len(items),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "meta": {
-            "strategy": effective_strategy,
-            "preset": preset_name,
-            "weights_hash": weights_hash,
-            "thresholds_hash": thresholds_hash,
-            "session": session,
-            "telemetry": {
-                "latency_ms": None,  # Will be calculated by caller
-                "score_distribution": {
-                    "min": min((item.get("score", 0) for item in validated_items), default=0),
-                    "max": max((item.get("score", 0) for item in validated_items), default=0),
-                    "avg": sum(item.get("score", 0) for item in validated_items) / len(validated_items) if validated_items else 0
-                }
-            }
-        }
-    }
-    
-    # Add system state headers for frontend monitoring
+    # System state assessment
     system_state = "HEALTHY"
-    reason_stats = {"stale": 0, "gate": 0, "error": 0, "scored": len(validated_items)}
+    reason_stats = {"stale": 0, "gate": 0, "error": 0, "scored": len(items)}
     
-    # Check for stale data
+    # Check data age
+    status = _get_json(r, keys.get('K_STATUS', STATUS))
     if status and status.get('last_run'):
         try:
             last_run_time = datetime.fromisoformat(status['last_run'].replace('Z', '+00:00'))
@@ -282,22 +167,49 @@ async def get_contenders(
         except:
             system_state = "DEGRADED"
     
-    if contaminated_count > 0:
-        system_state = "DEGRADED"
-        reason_stats["stale"] = contaminated_count
-    
-    # STRICT LIVE-DATA-ONLY ENFORCEMENT: Return empty array if DEGRADED
-    if system_state == "DEGRADED":
-        response_data = []
-        validated_items = []
-        logger.warning(f"🚫 DEGRADED system detected - returning empty candidates (stale: {contaminated_count}, age_check: {age_seconds if 'age_seconds' in locals() else 'N/A'})")
-    
-    # Set response headers
+    # Always set headers before return
     response.headers["X-System-State"] = system_state
     response.headers["X-Reason-Stats"] = json.dumps(reason_stats)
     
-    logger.info(f"✅ Serving {len(validated_items)} validated items with real data (filtered from {len(items)})")
-    return response_data
+    return items
+
+@router.get("/contenders/raw")
+async def get_contenders_raw(
+    request: Request,
+    strategy: str = Query("", description="Scoring strategy")
+):
+    """
+    Raw Redis view - returns candidates exactly as stored without any processing
+    """
+    effective_strategy = resolve_effective_strategy(strategy)
+    logger.info(f"🔍 RAW VIEW: strategy={effective_strategy}")
+    
+    r = get_redis_client()
+    
+    # Use same canonical keys as writer
+    keys = get_redis_keys(effective_strategy)
+    
+    # Try keys in priority order (same as contenders endpoint)
+    raw_data = None
+    key_used = None
+    for key_name, key in keys.items():
+        raw_data = _get_json(r, key)
+        if raw_data:
+            key_used = key
+            logger.info(f"🔍 RAW: Found {len(raw_data)} items in {key}")
+            break
+    
+    if not raw_data:
+        logger.warning("🔍 RAW: No data found in any Redis key")
+        raw_data = []
+    
+    return {
+        "raw_candidates": raw_data,
+        "count": len(raw_data),
+        "strategy": effective_strategy,
+        "redis_key_used": key_used,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 @router.get("/contenders/debug")
 async def debug_contenders(
