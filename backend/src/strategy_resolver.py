@@ -11,9 +11,9 @@ def resolve_effective_strategy(request_strategy: str = None, state=None) -> str:
     Resolve the effective strategy with production enforcement
     
     Priority:
-    1. Emergency override (15-min legacy fallback)
-    2. Hard force in production (FORCE_STRATEGY env)
-    3. Per-request override (staging only)
+    1. Query parameter (if valid) - ALWAYS respect user request
+    2. Emergency override (15-min legacy fallback)
+    3. Hard force in production (FORCE_STRATEGY env)
     4. Environment default
     
     Args:
@@ -24,19 +24,18 @@ def resolve_effective_strategy(request_strategy: str = None, state=None) -> str:
         Effective strategy: "hybrid_v1" or "legacy_v0"
     """
     
-    # 1) Emergency override wins (existing 15-min override)
+    # 1) Query parameter ALWAYS wins if valid - respect user intent
+    if request_strategy in {"hybrid_v1", "legacy_v0"}:
+        return request_strategy
+    
+    # 2) Emergency override (existing 15-min override)
     if _emergency_override_active():
         return "legacy_v0"
     
-    # 2) Hard force in production (Render)
+    # 3) Hard force in production (Render)
     force = os.getenv("FORCE_STRATEGY", "").strip()
     if force in {"hybrid_v1", "legacy_v0"}:
         return force
-    
-    # 3) Optional per-request override (for staging only)
-    allow_override = os.getenv("ALLOW_STRATEGY_OVERRIDE", "false").lower() == "true"
-    if allow_override and request_strategy in {"hybrid_v1", "legacy_v0"}:
-        return request_strategy
     
     # 4) Environment default (fallback)
     return os.getenv("SCORING_STRATEGY", "legacy_v0")

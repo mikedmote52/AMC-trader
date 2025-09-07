@@ -11,6 +11,21 @@ from datetime import datetime
 
 logger = structlog.get_logger()
 
+# CANONICAL Redis keys - single source of truth
+STRAT = os.getenv("SCORING_STRATEGY", "legacy_v0")
+
+def get_redis_keys(strategy: str = None):
+    """Get canonical Redis keys for the given strategy"""
+    strat = strategy or STRAT
+    return {
+        'K_V2_SPEC': f"amc:discovery:v2:contenders.latest:{strat}",
+        'K_V2_FALL': "amc:discovery:v2:contenders.latest",
+        'K_V1_SPEC': f"amc:discovery:contenders.latest:{strat}",
+        'K_V1_FALL': "amc:discovery:contenders.latest",
+        'K_STATUS': "amc:discovery:status",
+        'K_TRACE': f"amc:discovery:v2:trace.latest:{strat}"
+    }
+
 class RedisClient:
     """Singleton Redis client"""
     
@@ -65,22 +80,28 @@ class RedisClient:
             
             strategy = strategy or 'legacy_v0'
             
-            # Strategy-specific keys (new format expected by API readers)
-            v2_cont_key = f"amc:discovery:v2:contenders.latest:{strategy}"
-            v1_cont_key = f"amc:discovery:contenders.latest:{strategy}"
+            # Get canonical keys for this strategy
+            keys = get_redis_keys(strategy)
             
-            # Legacy fallback keys
-            v2_fallback = "amc:discovery:v2:contenders.latest"
-            v1_fallback = "amc:discovery:contenders.latest"
+            # Publish to both specific and fallback keys for compatibility
+            keys_to_write = [
+                keys['K_V2_SPEC'],  # Strategy-specific v2 key
+                keys['K_V2_FALL'],  # V2 fallback
+                keys['K_V1_SPEC'],  # Strategy-specific v1 key
+                keys['K_V1_FALL']   # V1 fallback
+            ]
             
-            # Publish to all expected keys
+            # Deduplicate keys (in case spec == fallback)
+            keys_to_write = list(dict.fromkeys(keys_to_write))
+            
+            # Publish to all keys
             keys_written = []
-            for key in [v2_cont_key, v1_cont_key, v2_fallback, v1_fallback]:
+            for key in keys_to_write:
                 client.set(key, contenders_json, ex=ttl)
                 keys_written.append(key)
             
             # Publish status with count and timestamp
-            status_key = "amc:discovery:status"
+            status_key = keys['K_STATUS']
             status = {
                 "count": len(contenders),
                 "ts": datetime.utcnow().isoformat() + "Z",

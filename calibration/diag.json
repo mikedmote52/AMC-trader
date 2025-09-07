@@ -1,0 +1,28 @@
+{
+  "scoring": {
+    "hybrid_v1": {
+      "entry_rules": {
+        "watchlist_min": 10,
+        "trade_ready_min": 20
+      },
+      "thresholds": {
+        "min_relvol_30": 0.8,
+        "min_atr_pct": 0.02,
+        "rsi_band": [50, 80],
+        "require_vwap_reclaim": false
+      }
+    },
+    "legacy_v0": {
+      "entry_rules": {
+        "watchlist_min": 10,
+        "trade_ready_min": 20
+      },
+      "thresholds": {
+        "min_vigl_score": 0.3,
+        "min_volume_spike": 1.2
+      }
+    }
+  },
+  "diag_mode": true,
+  "note": "Relaxed thresholds for diagnostic discovery - DO NOT USE IN PRODUCTION"
+}

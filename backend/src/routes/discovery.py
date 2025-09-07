@@ -325,23 +325,48 @@ async def debug_contenders(
     trace = _get_json(r, v2_trace_key) or _get_json(r, V2_TRACE) or _get_json(r, V1_TRACE)
     status = _get_json(r, STATUS)
     
-    # Analyze drop reasons
+    # Analyze drop reasons and counts
     drop_reasons = []
-    symbols_in = 0
+    universe_loaded = 0
+    after_universe_guards = 0
     after_freshness = 0
+    after_detectors = 0
     watchlist = 0
     trade_ready = 0
     
+    # Per-feed staleness tracking
+    stale_quotes = 0
+    stale_bars_1m = 0
+    stale_si = 0
+    stale_options = 0
+    
     if trace:
-        counts = trace.get("counts_out", {})
-        symbols_in = counts.get("universe", 0)
-        after_freshness = symbols_in  # Assume no freshness filtering for now
+        # Get counts from trace
+        counts_in = trace.get("counts_in", {})
+        counts_out = trace.get("counts_out", {})
         
+        universe_loaded = counts_in.get("universe", 0)
+        after_universe_guards = counts_out.get("universe", 0)
+        after_freshness = counts_out.get("freshness", after_universe_guards)
+        after_detectors = counts_out.get("strategy_scoring", after_freshness)
+        
+        # Analyze rejections
         rejections = trace.get("rejections", {})
         for stage, reasons in rejections.items():
             if isinstance(reasons, dict):
                 for reason, count in reasons.items():
                     drop_reasons.append({"reason": f"{stage}_{reason}", "count": count})
+                    
+                    # Track per-feed staleness
+                    if "stale" in reason.lower() or "old" in reason.lower():
+                        if "quote" in reason.lower():
+                            stale_quotes += count
+                        elif "bar" in reason.lower() or "1m" in reason.lower():
+                            stale_bars_1m += count
+                        elif "si" in reason.lower() or "short" in reason.lower():
+                            stale_si += count
+                        elif "option" in reason.lower() or "iv" in reason.lower():
+                            stale_options += count
     
     # Check data freshness
     data_age_seconds = 0
@@ -380,12 +405,20 @@ async def debug_contenders(
     return {
         "system_state": system_state,
         "summary": {
-            "symbols_in": symbols_in,
+            "universe_loaded": universe_loaded,
+            "after_universe_guards": after_universe_guards,
             "after_freshness": after_freshness,
+            "after_detectors": after_detectors,
             "watchlist": len(items) if items else 0,
             "trade_ready": len([i for i in (items or []) if i.get('score', 0) >= trade_ready_min/100])
         },
         "drop_reasons": sorted(drop_reasons, key=lambda x: x['count'], reverse=True)[:10],
+        "stale_by_feed": {
+            "quotes": stale_quotes,
+            "bars_1m": stale_bars_1m,
+            "short_interest": stale_si,
+            "options": stale_options
+        },
         "config_snapshot": {
             "freshness": {"quotes": 60, "bars_1m": 120},
             "gates": {"watchlist_min": watchlist_min, "trade_ready_min": trade_ready_min}
@@ -429,6 +462,23 @@ async def discovery_health():
         "universe": universe_status,
         "market_data": market_data,
         "system_state": system_state
+    }
+
+@router.get("/strategy/effective")
+async def strategy_effective(strategy: str = Query("", description="Requested strategy")):
+    """
+    Debug endpoint to show effective strategy resolution
+    Returns requested vs effective strategy for troubleshooting
+    """
+    from ..strategy_resolver import resolve_effective_strategy, get_strategy_metadata
+    
+    effective = resolve_effective_strategy(strategy if strategy else None)
+    metadata = get_strategy_metadata(effective)
+    
+    return {
+        "requested": strategy or None,
+        "effective": effective,
+        "metadata": metadata
     }
 
 @router.get("/short-interest")
@@ -1050,7 +1100,8 @@ async def trigger_discovery(
     request: Request,
     limit: int = Query(10), 
     relaxed: bool = Query(False), 
-    strategy: str = Query("", description="Strategy to use for discovery")
+    strategy: str = Query("", description="Strategy to use for discovery"),
+    diag: int = Query(0, description="Enable diagnostic mode with relaxed gates (1=enable)")
 ):
     """
     Manual discovery trigger for production deployment
@@ -1064,6 +1115,24 @@ async def trigger_discovery(
         import time
         
         start_time = time.time()
+        
+        # Apply diagnostic mode if requested
+        original_calibration = None
+        if diag == 1:
+            # Temporarily apply diagnostic calibration
+            import shutil
+            calibration_path = "calibration/active.json"
+            diag_path = "calibration/diag.json"
+            
+            # Backup current calibration
+            if os.path.exists(calibration_path):
+                shutil.copy(calibration_path, f"{calibration_path}.backup")
+                original_calibration = calibration_path
+            
+            # Apply diagnostic calibration
+            if os.path.exists(diag_path):
+                shutil.copy(diag_path, calibration_path)
+                logger.warning("DIAGNOSTIC MODE: Applied relaxed thresholds for testing")
         
         # Load and run discovery
         f, mod = _load_selector()
@@ -1157,7 +1226,7 @@ async def trigger_discovery(
         }
         r.set(STATUS, json.dumps(status_data), ex=600)
         
-        return {
+        result = {
             "success": True,
             "candidates_found": len(items),
             "published_to_redis": True,
@@ -1165,11 +1234,24 @@ async def trigger_discovery(
             "strategy": effective_strategy,
             "requested_strategy": strategy,
             "effective_strategy": effective_strategy,
+            "diag_applied": diag == 1,
             "trace": trace
         }
         
+        return result
+        
     except Exception as e:
         return {"success": False, "error": str(e)}
+    finally:
+        # Restore original calibration if we were in diagnostic mode
+        if diag == 1 and original_calibration:
+            try:
+                import shutil
+                shutil.copy(f"{original_calibration}.backup", original_calibration)
+                os.remove(f"{original_calibration}.backup")
+                logger.info("Restored original calibration after diagnostic run")
+            except:
+                pass  # Best effort restoration
 
 @router.get("/strategy-validation")
 async def validate_strategy_scoring():
