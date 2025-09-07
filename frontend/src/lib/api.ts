@@ -1,5 +1,45 @@
+import { API_BASE } from '../config';
+
+// Default timeout for discovery endpoints (60 seconds for real market scanning)
+const DEFAULT_TIMEOUT = 60000;
+const DISCOVERY_TIMEOUT = 120000; // 2 minutes for discovery calls
+
+function getFullUrl(url: string): string {
+  if (url.startsWith('http')) return url;
+  return `${API_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+function getTimeoutForUrl(url: string): number {
+  if (url.includes('/discovery/')) {
+    return DISCOVERY_TIMEOUT;
+  }
+  return DEFAULT_TIMEOUT;
+}
+
+async function fetchWithTimeout(url: string, options: RequestInit): Promise<Response> {
+  const timeout = getTimeoutForUrl(url);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeout}ms for ${url}`);
+    }
+    throw error;
+  }
+}
+
 export async function getJSON<T>(url: string): Promise<T> {
-  const r = await fetch(url, {
+  const fullUrl = getFullUrl(url);
+  const r = await fetchWithTimeout(fullUrl, {
     method: "GET",
     cache: "no-cache",
     headers: {
@@ -10,19 +50,20 @@ export async function getJSON<T>(url: string): Promise<T> {
   });
   if (!r.ok) {
     const text = await r.text().catch(() => "");
-    throw new Error(`GET ${url} ${r.status}: ${text}`);
+    throw new Error(`GET ${fullUrl} ${r.status}: ${text}`);
   }
   return r.json() as Promise<T>;
 }
 
 export async function postJSON<T>(url: string, body: any): Promise<T> {
-  const r = await fetch(url, {
+  const fullUrl = getFullUrl(url);
+  const r = await fetchWithTimeout(fullUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   const text = await r.text().catch(() => "");
-  if (!r.ok) throw new Error(`POST ${url} ${r.status}: ${text}`);
+  if (!r.ok) throw new Error(`POST ${fullUrl} ${r.status}: ${text}`);
   try { return JSON.parse(text) as T; } catch { return text as any; }
 }
 

@@ -292,8 +292,8 @@ const BMSDiscoveryPage: React.FC = () => {
         {/* Footer Info */}
         <div className="mt-8 text-center text-gray-500 text-sm">
           <p>
-            BMS Discovery System v1.0 • Built on patterns from $957.50 profit (+63.8% return) • 
-            Portfolio: June 1 - July 4, 2025
+            BMS Discovery System v1.0 • Real-time scanning of 5000+ stocks • 
+            Based on June-July 2025 winner patterns
           </p>
         </div>
       </div>
