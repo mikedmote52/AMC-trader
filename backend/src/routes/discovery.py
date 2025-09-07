@@ -15,7 +15,11 @@ from backend.src.providers.options_polygon import get_options_stats
 from backend.src.discovery.feature_store import get_feature_store_stats
 import time
 import requests
-from ..utils.redis_keys import get_contenders_key, get_discovery_metadata_key
+# Inlined Redis key helpers to avoid import issues
+def get_contenders_key(strategy=None):
+    """Generate Redis key for discovery contenders"""
+    base_key = "amc:discovery:v2:contenders.latest"
+    return f"{base_key}:{strategy}" if strategy else base_key
 from ..services.short_interest_service import get_short_interest_service
 from ..services.short_interest_validator import get_short_interest_validator
 from ..strategy_resolver import resolve_effective_strategy, get_strategy_metadata
