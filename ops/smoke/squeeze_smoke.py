@@ -217,7 +217,11 @@ class SmokeTestRunner:
         # Get raw data
         raw_data = self.get_json("/discovery/contenders/raw", {"strategy": "legacy_v0"})
         if raw_data is not None:
-            raw_count = raw_data.get('count', len(raw_data.get('raw_candidates', [])))
+            # Handle both list and dict responses from raw endpoint
+            if isinstance(raw_data, list):
+                raw_count = len(raw_data)
+            else:
+                raw_count = raw_data.get('count', len(raw_data.get('raw_candidates', [])))
             
             # Get debug data
             debug_data = self.get_json("/discovery/contenders/debug", {"strategy": "legacy_v0"})
@@ -244,9 +248,25 @@ class SmokeTestRunner:
         served_data = self.get_json("/discovery/contenders", {"strategy": "legacy_v0"})
         
         if raw_data is not None and served_data is not None:
-            raw_count = raw_data.get('count', len(raw_data.get('raw_candidates', [])))
+            # Handle both list and dict responses from raw endpoint
+            if isinstance(raw_data, list):
+                raw_count = len(raw_data)
+            else:
+                raw_count = raw_data.get('count', len(raw_data.get('raw_candidates', [])))
             served_count = len(served_data) if isinstance(served_data, list) else 0
             
+            # CRITICAL REGRESSION TEST: FAIL if raw>0 but served==0 
+            # This catches the exact issue we just fixed where discovery finds candidates
+            # but the served endpoint returns empty due to over-filtering
+            regression_detected = raw_count > 0 and served_count == 0
+            
+            self.test(
+                "contenders_regression_check",
+                not regression_detected,
+                f"REGRESSION: Raw found {raw_count} candidates but served returned {served_count} (empty)"
+            )
+            
+            # Standard parity check  
             self.test(
                 "contenders_parity",
                 raw_count == served_count,
@@ -254,6 +274,7 @@ class SmokeTestRunner:
             )
         else:
             self.test("contenders_parity", False, "Contenders endpoints failed")
+            self.test("contenders_regression_check", False, "Could not perform regression check - endpoints failed")
     
     def _test_headers_and_state(self):
         """Test required headers and system state"""
@@ -263,26 +284,50 @@ class SmokeTestRunner:
             url = f"{self.api}/discovery/contenders"
             response = self.session.get(url, params={"strategy": "legacy_v0"}, timeout=10)
             
+            if response.status_code != 200:
+                self.test("required_headers_present", False, f"HTTP {response.status_code} - Cannot test headers")
+                self.test("cache_control_header", False, f"HTTP {response.status_code} - Cannot test headers")
+                return
+                
             headers = response.headers
             required_headers = ['X-System-State', 'X-Reason-Stats', 'Cache-Control']
             missing_headers = [h for h in required_headers if h not in headers]
             
+            # CRITICAL: FAIL if any required headers are missing
+            # This was part of the route fix to ensure proper header setting
+            headers_missing = len(missing_headers) > 0
+            
             self.test(
                 "required_headers_present",
-                len(missing_headers) == 0,
-                f"Missing: {missing_headers}" if missing_headers else "All headers present"
+                not headers_missing,
+                f"CRITICAL: Missing headers {missing_headers}" if headers_missing else "All required headers present"
             )
             
-            # Check Cache-Control
+            # Check Cache-Control specifically
             cache_control = headers.get('Cache-Control', '')
+            cache_control_valid = 'no-store' in cache_control
+            
             self.test(
                 "cache_control_header",
-                'no-store' in cache_control,
-                f"Cache-Control: {cache_control}"
+                cache_control_valid,
+                f"Cache-Control: '{cache_control}' {'✓' if cache_control_valid else '✗ Missing no-store'}"
+            )
+            
+            # Validate header content for X-System-State
+            system_state = headers.get('X-System-State', '')
+            valid_states = ['HEALTHY', 'DEGRADED', 'FAILED']
+            system_state_valid = system_state in valid_states
+            
+            self.test(
+                "system_state_header_valid",
+                system_state_valid,
+                f"X-System-State: '{system_state}' {'✓' if system_state_valid else '✗ Invalid state'}"
             )
             
         except Exception as e:
             self.test("required_headers_present", False, f"Header check failed: {e}")
+            self.test("cache_control_header", False, f"Header check failed: {e}")
+            self.test("system_state_header_valid", False, f"Header check failed: {e}")
     
     def _test_fail_closed_behavior(self):
         """Test fail-closed behavior during degraded state"""
