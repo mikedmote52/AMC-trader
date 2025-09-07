@@ -92,10 +92,69 @@ class RealBMSEngine:
         self.api_calls.append(now)
         self.last_call_time = now
     
-    async def fetch_all_active_stocks(self) -> List[str]:
-        """Fetch ALL active stock symbols from Polygon"""
+    async def fetch_filtered_stocks(self) -> List[str]:
+        """Fetch stocks with early filtering applied at API level"""
         try:
-            logger.info("Fetching complete universe of active stocks...")
+            logger.info("Fetching filtered universe with price bounds...")
+            
+            # Get recent trading day data for all stocks with price filtering
+            # Use previous business day or current data
+            from datetime import datetime, timedelta
+            today = datetime.now()
+            # Go back a few days to ensure we get a valid trading day
+            date_to_use = (today - timedelta(days=3)).strftime('%Y-%m-%d')
+            
+            url = f"https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/{date_to_use}"
+            params = {
+                'apikey': self.polygon_api_key,
+                'adjusted': 'true',
+                'include_otc': 'false'
+            }
+            
+            self._rate_limit()
+            response = self.session.get(url, params=params, timeout=60)
+            
+            if response.status_code != 200:
+                logger.error(f"Polygon grouped API error: {response.status_code}")
+                return await self.fetch_all_active_stocks_fallback()
+            
+            data = response.json()
+            if not data.get('results'):
+                logger.warning("No grouped results, falling back to full fetch")
+                return await self.fetch_all_active_stocks_fallback()
+            
+            # Apply price bounds filtering immediately
+            filtered_symbols = []
+            min_price = self.config['universe']['min_price']
+            max_price = self.config['universe']['max_price']
+            min_volume_m = self.config['universe']['min_dollar_volume_m']
+            
+            for result in data['results']:
+                symbol = result['T']  # Ticker
+                close_price = float(result['c'])  # Close price
+                volume = int(result['v'])  # Volume
+                dollar_volume_m = (close_price * volume) / 1_000_000
+                
+                # Apply universe filters at API level
+                if (min_price <= close_price <= max_price and 
+                    dollar_volume_m >= min_volume_m and
+                    len(symbol) <= 5):  # Filter out complex tickers
+                    filtered_symbols.append(symbol)
+            
+            logger.info(f"✅ Pre-filtered to {len(filtered_symbols)} stocks from {len(data['results'])} total")
+            logger.info(f"   Price range: ${min_price}-${max_price}")
+            logger.info(f"   Min volume: ${min_volume_m}M")
+            return filtered_symbols
+            
+        except Exception as e:
+            logger.error(f"Error in filtered fetch: {e}")
+            logger.info("Falling back to full universe fetch...")
+            return await self.fetch_all_active_stocks_fallback()
+
+    async def fetch_all_active_stocks_fallback(self) -> List[str]:
+        """Fallback: Fetch ALL active stock symbols from Polygon"""
+        try:
+            logger.info("Fallback: Fetching complete universe of active stocks...")
             
             all_symbols = []
             next_url = None
@@ -342,24 +401,25 @@ class RealBMSEngine:
             return None
     
     async def discover_real_candidates(self, limit: int = 50) -> List[Dict]:
-        """REAL discovery - scan all stocks, no mocks"""
+        """REAL discovery - optimized with early filtering"""
         try:
-            logger.info("🔍 Starting REAL BMS discovery scan...")
+            logger.info("🔍 Starting OPTIMIZED BMS discovery scan...")
             start_time = time.time()
             
-            # Step 1: Get complete universe
-            all_symbols = await self.fetch_all_active_stocks()
-            if not all_symbols:
-                logger.error("Failed to fetch stock universe")
+            # Step 1: Get pre-filtered universe (price bounds + volume filtering)
+            filtered_symbols = await self.fetch_filtered_stocks()
+            if not filtered_symbols:
+                logger.error("Failed to fetch filtered stock universe")
                 return []
             
-            logger.info(f"📊 Processing {len(all_symbols)} stocks through BMS pipeline...")
+            logger.info(f"📊 Processing {len(filtered_symbols)} PRE-FILTERED stocks through BMS pipeline...")
+            logger.info(f"⚡ OPTIMIZATION: Eliminated ~{5000 - len(filtered_symbols)} stocks at API level")
             
             # Statistics tracking
             stats = {
-                'total_symbols': len(all_symbols),
+                'total_symbols': len(filtered_symbols),
                 'processed': 0,
-                'universe_rejected': 0,
+                'universe_rejected': 0,  # Should be minimal with pre-filtering
                 'scored_candidates': 0,
                 'api_errors': 0,
                 'rejection_reasons': {}
@@ -369,10 +429,10 @@ class RealBMSEngine:
             batch_size = self.config['limits']['batch_size']
             
             # Process in batches to manage API limits
-            for i in range(0, len(all_symbols), batch_size):
-                batch = all_symbols[i:i+batch_size]
+            for i in range(0, len(filtered_symbols), batch_size):
+                batch = filtered_symbols[i:i+batch_size]
                 batch_num = (i // batch_size) + 1
-                total_batches = (len(all_symbols) + batch_size - 1) // batch_size
+                total_batches = (len(filtered_symbols) + batch_size - 1) // batch_size
                 
                 logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} symbols)...")
                 
@@ -381,13 +441,13 @@ class RealBMSEngine:
                     try:
                         stats['processed'] += 1
                         
-                        # Get real market data
+                        # Get real market data (most should pass universe gates now)
                         market_data = await self.get_real_market_data(symbol)
                         if not market_data:
                             stats['api_errors'] += 1
                             continue
                         
-                        # Apply universe gates
+                        # Apply remaining universe gates (should be minimal rejects)
                         passes, reason = self._passes_universe_gates(market_data)
                         if not passes:
                             stats['universe_rejected'] += 1
@@ -401,18 +461,18 @@ class RealBMSEngine:
                             stats['scored_candidates'] += 1
                         
                         # Progress update
-                        if stats['processed'] % 100 == 0:
+                        if stats['processed'] % 50 == 0:  # More frequent updates for smaller set
                             elapsed = time.time() - start_time
                             rate = stats['processed'] / elapsed
-                            logger.info(f"Progress: {stats['processed']}/{len(all_symbols)} ({rate:.1f}/sec), "
+                            logger.info(f"Progress: {stats['processed']}/{len(filtered_symbols)} ({rate:.1f}/sec), "
                                       f"Found: {len(candidates)} candidates")
                     
                     except Exception as e:
                         logger.error(f"Error processing {symbol}: {e}")
                         stats['api_errors'] += 1
                 
-                # Small delay between batches
-                await asyncio.sleep(0.2)
+                # Smaller delay between batches for optimized flow
+                await asyncio.sleep(0.1)
             
             # Sort by BMS score and limit results
             candidates.sort(key=lambda x: x['bms_score'], reverse=True)
@@ -420,21 +480,28 @@ class RealBMSEngine:
             
             # Log final statistics
             elapsed = time.time() - start_time
-            logger.info(f"🎯 Discovery complete in {elapsed:.1f}s:")
+            logger.info(f"🎯 OPTIMIZED Discovery complete in {elapsed:.1f}s:")
+            logger.info(f"  ⚡ Pre-filtered: {len(filtered_symbols)} stocks (vs ~5000 total)")
             logger.info(f"  📊 Processed: {stats['processed']}/{stats['total_symbols']} stocks")
             logger.info(f"  ✅ Found: {len(final_candidates)} candidates")
             logger.info(f"  🚀 Trade Ready: {len([c for c in final_candidates if c['action'] == 'TRADE_READY'])}")
             logger.info(f"  👁️ Monitor: {len([c for c in final_candidates if c['action'] == 'MONITOR'])}")
+            logger.info(f"  📈 Processing rate: {stats['processed'] / elapsed:.1f} stocks/sec")
+            
+            # Efficiency metrics
+            if elapsed > 0:
+                total_time_saved = ((5000 - len(filtered_symbols)) * 0.8)  # Estimated 0.8s per stock
+                logger.info(f"  ⏱️ Estimated time saved: {total_time_saved:.1f}s ({total_time_saved/60:.1f} min)")
             
             if stats['rejection_reasons']:
-                logger.info("  🚫 Top rejection reasons:")
+                logger.info("  🚫 Remaining rejection reasons:")
                 for reason, count in sorted(stats['rejection_reasons'].items(), key=lambda x: x[1], reverse=True)[:5]:
                     logger.info(f"    {reason}: {count}")
             
             return final_candidates
             
         except Exception as e:
-            logger.error(f"Error in real discovery: {e}")
+            logger.error(f"Error in optimized discovery: {e}")
             return []
     
     def get_health_status(self) -> Dict:
