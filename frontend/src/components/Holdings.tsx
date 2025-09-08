@@ -40,16 +40,19 @@ export default function Holdings() {
     try {
       setErr("");
       
-      // Fetch holdings and contenders in parallel
-      const [holdingsData, contendersData] = await Promise.all([
-        getJSON<any>(`${API_BASE}/portfolio/holdings`),
-        getJSON<any>(`${API_BASE}/discovery/contenders`)
-      ]);
-      
-      // Extract positions from the holdings response structure
+      // Fetch holdings first (critical for portfolio display)
+      const holdingsData = await getJSON<any>(`${API_BASE}/portfolio/holdings`);
       const positions = holdingsData?.data?.positions || holdingsData?.positions || [];
       setHoldings(Array.isArray(positions) ? positions : []);
-      setContenders(Array.isArray(contendersData) ? contendersData : []);
+      
+      // Fetch contenders separately with timeout handling (non-critical)
+      try {
+        const contendersData = await getJSON<any>(`${API_BASE}/discovery/contenders`);
+        setContenders(Array.isArray(contendersData) ? contendersData : []);
+      } catch (contenderError) {
+        console.warn('Failed to load contenders (non-critical):', contenderError);
+        setContenders([]);
+      }
     } catch (e: any) {
       setErr(e?.message || String(e));
     }
