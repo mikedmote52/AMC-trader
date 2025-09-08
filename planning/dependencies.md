@@ -1,338 +1,558 @@
-# Dependencies for AMC-TRADER Fixes - Production Deployment Plan
+# Dependencies for AMC-TRADER Redis Caching and Background Worker System
 
 ## Summary
-Based on the comprehensive system validation completed on 2025-09-06, critical fixes have been implemented to resolve the squeeze candidate display failure. This deployment plan ensures permanent resolution of configuration mismatches, frontend integration issues, and threshold misalignment that caused 100% candidate rejection.
-
-**Key Fixes Applied:**
-1. Strategy configuration correction (legacy_v0 → hybrid_v1)  
-2. Threshold calibration to realistic values (50% → 10% entry minimums)
-3. Frontend endpoint switch (/advanced-ranking/rank → /discovery/contenders)
-4. Volume gate relaxation (1.0x → 0.5x relvol requirements)
+AMC-TRADER currently has production failures due to 5+ minute discovery times instead of sub-second cached responses. The system has Redis integration and background worker code in place, but requires proper initialization, connection handling, and deployment configuration to achieve the expected cached performance. This plan details all technical dependencies needed to implement a robust Redis caching system with background workers for continuous discovery cycles.
 
 ## Package Dependencies
 
-### Backend Dependencies (No Changes Required)
-- **FastAPI**: Current version sufficient for hybrid_v1 strategy
-- **Redis**: 6.x - Already configured for strategy-aware caching
-- **PostgreSQL**: Current schema supports all discovery patterns
-- **Polygon API**: Integration functional, no version updates needed
-- **asyncio**: Native Python support for concurrent discovery processing
+### Backend (Python)
 
-**Configuration Note**: All backend dependencies are already satisfied. No package installations required.
+**Core Redis Dependencies:**
+- **redis** (5.0.8): Async Redis client with connection pooling
+  - Installation: Already in requirements.txt
+  - Used by: Discovery worker, cache management, distributed locks
+  - Configuration: Supports `redis://` and `rediss://` URLs with SSL
 
-### Frontend Dependencies (No Changes Required)
-- **React**: 18.x - Current version supports all implemented changes
-- **TypeScript**: 4.x - Existing types accommodate discovery response format
-- **Node.js**: 16.x+ - No version constraints for the fixes
+- **redis-py-cluster** (2.1.3): Redis cluster support (optional for scaling)
+  - Installation: `pip install redis-py-cluster==2.1.3`
+  - Used by: High-availability Redis deployments
+  - Configuration: Only needed if using Redis Cluster
 
-**Configuration Note**: Frontend fixes are code-level changes only, no dependency updates needed.
+**Async Processing Dependencies:**
+- **asyncio**: Built-in Python async library
+  - Used by: Background worker scheduler, concurrent discovery tasks
+  - Configuration: Already available in Python 3.7+
+
+- **aioredis** (2.0.1): Alternative async Redis client (currently using redis-py async)
+  - Installation: `pip install aioredis==2.0.1` (optional upgrade)
+  - Used by: Enhanced async Redis operations
+  - Configuration: Drop-in replacement for current redis.asyncio
+
+**Worker Management Dependencies:**
+- **psutil** (6.0.0): Process monitoring and system resource tracking
+  - Installation: Already in requirements.txt
+  - Used by: Worker health monitoring, memory usage tracking
+  - Configuration: Cross-platform process utilities
+
+- **tenacity** (9.0.0): Retry and circuit breaker patterns
+  - Installation: Already in requirements.txt
+  - Used by: Redis connection retries, API failure handling
+  - Configuration: Exponential backoff for resilience
+
+**Monitoring Dependencies:**
+- **prometheus-client** (0.21.0): Metrics collection and export
+  - Installation: Already in requirements.txt
+  - Used by: Cache hit/miss rates, worker performance metrics
+  - Configuration: Metrics endpoint at `/metrics`
+
+- **structlog** (24.4.0): Structured logging for debugging
+  - Installation: Already in requirements.txt
+  - Used by: Worker lifecycle logging, cache operation tracing
+  - Configuration: JSON formatted logs for production
 
 ## Environment Variables
 
-### Required (Already Configured)
-- `POLYGON_API_KEY`: Production API key for market data
-  - Format: String (pk_live_xxx format)
-  - Example: `POLYGON_API_KEY=pk_live_abcd1234`
-  - Used by: Discovery pipeline for real-time data
+### Required Production Variables
 
-- `REDIS_URL`: Redis connection string  
-  - Format: redis://host:port/db
+**Redis Configuration:**
+- `REDIS_URL`: Redis connection string
+  - Format: `redis://[username:password@]host:port[/database]` or `rediss://` for SSL
   - Example: `REDIS_URL=redis://localhost:6379/0`
-  - Used by: Strategy caching and candidate persistence
+  - Used by: All Redis operations, worker cache storage
+  - Validation: Must be accessible from application environment
 
-- `API_BASE`: Frontend API endpoint
-  - Format: https://domain.com (no trailing slash)
-  - Example: `API_BASE=https://amc-trader.onrender.com`
-  - Used by: Frontend API calls
+**Worker Configuration:**
+- `BMS_CYCLE_SECONDS`: Background discovery cycle interval
+  - Format: Integer seconds (default: 60)
+  - Example: `BMS_CYCLE_SECONDS=60`
+  - Used by: Worker scheduler loop timing
+  - Validation: Minimum 30 seconds, maximum 300 seconds
 
-### New Environment Variables
-- `SCORING_STRATEGY`: Strategy selection override (Optional)
-  - Format: String (legacy_v0 or hybrid_v1)
-  - Default: Uses calibration/active.json configuration
+- `SCORING_STRATEGY`: Discovery scoring algorithm
+  - Format: String enum ("legacy_v0" | "hybrid_v1")
   - Example: `SCORING_STRATEGY=hybrid_v1`
-  - Used by: Discovery pipeline for strategy selection
+  - Used by: Strategy selection in discovery engine
+  - Validation: Must match supported strategy types
 
-### Configuration Validation
-All environment variables are pre-configured in production. No changes required for deployment.
+**Performance Tuning:**
+- `REDIS_CONNECTION_POOL_SIZE`: Max Redis connections
+  - Format: Integer (default: 10)
+  - Example: `REDIS_CONNECTION_POOL_SIZE=20`
+  - Used by: Connection pool configuration
+  - Validation: Should match expected concurrent operations
 
-## Configuration File Updates
+- `CACHE_TTL_SECONDS`: Default cache time-to-live
+  - Format: Integer seconds (default: 120)
+  - Example: `CACHE_TTL_SECONDS=120`
+  - Used by: Standard cache expiration timing
+  - Validation: Balance between freshness and performance
 
-### Primary Configuration Changes
-**File**: `/Users/michaelmote/Desktop/AMC-TRADER/calibration/active.json`
+### Optional Configuration Variables
 
-**Critical Updates Applied:**
-```json
-{
-  "scoring": {
-    "strategy": "hybrid_v1",         // Changed from legacy_v0
-    "preset": "balanced_default"      // Confirmed active
-  },
-  "hybrid_v1": {
-    "thresholds": {
-      "min_relvol_30": 0.5,          // Relaxed from 1.0
-      "min_atr_pct": 0.02            // Maintained at 2%
+**Advanced Redis Settings:**
+- `REDIS_SSL_CERT_REQS`: SSL certificate requirements ("none" | "optional" | "required")
+  - Default: "none"
+  - Used by: SSL/TLS Redis connections (Render Redis instances)
+
+- `REDIS_SOCKET_KEEPALIVE`: Keep-alive for Redis connections
+  - Format: Boolean (default: true)
+  - Used by: Long-lived connection stability
+
+**Worker Behavior:**
+- `WORKER_MAX_CANDIDATES`: Maximum candidates to cache
+  - Format: Integer (default: 100)
+  - Example: `WORKER_MAX_CANDIDATES=200`
+  - Used by: Memory usage control for large discovery sets
+
+- `ENABLE_WORKER_AUTO_START`: Automatically start background worker
+  - Format: Boolean (default: true)
+  - Example: `ENABLE_WORKER_AUTO_START=true`
+  - Used by: Production deployment worker initialization
+
+## Redis Infrastructure Requirements
+
+### Redis Instance Specifications
+
+**Development Environment:**
+- **Service**: Local Redis server or Docker container
+- **Memory**: 256MB minimum, 1GB recommended
+- **Persistence**: RDB snapshots enabled (save 900 1)
+- **Configuration**: 
+  ```redis
+  maxmemory-policy allkeys-lru
+  timeout 300
+  tcp-keepalive 60
+  ```
+
+**Production Environment (Render):**
+- **Service**: Render Redis (managed service)
+- **Plan**: Standard ($7/month minimum for persistent storage)
+- **Memory**: 256MB minimum, 1GB recommended for full universe caching
+- **SSL**: Enabled (rediss:// protocol)
+- **Backup**: Automated daily snapshots
+
+**High Availability (Future):**
+- **Service**: Redis Sentinel or Cluster setup
+- **Nodes**: 3+ instances for fault tolerance
+- **Failover**: Automatic primary election
+- **Replication**: Master-slave with read replicas
+
+### Cache Key Strategy
+
+**Key Patterns:**
+```
+# Candidate caching
+bms:candidates:all           # All discovered candidates
+bms:candidates:trade_ready   # Action-filtered candidates
+bms:candidates:monitor       # Monitor-only candidates
+
+# Metadata caching
+bms:meta                     # Discovery cycle metadata
+bms:worker:health           # Worker health status
+bms:universe:counts         # Universe statistics
+
+# Symbol-specific caching
+squeeze_cache:{symbol}       # Individual symbol analysis
+market_metrics:{symbol}     # Market data for TTL calculation
+```
+
+**TTL Strategy:**
+- **Hot stocks** (>10x volume): 30 seconds
+- **Active stocks** (3-10x volume): 60 seconds
+- **Normal stocks** (1.5-3x volume): 120 seconds
+- **Quiet stocks** (<1.5x volume): 300 seconds
+- **Metadata**: 120 seconds (aligned with discovery cycles)
+
+### Connection Pool Configuration
+
+**Pool Settings:**
+```python
+redis_pool_config = {
+    'max_connections': 20,          # Handle concurrent API requests
+    'socket_keepalive': True,       # Prevent connection drops
+    'socket_keepalive_options': {
+        1: 1,                       # TCP_KEEPIDLE
+        2: 3,                       # TCP_KEEPINTVL  
+        3: 5                        # TCP_KEEPCNT
     },
-    "entry_rules": {
-      "watchlist_min": 10,           // Reduced from 50
-      "trade_ready_min": 15          // Reduced from 55
-    }
-  }
+    'health_check_interval': 30,    # Connection health validation
+    'retry_on_timeout': True,       # Automatic retry for timeouts
+    'decode_responses': True        # UTF-8 string decoding
 }
 ```
 
-### API Configuration Changes
-**No API endpoint modifications required**. The fixes utilize existing discovery endpoints with strategy parameters.
+## Background Worker System Architecture
 
-**Active Endpoints:**
-- `GET /discovery/contenders?strategy=hybrid_v1` - Primary candidate source
-- `GET /discovery/status` - System health monitoring  
-- `GET /health` - Application health check
-- `POST /discovery/trigger` - Manual discovery execution
+### Worker Process Design
 
-## Database Migrations
+**Scheduler Loop Structure:**
+```python
+class DiscoveryWorker:
+    async def scheduler_loop(self):
+        """Continuous 60-second discovery cycles"""
+        while self.running:
+            try:
+                # 1. Run discovery (RealBMSEngine)
+                candidates = await self.engine.discover_real_candidates(limit=100)
+                
+                # 2. Re-validate cached candidates
+                candidates = await self._revalidate_candidates(candidates)
+                
+                # 3. Cache results with TTL
+                await self._cache_results(candidates, metadata)
+                
+                # 4. Sleep until next cycle
+                await asyncio.sleep(self.cycle_seconds)
+                
+            except Exception as e:
+                logger.error(f"Cycle failed: {e}")
+                await asyncio.sleep(min(self.cycle_seconds, 30))
+```
 
-### Schema Changes
-**No database migrations required**. All fixes are configuration and application-level changes.
+**Process Lifecycle Management:**
+- **Startup**: Initialize Redis connections, validate API keys
+- **Health Checks**: Monitor Redis connectivity, cache freshness
+- **Graceful Shutdown**: Complete current cycle, close connections
+- **Error Recovery**: Automatic restart with exponential backoff
 
-### Existing Schema Validation
-Current database schema supports:
-- Discovery candidate storage
-- Strategy-specific scoring data
-- Historical pattern tracking
-- Performance metrics logging
+### Worker Initialization
 
-**Schema Compatibility**: 100% compatible with implemented fixes.
+**Application Startup Integration:**
+```python
+# In backend/src/app.py startup event
+@app.on_event("startup")
+async def startup_background_worker():
+    try:
+        polygon_key = os.getenv('POLYGON_API_KEY')
+        redis_url = os.getenv('REDIS_URL')
+        
+        if polygon_key and redis_url:
+            bms_engine = RealBMSEngine(polygon_key)
+            await start_background_worker(bms_engine, redis_url)
+            log.info("✅ Background discovery worker started")
+        else:
+            log.error("❌ Missing POLYGON_API_KEY or REDIS_URL - worker not started")
+    except Exception as e:
+        log.error(f"❌ Worker startup failed: {e}")
+```
+
+### Health Monitoring Endpoints
+
+**Worker Status Monitoring:**
+```python
+@app.get("/worker/health")
+async def worker_health():
+    worker = get_worker()
+    if not worker:
+        return {"status": "not_running", "error": "Worker not initialized"}
+    
+    health = await worker.health_check()
+    return {
+        "status": "healthy" if health.get('redis_connected') else "degraded",
+        "worker_running": health.get('worker_running'),
+        "cache_age_seconds": health.get('cache_age_seconds'),
+        "last_successful_cycle": health.get('last_cache_update')
+    }
+```
+
+## Database Migration Requirements
+
+### No Database Schema Changes Required
+The current implementation uses Redis for caching and existing PostgreSQL for persistent data. No new database migrations are needed.
+
+**Cache-Only Architecture Benefits:**
+- **No Schema Changes**: All caching data is ephemeral and self-healing
+- **No Data Migration**: Cache warmup happens automatically on first worker cycle
+- **Rollback Safe**: Cache can be flushed without data loss
+- **Version Independent**: Cache keys include strategy awareness for A/B testing
+
+## Configuration Changes
+
+### Application Configuration Updates
+
+**FastAPI Startup Configuration:**
+```python
+# backend/src/app.py modifications needed:
+
+@app.on_event("startup") 
+async def startup():
+    # Existing health checks...
+    
+    # Initialize background worker
+    await startup_background_worker()
+    
+    # Validate Redis connection
+    await validate_redis_connectivity()
+
+@app.on_event("shutdown")
+async def shutdown():
+    # Gracefully stop worker
+    worker = get_worker()
+    if worker:
+        worker.stop()
+        # Allow current cycle to complete
+        await asyncio.sleep(5)
+```
+
+**Redis Client Configuration:**
+```python
+# backend/src/shared/redis_client.py updates needed:
+
+async def get_async_redis_client():
+    """Async Redis client with production-ready configuration"""
+    return redis.from_url(
+        os.getenv('REDIS_URL'),
+        encoding='utf-8',
+        decode_responses=True,
+        max_connections=20,
+        health_check_interval=30,
+        socket_keepalive=True,
+        retry_on_timeout=True,
+        retry_on_error=[ConnectionError, TimeoutError]
+    )
+```
+
+### Render.yaml Service Configuration
+
+**Current Configuration Analysis:**
+- ✅ Redis service should be added to render.yaml
+- ✅ Web service health check path configured
+- ✅ Environment variables properly mapped
+
+**Required Additions to render.yaml:**
+```yaml
+services:
+  # Add Redis service
+  - type: redis
+    name: amc-redis
+    plan: standard
+    region: oregon
+    ipAllowList: []  # Allow from all Render services
+    
+  # Update existing web service
+  - type: web
+    name: amc-trader
+    # ... existing configuration ...
+    envVars:
+      # Add Redis connection
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: amc-redis
+          property: connectionString
+      
+      # Worker configuration
+      - key: BMS_CYCLE_SECONDS
+        value: "60"
+      - key: ENABLE_WORKER_AUTO_START
+        value: "true"
+      - key: CACHE_TTL_SECONDS
+        value: "120"
+```
+
+### Health Check Endpoint Enhancement
+
+**Enhanced Health Check Implementation:**
+```python
+@app.get("/health")
+async def health_check():
+    """Enhanced health check with Redis and worker status"""
+    health_status = {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": {
+            "tag": APP_TAG,
+            "commit": APP_COMMIT,
+            "build": APP_BUILD
+        },
+        "components": {
+            "api": "healthy",
+            "redis": "unknown",
+            "worker": "unknown"
+        }
+    }
+    
+    # Check Redis connectivity
+    try:
+        redis_client = get_redis_client()
+        await redis_client.ping()
+        health_status["components"]["redis"] = "healthy"
+    except Exception as e:
+        health_status["components"]["redis"] = f"unhealthy: {e}"
+        health_status["status"] = "degraded"
+    
+    # Check worker status
+    try:
+        worker = get_worker()
+        if worker:
+            worker_health = await worker.health_check()
+            if worker_health.get('worker_running'):
+                age = worker_health.get('cache_age_seconds', 0)
+                if age < 180:  # Cache less than 3 minutes old
+                    health_status["components"]["worker"] = "healthy"
+                else:
+                    health_status["components"]["worker"] = f"stale_cache_{age}s"
+                    health_status["status"] = "degraded"
+            else:
+                health_status["components"]["worker"] = "not_running"
+                health_status["status"] = "degraded"
+        else:
+            health_status["components"]["worker"] = "not_initialized"
+            health_status["status"] = "degraded"
+    except Exception as e:
+        health_status["components"]["worker"] = f"error: {e}"
+        health_status["status"] = "unhealthy"
+    
+    return health_status
+```
 
 ## Implementation Order
 
-### Phase 1: Configuration Deployment (5 minutes)
-1. **Verify Configuration File**
-   ```bash
-   # Confirm active.json contains hybrid_v1 strategy activation
-   cat /Users/michaelmote/Desktop/AMC-TRADER/calibration/active.json | jq '.scoring.strategy'
-   # Expected: "hybrid_v1"
-   ```
+### Phase 1: Redis Infrastructure Setup (Day 1)
+1. **Add Redis service to render.yaml**
+   - Configure standard Redis instance
+   - Set up connection string environment variable
+   - Deploy infrastructure changes
 
-2. **Validate Environment Variables**
-   ```bash
-   # Confirm required variables are set
-   echo $POLYGON_API_KEY | head -c 20
-   echo $REDIS_URL
-   echo $API_BASE
-   ```
+2. **Update Redis client configuration**
+   - Implement async connection pooling
+   - Add connection retry logic with exponential backoff
+   - Configure SSL support for production
 
-### Phase 2: Service Restart (2 minutes)
-1. **Backend Service Restart** (Required for configuration reload)
-   ```bash
-   # Production restart command (Render platform)
-   # Manual restart through Render dashboard OR
-   # git push to trigger auto-deployment
-   
-   # Local development restart:
-   # Kill existing process and restart
-   pkill -f "python.*main.py"
-   cd /Users/michaelmote/Desktop/AMC-TRADER/backend
-   python src/main.py &
-   ```
+3. **Validate Redis connectivity**
+   - Test Redis connection in health endpoint
+   - Implement connection monitoring
+   - Add Redis metrics to application logging
 
-2. **Redis Cache Invalidation** (Recommended)
-   ```bash
-   # Clear strategy-specific cache keys to force fresh data
-   redis-cli DEL "amc:discovery:contenders.latest"
-   redis-cli DEL "amc:discovery:v2:*" 
-   redis-cli DEL "amc:discovery:hybrid_v1:*"
-   ```
+### Phase 2: Worker Process Enhancement (Day 2)
+1. **Fix worker initialization in app startup**
+   - Ensure background worker starts on application boot
+   - Add proper error handling for worker failures
+   - Implement graceful shutdown procedures
 
-### Phase 3: Frontend Deployment (1 minute)
-1. **Frontend Code Deployment**
-   ```bash
-   # Frontend changes already implemented in SqueezeMonitor.tsx
-   # No build process required - React hot reload handles updates
-   # For production: git push triggers auto-deployment
-   ```
+2. **Enhance worker health monitoring**
+   - Add worker status to health endpoint
+   - Implement cache age monitoring
+   - Configure alerting for stale cache detection
 
-### Phase 4: Validation Testing (5 minutes)
-1. **System Health Check**
-   ```bash
-   # 1. Verify API health
-   curl -s "https://amc-trader.onrender.com/health" | jq .
-   
-   # 2. Test discovery with hybrid_v1
-   curl -s "https://amc-trader.onrender.com/discovery/contenders?strategy=hybrid_v1&limit=10" | jq .count
-   
-   # 3. Verify configuration loading
-   curl -s "https://amc-trader.onrender.com/discovery/status" | jq .strategy
-   ```
+3. **Optimize discovery cycle timing**
+   - Fine-tune 60-second cycle intervals
+   - Add jitter to prevent synchronized load spikes
+   - Implement adaptive cycle timing based on market hours
 
-2. **Frontend Functionality Test**
-   - Navigate to squeeze monitor interface
-   - Verify candidates are displayed (not empty state)
-   - Confirm score tiers show realistic percentages (25-40% range)
-   - Validate real-time data updates
+### Phase 3: Cache Performance Optimization (Day 3)
+1. **Implement dynamic TTL strategy**
+   - Configure volume-based cache expiration
+   - Add squeeze detection for hot stock caching
+   - Optimize memory usage with intelligent eviction
 
-## Monitoring and Validation Steps
+2. **Add cache warming strategies**
+   - Pre-populate cache for high-volume symbols
+   - Implement predictive cache loading
+   - Add cache hit/miss ratio monitoring
 
-### Immediate Validation (First Hour)
-1. **Discovery Pipeline Performance**
-   ```bash
-   # Monitor candidate discovery rates
-   curl -s "https://amc-trader.onrender.com/discovery/test?strategy=hybrid_v1&limit=50" | jq '.candidates | length'
-   # Target: 8+ candidates per scan
-   ```
+3. **Frontend integration testing**
+   - Test sub-second response times for cached endpoints
+   - Validate loading states and error handling
+   - Implement retry mechanisms with exponential backoff
 
-2. **Frontend Display Validation**
-   - **Expected**: Squeeze opportunities visible in UI
-   - **Monitor**: No "No squeeze opportunities detected" when candidates exist
-   - **Check**: Score distributions in 25-40% range (not 0%)
+### Phase 4: Production Monitoring (Day 4)
+1. **Deploy comprehensive monitoring**
+   - Configure cache performance metrics
+   - Add worker lifecycle event logging
+   - Set up alerting for cache misses and worker failures
 
-3. **Configuration Persistence**
-   ```bash
-   # Verify strategy remains active after restart
-   curl -s "https://amc-trader.onrender.com/discovery/calibration/status" | jq '.strategy'
-   # Expected: "hybrid_v1"
-   ```
+2. **Load testing and performance validation**
+   - Test cache performance under high request volume
+   - Validate worker stability during market hours
+   - Measure end-to-end response times
 
-### Continuous Monitoring (First 24 Hours)
-1. **System Health Metrics**
-   - API response times < 2 seconds
-   - Discovery completion rates > 95%
-   - Redis cache hit rates > 80%
-   - Frontend error rates < 1%
-
-2. **Candidate Quality Metrics**
-   - Discovery candidates per scan: 8-25 (target range)
-   - Score distribution: 25-45% (realistic range)
-   - Volume gate pass rate: 60%+ (improved from 0%)
-   - Strategy scoring pass rate: 35%+ (improved from 0%)
-
-3. **User Experience Validation**
-   - Frontend displays real opportunities (not perpetually empty)
-   - Squeeze alerts functional and actionable
-   - Performance monitoring shows engagement
-
-### Alerting Configuration
-```bash
-# Set up monitoring alerts for critical metrics
-# Alert if discovery candidates < 5 for > 30 minutes during market hours
-# Alert if frontend errors > 5% for > 10 minutes  
-# Alert if API response times > 5 seconds for > 5 minutes
-```
+3. **Documentation and runbook creation**
+   - Create operational procedures for cache management
+   - Document troubleshooting steps for common issues
+   - Provide rollback procedures for production incidents
 
 ## Risk Assessment
 
-### Low Risk Components (Implemented)
-- **Configuration Parameter Changes**: Easily reversible via active.json
-- **Frontend Display Thresholds**: UI-only impact, no data corruption risk
-- **Endpoint Switching**: Improves reliability by removing dependencies
+### Compatibility Risks
+- **Redis Version Compatibility**: Using redis-py 5.0.8 with async support
+  - Mitigation: Stick to stable redis-py version, avoid bleeding-edge features
+  - Rollback: Can disable caching and fallback to direct database queries
 
-### Medium Risk Components (Monitored)
-- **Strategy Activation**: legacy_v0 → hybrid_v1 impacts scoring algorithms
-- **Volume Requirement Relaxation**: May increase candidate volume
-- **Entry Rule Reduction**: Requires candidate quality monitoring
+- **Connection Pool Exhaustion**: High concurrent load may exhaust Redis connections
+  - Mitigation: Configure appropriate pool size, implement connection monitoring
+  - Rollback: Graceful degradation to non-cached responses
 
-### Rollback Procedures
+### Performance Impacts
+- **Memory Usage**: Redis caching will increase server memory requirements
+  - Expected Impact: +100-200MB for full universe cache
+  - Mitigation: Configure LRU eviction policy, monitor memory usage
+
+- **Network Latency**: Additional network hop to Redis for cache operations
+  - Expected Impact: +2-5ms per cached operation
+  - Mitigation: Redis co-located with application server (same region)
+
+### Security Considerations
+- **Redis Authentication**: Production Redis instance requires authentication
+  - Configuration: Use REDIS_URL with embedded credentials
+  - Access Control: Limit Redis access to application services only
+
+- **Cache Data Sensitivity**: Market data cached temporarily
+  - Encryption: Use Redis SSL/TLS (rediss://) for data in transit
+  - Data Retention: Configure TTL to minimize data exposure window
+
+## Rollback Procedures
+
+### Emergency Cache Disable
 ```bash
-# EMERGENCY ROLLBACK (30 seconds)
-# 1. Revert strategy in configuration
-echo '{"scoring":{"strategy":"legacy_v0"}}' > /tmp/rollback.json
-cp /tmp/rollback.json /Users/michaelmote/Desktop/AMC-TRADER/calibration/active.json
+# 1. Disable worker via environment variable
+curl -X POST "$API/admin/worker/stop"
 
-# 2. Clear cache and restart
-redis-cli FLUSHDB
-# Restart service (platform-specific)
+# 2. Clear all cached data
+curl -X POST "$API/admin/cache/flush"
 
-# 3. Verify rollback
-curl -s "https://amc-trader.onrender.com/discovery/status" | jq .strategy
-# Expected: "legacy_v0"
+# 3. Verify direct database fallback
+curl -s "$API/discovery/contenders?force_refresh=true"
 ```
 
-### Rollback Success Criteria
-- System returns to pre-deployment state within 60 seconds
-- No data loss or corruption
-- Frontend displays last known good state
-- All monitoring alerts return to baseline
+### Worker Restart Procedure
+```bash
+# 1. Check worker health
+curl -s "$API/worker/health" | jq .
 
-## Success Metrics
+# 2. Restart worker if unhealthy
+curl -X POST "$API/admin/worker/restart"
 
-### Immediate Success Indicators (1 Hour)
-- [ ] Discovery finds 8+ candidates per scan (vs. previous 0)
-- [ ] Frontend displays real squeeze opportunities (vs. empty state)
-- [ ] No cascade failures in API responses
-- [ ] Configuration persists through service restarts
+# 3. Monitor restart success
+curl -s "$API/health" | jq '.components.worker'
+```
 
-### Short-term Success Validation (24 Hours)
-- [ ] Candidate discovery rate: 8-25 per scan (consistent)
-- [ ] Frontend engagement: Users interact with displayed opportunities
-- [ ] System stability: 99%+ uptime during market hours
-- [ ] Performance maintained: API response times < 2 seconds
+### Redis Connection Recovery
+```bash
+# 1. Test Redis connectivity
+curl -s "$API/health" | jq '.components.redis'
 
-### Quality Control Benchmarks
-- **Candidate Quality**: Score distributions 25-45% (realistic for market conditions)
-- **False Positive Control**: < 20% based on volume validation
-- **Discovery Latency**: < 8 seconds for full market scan
-- **Cache Efficiency**: > 80% Redis hit rate for repeated requests
+# 2. If Redis unavailable, verify fallback mode
+curl -s "$API/discovery/contenders" | jq '.cached'
 
-## Expected Performance Impact
+# 3. Monitor for automatic Redis reconnection
+tail -f logs/app.log | grep -i redis
+```
 
-### Before Fixes (Broken State)
-- Discovery Candidates: 0 per scan (100% rejection)
-- Frontend Display: "No squeeze opportunities detected" (always)
-- User Experience: System appears non-functional
-- API Utilization: 0% of discovery pipeline output
+This comprehensive dependency plan addresses all critical aspects of implementing a production-ready Redis caching and background worker system for AMC-TRADER, with specific focus on resolving the current 5+ minute discovery time failures through sub-second cached responses.
 
-### After Fixes (Target Performance)
-- Discovery Candidates: 8-25 per scan (healthy range)
-- Frontend Display: Real-time squeeze opportunities visible
-- User Experience: Functional squeeze monitoring system
-- API Utilization: 95%+ pipeline efficiency
+**Key Implementation Benefits:**
+1. **Performance**: 5+ minutes → <1 second cached response times
+2. **Reliability**: Continuous background discovery with cache warmup
+3. **Scalability**: Connection pooling and intelligent cache management
+4. **Monitoring**: Comprehensive health checks and performance metrics
+5. **Fault Tolerance**: Graceful degradation and automatic recovery
 
-### Resource Impact
-- **CPU Usage**: Minimal increase (more candidates processed in frontend)
-- **Memory Usage**: Negligible change (same data structures)
-- **Network Usage**: No significant change (same API patterns)
-- **Storage**: No additional requirements
+**Critical Success Factors:**
+- Redis service properly configured in Render environment
+- Background worker initialization on application startup
+- Health monitoring with cache age validation
+- Dynamic TTL strategy for hot stock optimization
+- Comprehensive error handling and rollback procedures
 
-## Deployment Checklist
-
-### Pre-Deployment Verification
-- [x] Configuration file contains hybrid_v1 strategy activation
-- [x] Frontend code updated with discovery endpoint integration  
-- [x] Threshold values calibrated to realistic ranges
-- [x] Rollback procedures documented and tested
-
-### Deployment Execution
-- [ ] Configuration file deployed to production
-- [ ] Backend service restarted (configuration reload)
-- [ ] Redis cache cleared (fresh strategy-aware data)
-- [ ] Frontend deployment confirmed (automatic)
-
-### Post-Deployment Validation  
-- [ ] API health check passes
-- [ ] Discovery returns 8+ candidates per scan
-- [ ] Frontend displays squeeze opportunities
-- [ ] Score distributions realistic (25-40% range)
-- [ ] No error rate increases detected
-
-### Monitoring Setup
-- [ ] Real-time discovery rate monitoring active
-- [ ] Frontend error tracking configured
-- [ ] Performance benchmarking baseline established
-- [ ] User engagement metrics collection enabled
-
-## Conclusion
-
-This deployment plan addresses the complete system failure where squeeze candidates were not displaying due to configuration mismatches and unrealistic thresholds. The implemented fixes ensure:
-
-1. **Permanent Resolution**: Root causes eliminated through configuration corrections
-2. **Zero Downtime**: Service restart required but minimal user impact
-3. **Immediate Results**: Squeeze opportunities will display within 1 hour of deployment
-4. **Quality Maintenance**: Realistic thresholds maintain candidate quality while restoring functionality
-5. **Rollback Safety**: Complete rollback procedures available if needed
-
-**Confidence Level**: 95% success probability based on comprehensive validation testing and conservative threshold calibration.
-
-**Expected Outcome**: Complete restoration of squeeze candidate discovery and display functionality with 15-35 real market opportunities displayed per scan instead of persistent empty results.
-
----
-
-*This deployment plan focuses specifically on the critical squeeze candidate display fixes identified in the 2025-09-06 system validation. Additional monitoring and learning system features may be implemented in future iterations.*
+**Expected Outcome**: Production AMC-TRADER system will deliver sub-second discovery responses through Redis caching, eliminating the current 5+ minute performance failures and providing real-time squeeze opportunity detection for users.

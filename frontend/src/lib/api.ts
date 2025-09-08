@@ -1,8 +1,8 @@
 import { API_BASE } from '../config';
 
-// Default timeout for discovery endpoints (60 seconds for real market scanning)
-const DEFAULT_TIMEOUT = 60000;
-const DISCOVERY_TIMEOUT = 120000; // 2 minutes for discovery calls
+// Reduced timeouts for emergency fix - UI should not hang
+const DEFAULT_TIMEOUT = 30000; // 30 seconds
+const DISCOVERY_TIMEOUT = 30000; // 30 seconds for discovery calls
 
 function getFullUrl(url: string): string {
   if (url.startsWith('http')) return url;

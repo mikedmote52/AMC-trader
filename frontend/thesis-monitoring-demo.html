@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AMC-TRADER Thesis Monitoring Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            font-size: 2.5em;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 1.1em;
+        }
+        
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .card h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-operational { background: #27ae60; }
+        .status-warning { background: #f39c12; }
+        .status-critical { background: #e74c3c; }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .metric {
+            text-align: center;
+            padding: 15px;
+            background: rgba(52, 152, 219, 0.1);
+            border-radius: 10px;
+            border: 1px solid rgba(52, 152, 219, 0.2);
+        }
+        
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #3498db;
+            display: block;
+        }
+        
+        .metric-label {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        
+        .alert-item, .position-item {
+            background: rgba(236, 240, 241, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            border-left: 4px solid #3498db;
+        }
+        
+        .alert-critical {
+            border-left-color: #e74c3c;
+            background: rgba(231, 76, 60, 0.1);
+        }
+        
+        .alert-high {
+            border-left-color: #f39c12;
+            background: rgba(243, 156, 18, 0.1);
+        }
+        
+        .alert-medium {
+            border-left-color: #3498db;
+            background: rgba(52, 152, 219, 0.1);
+        }
+        
+        .button {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(52, 152, 219, 0.3);
+        }
+        
+        .button-secondary {
+            background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+        }
+        
+        .button-danger {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+        }
+        
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+        
+        .error {
+            background: rgba(231, 76, 60, 0.1);
+            border: 1px solid #e74c3c;
+            padding: 15px;
+            border-radius: 10px;
+            color: #c0392b;
+            margin: 10px 0;
+        }
+        
+        .success {
+            background: rgba(39, 174, 96, 0.1);
+            border: 1px solid #27ae60;
+            padding: 15px;
+            border-radius: 10px;
+            color: #27ae60;
+            margin: 10px 0;
+        }
+        
+        .notification-banner {
+            background: rgba(52, 152, 219, 0.9);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 600;
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 30px;
+        }
+        
+        select {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #bdc3c7;
+            background: white;
+            font-size: 14px;
+            margin: 5px;
+        }
+        
+        @media (max-width: 768px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                padding: 10px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+            
+            .metrics-grid {
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎯 Thesis Monitoring Dashboard</h1>
+            <p class="subtitle">Real-time monitoring of investment thesis conditions</p>
+        </header>
+        
+        <div id="notification-banner" class="notification-banner" style="display: none;">
+            <span id="notification-text"></span>
+        </div>
+        
+        <div class="controls">
+            <button class="button" onclick="refreshDashboard()">🔄 Refresh Data</button>
+            <button class="button" onclick="createBatchRules()">⚡ Create All Rules</button>
+            <button class="button" onclick="checkConditions()">🔍 Check Conditions</button>
+            <button class="button-secondary" onclick="toggleAutoRefresh()">🔄 Auto-Refresh: <span id="auto-refresh-status">OFF</span></button>
+        </div>
+        
+        <div class="dashboard-grid">
+            <!-- System Status -->
+            <div class="card">
+                <h2>📊 System Status</h2>
+                <div id="system-status" class="loading">Loading...</div>
+            </div>
+            
+            <!-- Portfolio Overview -->
+            <div class="card">
+                <h2>💼 Portfolio Monitoring</h2>
+                <div id="portfolio-summary" class="loading">Loading...</div>
+            </div>
+            
+            <!-- Active Alerts -->
+            <div class="card full-width">
+                <h2>🚨 Active Alerts</h2>
+                <div class="controls">
+                    <select id="priority-filter" onchange="filterAlerts()">
+                        <option value="">All Priorities</option>
+                        <option value="critical">Critical</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                    </select>
+                    <select id="symbol-filter" onchange="filterAlerts()">
+                        <option value="">All Symbols</option>
+                    </select>
+                </div>
+                <div id="alerts-list" class="loading">Loading...</div>
+            </div>
+            
+            <!-- Monitored Positions -->
+            <div class="card full-width">
+                <h2>📈 Monitored Positions</h2>
+                <div id="positions-list" class="loading">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://amc-trader.onrender.com';  // Update with your API URL
+        let autoRefreshInterval = null;
+        let autoRefreshEnabled = false;
+        
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshDashboard();
+        });
+        
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            try {
+                const options = {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                };
+                
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+                
+                const response = await fetch(`${API_BASE}${endpoint}`, options);
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error || 'API call failed');
+                }
+                
+                return data.data;
+            } catch (error) {
+                console.error(`API call failed for ${endpoint}:`, error);
+                throw error;
+            }
+        }
+        
+        async function refreshDashboard() {
+            showNotification('Refreshing dashboard...', 'info');
+            
+            try {
+                await Promise.all([
+                    loadSystemStatus(),
+                    loadPortfolioSummary(), 
+                    loadAlerts(),
+                    loadPositions()
+                ]);
+                
+                showNotification('Dashboard updated successfully!', 'success');
+                setTimeout(() => hideNotification(), 3000);
+            } catch (error) {
+                console.error('Dashboard refresh failed:', error);
+                showNotification('Failed to refresh dashboard: ' + error.message, 'error');
+            }
+        }
+        
+        async function loadSystemStatus() {
+            try {
+                const status = await apiCall('/thesis-monitor/system-status');
+                
+                const statusHtml = `
+                    <div class="metrics-grid">
+                        <div class="metric">
+                            <span class="metric-value">${status.monitoring_rules?.total || 0}</span>
+                            <div class="metric-label">Total Rules</div>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-value">${status.monitoring_rules?.by_status?.active || 0}</span>
+                            <div class="metric-label">Active Rules</div>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-value">${status.active_alerts?.total || 0}</span>
+                            <div class="metric-label">Active Alerts</div>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-value">${status.monitored_positions?.count || 0}</span>
+                            <div class="metric-label">Monitored Symbols</div>
+                        </div>
+                    </div>
+                    <p><span class="status-indicator status-operational"></span>System Status: ${status.system_health}</p>
+                    <p><span class="status-indicator ${status.system_info?.database_connected ? 'status-operational' : 'status-critical'}"></span>Database: ${status.system_info?.database_connected ? 'Connected' : 'Disconnected'}</p>
+                    <p><span class="status-indicator status-operational"></span>Market Data: ${status.system_info?.market_data_provider}</p>
+                `;
+                
+                document.getElementById('system-status').innerHTML = statusHtml;
+            } catch (error) {
+                document.getElementById('system-status').innerHTML = `<div class="error">Failed to load system status: ${error.message}</div>`;
+            }
+        }
+        
+        async function loadPortfolioSummary() {
+            try {
+                const summary = await apiCall('/thesis-monitor/portfolio-monitoring');
+                
+                const summaryHtml = `
+                    <div class="metrics-grid">
+                        <div class="metric">
+                            <span class="metric-value">${summary.total_positions || 0}</span>
+                            <div class="metric-label">Total Positions</div>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-value">${summary.monitored_positions || 0}</span>
+                            <div class="metric-label">Monitored</div>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-value">${summary.recent_alerts || 0}</span>
+                            <div class="metric-label">Recent Alerts</div>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('portfolio-summary').innerHTML = summaryHtml;
+            } catch (error) {
+                document.getElementById('portfolio-summary').innerHTML = `<div class="error">Failed to load portfolio summary: ${error.message}</div>`;
+            }
+        }
+        
+        async function loadAlerts() {
+            try {
+                const notifications = await apiCall('/thesis-monitor/notifications');
+                const alertsContainer = document.getElementById('alerts-list');
+                
+                if (!notifications.notifications || notifications.notifications.length === 0) {
+                    alertsContainer.innerHTML = '<p>No active alerts</p>';
+                    return;
+                }
+                
+                // Update symbol filter
+                const symbolFilter = document.getElementById('symbol-filter');
+                const symbols = [...new Set(notifications.notifications.map(n => n.symbol))];
+                symbolFilter.innerHTML = '<option value="">All Symbols</option>' + 
+                    symbols.map(s => `<option value="${s}">${s}</option>`).join('');
+                
+                let alertsHtml = notifications.notifications.map(alert => `
+                    <div class="alert-item alert-${alert.type}">
+                        <h4>${alert.title}</h4>
+                        <p>${alert.message}</p>
+                        <small>
+                            Conditions: ${alert.conditions_met.join(', ')} | 
+                            Triggered: ${new Date(alert.triggered_at).toLocaleString()}
+                            ${alert.actionable ? ' | <strong>Action Required</strong>' : ''}
+                        </small>
+                    </div>
+                `).join('');
+                
+                alertsContainer.innerHTML = alertsHtml;
+            } catch (error) {
+                document.getElementById('alerts-list').innerHTML = `<div class="error">Failed to load alerts: ${error.message}</div>`;
+            }
+        }
+        
+        async function loadPositions() {
+            try {
+                const portfolioData = await apiCall('/thesis-monitor/portfolio-monitoring');
+                const positionsContainer = document.getElementById('positions-list');
+                
+                if (!portfolioData.position_summaries || portfolioData.position_summaries.length === 0) {
+                    positionsContainer.innerHTML = '<p>No positions found</p>';
+                    return;
+                }
+                
+                let positionsHtml = portfolioData.position_summaries.map(position => `
+                    <div class="position-item">
+                        <h4>${position.symbol}</h4>
+                        <p>
+                            Monitoring: ${position.has_monitoring ? '✅ Active' : '❌ Inactive'} | 
+                            Conditions: ${position.conditions_count} | 
+                            Recent Alerts: ${position.recent_alerts}
+                        </p>
+                        ${position.last_checked ? `<small>Last Checked: ${new Date(position.last_checked).toLocaleString()}</small>` : ''}
+                        ${position.highest_priority_alert && position.highest_priority_alert !== 'none' ? 
+                            `<small><strong>Alert Level: ${position.highest_priority_alert.toUpperCase()}</strong></small>` : ''}
+                    </div>
+                `).join('');
+                
+                positionsContainer.innerHTML = positionsHtml;
+            } catch (error) {
+                document.getElementById('positions-list').innerHTML = `<div class="error">Failed to load positions: ${error.message}</div>`;
+            }
+        }
+        
+        async function createBatchRules() {
+            showNotification('Creating monitoring rules for all positions...', 'info');
+            
+            try {
+                const result = await apiCall('/thesis-monitor/batch-create-rules', 'POST');
+                
+                const message = `Created ${result.rules_created} rules, skipped ${result.positions_skipped} positions`;
+                showNotification(message, 'success');
+                
+                // Refresh data to show new rules
+                setTimeout(() => refreshDashboard(), 2000);
+            } catch (error) {
+                showNotification('Failed to create batch rules: ' + error.message, 'error');
+            }
+        }
+        
+        async function checkConditions() {
+            showNotification('Checking all monitoring conditions...', 'info');
+            
+            try {
+                const result = await apiCall('/thesis-monitor/check-conditions', 'POST');
+                
+                const message = `Found ${result.new_alerts} new alerts from ${result.total_active_rules} active rules`;
+                showNotification(message, result.new_alerts > 0 ? 'warning' : 'success');
+                
+                // Refresh alerts to show new ones
+                setTimeout(() => loadAlerts(), 1000);
+            } catch (error) {
+                showNotification('Failed to check conditions: ' + error.message, 'error');
+            }
+        }
+        
+        function filterAlerts() {
+            const priorityFilter = document.getElementById('priority-filter').value;
+            const symbolFilter = document.getElementById('symbol-filter').value;
+            
+            const alertItems = document.querySelectorAll('.alert-item');
+            
+            alertItems.forEach(item => {
+                const title = item.querySelector('h4').textContent;
+                const symbol = title.split(':')[1]?.trim();
+                const priority = item.className.split('alert-')[1]?.split(' ')[0];
+                
+                let show = true;
+                
+                if (priorityFilter && priority !== priorityFilter) {
+                    show = false;
+                }
+                
+                if (symbolFilter && symbol !== symbolFilter) {
+                    show = false;
+                }
+                
+                item.style.display = show ? 'block' : 'none';
+            });
+        }
+        
+        function toggleAutoRefresh() {
+            autoRefreshEnabled = !autoRefreshEnabled;
+            
+            if (autoRefreshEnabled) {
+                autoRefreshInterval = setInterval(refreshDashboard, 60000); // Refresh every minute
+                document.getElementById('auto-refresh-status').textContent = 'ON';
+                showNotification('Auto-refresh enabled (60 seconds)', 'info');
+            } else {
+                if (autoRefreshInterval) {
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = null;
+                }
+                document.getElementById('auto-refresh-status').textContent = 'OFF';
+                showNotification('Auto-refresh disabled', 'info');
+            }
+            
+            setTimeout(() => hideNotification(), 2000);
+        }
+        
+        function showNotification(message, type) {
+            const banner = document.getElementById('notification-banner');
+            const text = document.getElementById('notification-text');
+            
+            text.textContent = message;
+            banner.className = `notification-banner notification-${type}`;
+            banner.style.display = 'block';
+        }
+        
+        function hideNotification() {
+            document.getElementById('notification-banner').style.display = 'none';
+        }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                switch(e.key) {
+                    case 'r':
+                        e.preventDefault();
+                        refreshDashboard();
+                        break;
+                    case 'c':
+                        e.preventDefault();
+                        checkConditions();
+                        break;
+                    case 'a':
+                        e.preventDefault();
+                        toggleAutoRefresh();
+                        break;
+                }
+            }
+        });
+    </script>
+</body>
+</html>

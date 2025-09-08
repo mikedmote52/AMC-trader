@@ -111,7 +111,7 @@ const BMSDiscoveryPage: React.FC = () => {
             </div>
 
             {/* Winners Analysis Summary */}
-            {winnersAnalysis && (
+            {winnersAnalysis?.analysis_summary && (
               <div className="bg-white border rounded-lg p-4 min-w-[300px]">
                 <h3 className="font-semibold text-gray-900 mb-2">Historical Validation</h3>
                 <div className="space-y-2 text-sm">

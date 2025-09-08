@@ -1,5 +1,5 @@
 services:
-  # Backend API Service - Force Hybrid V1 in Production
+  # Backend API Service - Web Process Only
   - type: web
     name: amc-trader
     env: python
@@ -7,20 +7,24 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn backend.src.app:app --host 0.0.0.0 --port $PORT
     envVars:
-      # Force Hybrid V1 in production
+      # Force BMS V1.1 in production (matches current codebase)
       - key: SCORING_STRATEGY
-        value: hybrid_v1
+        value: bms_v1
       - key: FORCE_STRATEGY
-        value: hybrid_v1
+        value: bms_v1
       - key: ALLOW_STRATEGY_OVERRIDE
         value: "false"
       
+      # Redis connection (from managed service)
+      - key: REDIS_URL
+        fromService:
+          name: amc-redis
+          type: redis
+          
       # Existing required environment variables (values from Render dashboard)
       - key: POLYGON_API_KEY
         sync: false
       - key: DATABASE_URL
-        sync: false
-      - key: REDIS_URL
         sync: false
       - key: ALPACA_API_KEY
         sync: false
@@ -34,9 +38,37 @@ services:
         value: production
       - key: LOG_LEVEL
         value: INFO
+      - key: DISCOVERY_CACHE_TTL
+        value: "60"
     
     healthCheckPath: /health
     autoDeploy: true
+
+  # Dedicated Discovery Worker Service
+  - type: worker
+    name: amc-trader-worker
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: rq worker discovery --url $REDIS_URL
+    envVars:
+      # Redis connection (from managed service)
+      - key: REDIS_URL
+        fromService:
+          name: amc-redis
+          type: redis
+          
+      # API keys needed by worker
+      - key: POLYGON_API_KEY
+        sync: false
+      - key: SCORING_STRATEGY
+        value: bms_v1
+        
+      # Worker configuration
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DISCOVERY_CACHE_TTL
+        value: "60"
 
   # Frontend Static Site
   - type: web
@@ -52,3 +84,9 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+
+databases:
+  # Redis for caching and job queue
+  - name: amc-redis
+    plan: starter
+    ipAllowList: []  # private

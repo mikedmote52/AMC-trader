@@ -58,6 +58,17 @@ async def whoami():
 def _routes():
     return sorted([r.path for r in app.routes])
 
+@app.get("/_redis_ping")
+def _redis_ping():
+    """Quick Redis connectivity test"""
+    try:
+        import redis
+        r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+        ping_result = r.ping()
+        return {"pong": ping_result, "redis_url": os.getenv("REDIS_URL", "redis://localhost:6379/0").split("@")[-1]}
+    except Exception as e:
+        return {"error": str(e), "pong": False}
+
 class TradeError(Exception):
     def __init__(self, code: str, detail: str = ""):
         self.code = code
@@ -113,31 +124,11 @@ app.mount("/metrics", metrics_app)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # On startup - initialize background discovery worker
-    try:
-        polygon_key = os.getenv('POLYGON_API_KEY')
-        redis_url = os.getenv('REDIS_URL')
-        
-        if polygon_key and redis_url:
-            bms_engine = RealBMSEngine(polygon_key)
-            await start_background_worker(bms_engine, redis_url)
-            log.info("✅ Background discovery worker started")
-        else:
-            log.warning("⚠️ Background worker not started - missing POLYGON_API_KEY or REDIS_URL")
-    except Exception as e:
-        log.error(f"❌ Failed to start background worker: {e}")
-    
+    # On startup - No background worker in web process (using dedicated worker service)
+    log.info("✅ Web process started - discovery handled by dedicated worker service")
     yield
-    
     # On shutdown
-    try:
-        from backend.src.services.discovery_worker import get_worker
-        worker = get_worker()
-        if worker:
-            worker.stop()
-            log.info("🛑 Background discovery worker stopped")
-    except Exception as e:
-        log.error(f"Error stopping worker: {e}")
+    log.info("🛑 Web process shutdown")
 
 app.lifespan = lifespan
 
@@ -215,8 +206,8 @@ async def health():
 app.include_router(trades_router)
 app.include_router(polygon_debug, prefix="/debug")
 
-# Include discovery, portfolio, learning, daily updates, thesis, analytics, and pattern memory routers
-from backend.src.routes import bms_discovery as discovery_routes
+# Include discovery, portfolio, learning, daily updates, thesis, analytics, and pattern memory routers  
+from backend.src.routes import discovery_async as discovery_routes
 # Remove calibration routes - not needed with unified BMS system
 from backend.src.routes import portfolio as portfolio_routes
 from backend.src.routes import learning as learning_routes
@@ -231,6 +222,7 @@ from backend.src.routes import notifications as notification_routes
 from backend.src.routes import monitoring as monitoring_routes
 from backend.src.routes import data_integrity as data_integrity_routes
 from backend.src.routes import advanced_ranking as advanced_ranking_routes
+from backend.src.routes import thesis_monitor as thesis_monitor_routes
 
 app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery"])
 # Calibration routes removed - unified BMS system
@@ -246,6 +238,7 @@ app.include_router(data_quality_routes.router, prefix="/data-quality", tags=["da
 app.include_router(pattern_memory_routes.router, prefix="/pattern-memory", tags=["pattern-memory"])
 app.include_router(notification_routes.router, prefix="/notifications", tags=["notifications"])
 app.include_router(monitoring_routes.router, prefix="/monitoring", tags=["monitoring"])
+app.include_router(thesis_monitor_routes.router, prefix="/thesis-monitor", tags=["thesis-monitor"])
 app.include_router(data_integrity_routes.router, prefix="/data-integrity", tags=["data-integrity"])
 
 # Compatibility routes for old frontend paths

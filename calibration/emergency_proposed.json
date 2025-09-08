@@ -1,0 +1,307 @@
+{
+  "calibration_update": {
+    "type": "emergency_fix",
+    "timestamp": "2025-09-07T23:35:00Z",
+    "validation_report_id": "VALIDATION-2025-09-07",
+    "priority": "CRITICAL",
+    "deployment_target": "immediate"
+  },
+  
+  "system_configuration": {
+    "deployment_strategy": {
+      "current_issue": "render.yaml configured for hybrid_v1 but codebase uses BMS v1.1",
+      "recommended_fix": {
+        "render_yaml_updates": {
+          "SCORING_STRATEGY": "bms_v1",
+          "FORCE_STRATEGY": "bms_v1", 
+          "remove_keys": ["ALLOW_STRATEGY_OVERRIDE"]
+        }
+      },
+      "confidence": 0.95,
+      "impact": "CRITICAL - Fixes deployment mismatch causing system failure"
+    },
+    
+    "background_worker_configuration": {
+      "current_issue": "Worker starts but doesn't populate Redis cache",
+      "recommended_fixes": {
+        "worker_cycle_seconds": 60,
+        "cache_ttl_seconds": 300,
+        "max_candidates_cache": 100,
+        "enable_cache_warming": true,
+        "redis_key_strategy": "bms_v1:candidates:{timestamp}"
+      },
+      "monitoring": {
+        "add_worker_health_endpoint": "/discovery/worker/health",
+        "cache_metrics_endpoint": "/discovery/cache/stats"
+      },
+      "confidence": 0.85,
+      "impact": "HIGH - Enables sub-second cached responses"
+    }
+  },
+  
+  "performance_optimizations": {
+    "discovery_engine_tuning": {
+      "universe_filtering": {
+        "universe_k_limit": 3000,
+        "early_stop_scan_threshold": 1500,
+        "parallel_scoring_enabled": true,
+        "batch_size_optimization": 50
+      },
+      "api_rate_limiting": {
+        "polygon_requests_per_second": 5,
+        "max_concurrent_requests": 8,
+        "request_timeout_seconds": 30
+      },
+      "confidence": 0.80,
+      "impact": "MEDIUM - Reduces discovery time from 5+ minutes to <2 minutes without cache"
+    },
+    
+    "redis_caching_strategy": {
+      "cache_levels": {
+        "hot_stocks_ttl": 30,
+        "normal_stocks_ttl": 300,
+        "universe_data_ttl": 3600
+      },
+      "cache_warming": {
+        "top_candidates_refresh": 60,
+        "market_data_preload": ["AAPL", "TSLA", "NVDA", "AMD", "MSFT"],
+        "historical_winners_cache": true
+      },
+      "confidence": 0.90,
+      "impact": "HIGH - Enables <1 second response times"
+    }
+  },
+  
+  "scoring_model_adjustments": {
+    "bms_v1_weights": {
+      "volume_surge": {
+        "current": 0.4,
+        "recommended": 0.35,
+        "reasoning": "Slightly reduce to balance with other factors"
+      },
+      "price_momentum": {
+        "current": 0.3,
+        "recommended": 0.30,
+        "reasoning": "Keep current weight - works well"
+      },
+      "volatility_expansion": {
+        "current": 0.2,
+        "recommended": 0.25,
+        "reasoning": "Increase to better catch breakout patterns"
+      },
+      "risk_filter": {
+        "current": 0.1,
+        "recommended": 0.10,
+        "reasoning": "Keep minimal risk filtering"
+      }
+    },
+    
+    "threshold_adjustments": {
+      "min_volume_surge": {
+        "current": 2.5,
+        "recommended": 2.0,
+        "reasoning": "Lower threshold to catch more opportunities in current market"
+      },
+      "min_atr_pct": {
+        "current": 0.04,
+        "recommended": 0.035,
+        "reasoning": "Slight reduction to include more volatile stocks"
+      },
+      "trade_ready_min_score": {
+        "current": 75,
+        "recommended": 70,
+        "reasoning": "Lower bar during system recovery phase"
+      },
+      "monitor_min_score": {
+        "current": 60,
+        "recommended": 55,
+        "reasoning": "Provide more watchlist candidates"
+      }
+    },
+    
+    "confidence": 0.70,
+    "impact": "MEDIUM - Improves candidate discovery and reduces false negatives",
+    "validation_required": true,
+    "backtest_recommendation": "Test against June-July 2025 winners before deployment"
+  },
+  
+  "frontend_resilience": {
+    "api_timeout_handling": {
+      "discovery_endpoints_timeout": 30000,
+      "health_check_timeout": 10000,
+      "audit_endpoint_timeout": 15000,
+      "retry_strategy": {
+        "max_retries": 2,
+        "backoff_multiplier": 1.5,
+        "jitter": true
+      }
+    },
+    
+    "error_boundaries": {
+      "discovery_component_fallback": "Show cached results or loading state",
+      "health_check_fallback": "Show last known system status",
+      "graceful_degradation": true
+    },
+    
+    "confidence": 0.95,
+    "impact": "HIGH - Prevents UI crashes and improves user experience"
+  },
+  
+  "monitoring_and_alerting": {
+    "critical_alerts": {
+      "discovery_response_time": {
+        "warning_threshold_ms": 5000,
+        "critical_threshold_ms": 30000,
+        "action": "Alert ops team immediately"
+      },
+      "cache_miss_rate": {
+        "warning_threshold_pct": 50,
+        "critical_threshold_pct": 80,
+        "action": "Investigate worker health"
+      },
+      "api_error_rate": {
+        "warning_threshold_pct": 10,
+        "critical_threshold_pct": 25,
+        "action": "Check external API connections"
+      }
+    },
+    
+    "performance_tracking": {
+      "discovery_latency_p95": "Track 95th percentile response times",
+      "candidate_quality_metrics": "Track hit rate of recommended stocks",
+      "system_availability": "Track uptime and functional endpoints"
+    },
+    
+    "confidence": 0.85,
+    "impact": "HIGH - Prevents future system failures"
+  },
+  
+  "deployment_sequence": {
+    "phase_1_emergency": {
+      "order": 1,
+      "timeline": "within 6 hours",
+      "changes": [
+        "Fix render.yaml deployment configuration",
+        "Deploy health endpoint bug fix", 
+        "Add frontend timeout protection"
+      ],
+      "validation_criteria": [
+        "Discovery health endpoint returns success",
+        "Frontend loads without crashes",
+        "Basic API functionality restored"
+      ]
+    },
+    
+    "phase_2_performance": {
+      "order": 2, 
+      "timeline": "within 24 hours",
+      "changes": [
+        "Enable background worker caching",
+        "Implement Redis cache strategy",
+        "Deploy performance optimizations"
+      ],
+      "validation_criteria": [
+        "Discovery endpoints respond in <5 seconds",
+        "Cache hit rate >50%",
+        "Worker health monitoring active"
+      ]
+    },
+    
+    "phase_3_optimization": {
+      "order": 3,
+      "timeline": "within 1 week", 
+      "changes": [
+        "Implement scoring model adjustments",
+        "Deploy comprehensive monitoring",
+        "Add automated alert system"
+      ],
+      "validation_criteria": [
+        "Discovery responses consistently <1 second",
+        "Cache hit rate >80%", 
+        "Full monitoring dashboard operational"
+      ]
+    }
+  },
+  
+  "rollback_plan": {
+    "trigger_conditions": [
+      "Discovery endpoints still timeout after phase 1",
+      "Frontend errors increase after deployment",
+      "Cache system fails to initialize"
+    ],
+    "rollback_steps": [
+      "Revert render.yaml to previous working configuration",
+      "Disable background worker if causing issues",
+      "Fall back to synchronous discovery with longer timeouts"
+    ],
+    "recovery_time_estimate": "30 minutes"
+  },
+  
+  "success_metrics": {
+    "immediate_success": {
+      "discovery_health_endpoint": "Returns HTTP 200",
+      "frontend_load_time": "<3 seconds without crashes", 
+      "basic_discovery": "Returns results in <30 seconds"
+    },
+    
+    "operational_success": {
+      "discovery_response_time": "<5 seconds average",
+      "cache_hit_rate": ">50%",
+      "system_uptime": ">99%"
+    },
+    
+    "performance_success": {
+      "discovery_response_time": "<1 second average",
+      "cache_hit_rate": ">80%", 
+      "candidate_quality": "Comparable to June-July 2025 performance"
+    }
+  },
+  
+  "risk_assessment": {
+    "deployment_risks": {
+      "configuration_changes": {
+        "risk_level": "LOW",
+        "mitigation": "Test in staging environment first"
+      },
+      "performance_regression": {
+        "risk_level": "MEDIUM", 
+        "mitigation": "Gradual rollout with monitoring"
+      },
+      "cache_system_failure": {
+        "risk_level": "MEDIUM",
+        "mitigation": "Fallback to non-cached mode"
+      }
+    },
+    
+    "business_risks": {
+      "continued_downtime": {
+        "risk_level": "CRITICAL",
+        "impact": "Unable to discover trading opportunities"
+      },
+      "performance_degradation": {
+        "risk_level": "HIGH", 
+        "impact": "Competitive disadvantage in fast markets"
+      }
+    }
+  },
+  
+  "validation_requirements": {
+    "pre_deployment": [
+      "Test configuration changes in staging environment",
+      "Verify background worker startup sequence", 
+      "Validate frontend timeout handling"
+    ],
+    
+    "post_deployment": [
+      "Monitor discovery endpoint response times for 24 hours",
+      "Verify cache population and hit rates",
+      "Confirm frontend stability under load"
+    ],
+    
+    "ongoing_monitoring": [
+      "Daily performance trend analysis",
+      "Weekly candidate quality assessment", 
+      "Monthly system optimization review"
+    ]
+  }
+}

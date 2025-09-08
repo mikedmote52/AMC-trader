@@ -63,16 +63,72 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
         ? `/discovery/candidates/trade-ready?limit=${maxResults}`
         : `/discovery/candidates?limit=${maxResults}`;
       
-      const response: BMSResponse = await getJSON(endpoint);
-      setCandidates(response.candidates);
-      setLastUpdate(new Date(response.timestamp).toLocaleTimeString());
+      const response = await getJSON<any>(endpoint);
+      
+      // Handle async discovery response patterns
+      if (response.status === 'cached' || response.status === 'ready') {
+        // Immediate response with candidates
+        setCandidates(response.candidates || []);
+        setLastUpdate(new Date().toLocaleTimeString());
+        
+      } else if (response.status === 'queued') {
+        // Job queued, need to poll for results
+        setError('Discovery in progress... This may take 30-60 seconds.');
+        await pollForResults(response.task);
+        
+      } else if (response.candidates && Array.isArray(response.candidates)) {
+        // Fallback: old API format with direct candidates array
+        setCandidates(response.candidates);
+        if (response.timestamp) {
+          setLastUpdate(new Date(response.timestamp).toLocaleTimeString());
+        } else {
+          setLastUpdate(new Date().toLocaleTimeString());
+        }
+      } else {
+        // Unknown response format
+        console.warn('Unknown discovery response format:', response);
+        setError('Received unexpected response format. Please refresh the page.');
+      }
       
     } catch (err) {
       console.error('Error fetching BMS candidates:', err);
-      setError('Failed to load discovery candidates');
+      setError('Failed to load discovery candidates. The system may be starting up.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const pollForResults = async (taskId: string, maxAttempts = 12) => {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+        
+        const pollResponse = await getJSON<any>(`/discovery/candidates?task=${taskId}`);
+        
+        if (pollResponse.status === 'ready') {
+          setCandidates(pollResponse.candidates || []);
+          setLastUpdate(new Date().toLocaleTimeString());
+          setError(null);
+          return;
+          
+        } else if (pollResponse.status === 'failed') {
+          setError('Discovery failed. Please try again.');
+          return;
+          
+        } else {
+          // Still processing
+          const progress = pollResponse.progress || 0;
+          setError(`Discovery in progress... ${progress}% complete (attempt ${attempt}/${maxAttempts})`);
+        }
+        
+      } catch (err) {
+        console.error(`Polling attempt ${attempt} failed:`, err);
+        setError(`Discovery in progress... (attempt ${attempt}/${maxAttempts})`);
+      }
+    }
+    
+    // Max attempts reached
+    setError('Discovery is taking longer than expected. Please refresh the page.');
   };
 
   useEffect(() => {
@@ -87,11 +143,23 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
   const triggerDiscovery = async () => {
     try {
       setLoading(true);
-      await getJSON(`/discovery/trigger?limit=${maxResults}`);
-      await fetchCandidates();
+      setError('Triggering fresh discovery scan...');
+      
+      // Trigger forces a fresh discovery job
+      const response = await getJSON<any>(`/discovery/trigger?limit=${maxResults}`);
+      
+      if (response.status === 'queued') {
+        setError('Fresh discovery started. This will take 30-60 seconds...');
+        await pollForResults(response.task);
+      } else {
+        // Immediate response or other format
+        await fetchCandidates();
+      }
     } catch (err) {
       console.error('Error triggering discovery:', err);
       setError('Failed to trigger discovery scan');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -347,13 +415,13 @@ const BMSAuditModal: React.FC<BMSAuditModalProps> = ({ candidate, onClose }) => 
               <div>
                 <h4 className="text-lg font-semibold mb-3">BMS Component Breakdown</h4>
                 <div className="grid grid-cols-2 gap-4">
-                  {Object.entries(candidate.component_scores).map(([key, score]) => (
+                  {candidate.component_scores && Object.entries(candidate.component_scores).map(([key, score]) => (
                     <div key={key} className="bg-gray-50 p-3 rounded">
                       <div className="flex justify-between items-center">
                         <span className="text-sm font-medium capitalize">
                           {key.replace('_', ' ')}
                         </span>
-                        <span className="font-bold">{score.toFixed(1)}/100</span>
+                        <span className="font-bold">{(score as number).toFixed(1)}/100</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
                         <div
@@ -363,6 +431,11 @@ const BMSAuditModal: React.FC<BMSAuditModalProps> = ({ candidate, onClose }) => 
                       </div>
                     </div>
                   ))}
+                  {!candidate.component_scores && (
+                    <div className="col-span-2 text-center text-gray-500 py-4">
+                      Component scores not available
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -381,7 +454,7 @@ const BMSAuditModal: React.FC<BMSAuditModalProps> = ({ candidate, onClose }) => 
                     </div>
                     <div className="bg-gray-50 p-3 rounded">
                       <div className="text-sm text-gray-600">ATR %</div>
-                      <div className="text-lg font-bold">{candidate.atr_pct.toFixed(1)}%</div>
+                      <div className="text-lg font-bold">{candidate.atr_pct?.toFixed(1) || 'N/A'}%</div>
                     </div>
                   </div>
                 </div>
