@@ -97,9 +97,14 @@ async def add_trace_headers(request: Request, call_next):
     return resp
 
 # CORS middleware - allow frontend origins
+origins = [
+    "http://localhost:5173",  # Vite dev server
+    "https://amc-frontend.onrender.com",  # Production frontend
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact frontend origins
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -224,7 +229,9 @@ from backend.src.routes import data_integrity as data_integrity_routes
 from backend.src.routes import advanced_ranking as advanced_ranking_routes
 from backend.src.routes import thesis_monitor as thesis_monitor_routes
 
-app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery"])
+# Canonical + legacy discovery routes
+app.include_router(discovery_routes.router, prefix="/api/discovery", tags=["discovery"])
+app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery-legacy"])
 # Calibration routes removed - unified BMS system
 app.include_router(advanced_ranking_routes.router, prefix="/advanced-ranking", tags=["advanced-ranking"])
 app.include_router(portfolio_routes.router, prefix="/portfolio", tags=["portfolio"])

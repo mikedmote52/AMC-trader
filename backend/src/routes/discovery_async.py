@@ -256,6 +256,28 @@ async def get_queue_status():
         logger.error(f"Error getting queue status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/contenders")
+async def get_contenders(
+    limit: int = Query(50, description="Maximum number of contenders to return"),
+    task: Optional[str] = Query(None, description="Job ID to check progress") 
+):
+    """Legacy alias for candidates endpoint"""
+    return await get_candidates(limit=limit, task=task)
+
+@router.get("/diagnostics")
+async def get_diagnostics():
+    """Legacy diagnostics endpoint"""
+    health_data = await discovery_health()
+    
+    # Transform to expected format
+    return {
+        "workers": health_data["components"]["workers"],
+        "pending_jobs": health_data["components"]["queue"],
+        "cache_size": health_data["cache_status"]["candidate_count"],
+        "redis_connected": health_data["components"]["redis"] == "connected",
+        "last_update": health_data["timestamp"]
+    }
+
 @router.post("/trigger")
 async def trigger_discovery(
     limit: int = Query(25, description="Number of candidates to discover")

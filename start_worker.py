@@ -7,44 +7,59 @@ Handles module path and Redis connection properly
 import os
 import sys
 import redis
-import rq
+from rq import Connection, Worker
 import logging
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# IMPORTANT: import registers task callables so RQ can resolve them
+# Add backend source to Python path first
+backend_path = os.path.join(os.getcwd(), 'backend', 'src')
+if backend_path not in sys.path:
+    sys.path.insert(0, backend_path)
+
+# Import the worker module to register the discovery tasks
+try:
+    import backend.src.worker  # This registers run_discovery function
+    logger.info("✅ Imported worker module successfully")
+except Exception as e:
+    logger.error(f"❌ Failed to import worker module: {e}")
+    sys.exit(1)
+
+QUEUES = ["discovery"]
+
 def main():
-    # Add backend source to Python path
-    backend_path = os.path.join(os.getcwd(), 'backend', 'src')
-    if backend_path not in sys.path:
-        sys.path.insert(0, backend_path)
-    
-    logger.info(f"Python path: {sys.path[:3]}")  # Show first 3 entries
-    
-    # Get Redis URL
-    redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    redis_url = os.environ.get("REDIS_URL")
+    if not redis_url:
+        logger.error("❌ REDIS_URL environment variable is required")
+        sys.exit(1)
+        
     logger.info(f"Connecting to Redis: {redis_url.split('@')[-1]}")  # Hide credentials
     
     try:
         # Test Redis connection
         r = redis.from_url(redis_url, decode_responses=True)
         ping_result = r.ping()
-        logger.info(f"Redis ping: {ping_result}")
+        logger.info(f"✅ Redis ping: {ping_result}")
         
-        # Create queue
-        q = rq.Queue("discovery", connection=r)
-        logger.info(f"Queue length: {len(q)}")
+        # Check initial queue status
+        from rq import Queue
+        q = Queue("discovery", connection=r)
+        logger.info(f"📊 Initial queue length: {len(q)}")
         
-        # Create and start worker
-        worker = rq.Worker([q], connection=r)
-        logger.info("Starting RQ worker for 'discovery' queue...")
+        # Start worker with connection context
+        logger.info(f"🚀 Starting RQ worker for queues: {QUEUES}")
+        with Connection(r):
+            Worker(QUEUES).work(logging_level="INFO")
         
-        # Start worker (this blocks)
-        worker.work(logging_level=logging.INFO)
-        
+    except KeyboardInterrupt:
+        logger.info("🛑 Worker stopped by user")
     except Exception as e:
-        logger.error(f"Worker startup failed: {e}")
+        logger.error(f"❌ Worker startup failed: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":

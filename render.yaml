@@ -17,9 +17,10 @@ services:
       
       # Redis connection (from managed service)
       - key: REDIS_URL
-        fromService:
-          name: amc-redis
+        fromService: 
           type: redis
+          name: amc-redis
+          property: connectionString
           
       # Existing required environment variables (values from Render dashboard)
       - key: POLYGON_API_KEY
@@ -33,9 +34,11 @@ services:
       - key: ALPACA_BASE_URL
         sync: false
         
-      # Additional configuration
+      # Additional configuration  
       - key: ENVIRONMENT
         value: production
+      - key: ENV
+        value: prod
       - key: LOG_LEVEL
         value: INFO
       - key: DISCOVERY_CACHE_TTL
@@ -50,13 +53,14 @@ services:
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: python start_worker.py
+    startCommand: python -u start_worker.py
     envVars:
       # Redis connection (from managed service)
       - key: REDIS_URL
-        fromService:
-          name: amc-redis
+        fromService: 
           type: redis
+          name: amc-redis
+          property: connectionString
           
       # API keys needed by worker
       - key: POLYGON_API_KEY
@@ -65,6 +69,8 @@ services:
         value: bms_v1
         
       # Worker configuration
+      - key: ENV
+        value: prod
       - key: LOG_LEVEL
         value: INFO
       - key: DISCOVERY_CACHE_TTL
@@ -85,8 +91,8 @@ services:
         source: /*
         destination: /index.html
 
-databases:
-  # Redis for caching and job queue
-  - name: amc-redis
+  # Redis service (moved from databases section)
+  - type: redis
+    name: amc-redis
     plan: starter
-    ipAllowList: []  # private
+    ipAllowList: []
