@@ -10,6 +10,7 @@ import logging
 import json
 import time
 import os
+import asyncio
 import redis
 import rq
 from datetime import datetime
@@ -138,26 +139,73 @@ async def get_candidates(
                     content={"status": "error", "error": str(e)}
                 )
         
-        # 3. No cache, no active job -> enqueue new discovery
-        logger.info(f"Enqueueing new discovery job (limit={limit}, force_refresh={force_refresh})")
+        # 3. No cache, no active job -> check if workers are available
+        logger.info(f"No cached data available (limit={limit}, force_refresh={force_refresh})")
         
-        job = q.enqueue(
-            "backend.src.worker.run_discovery",
-            limit,
-            job_timeout=600,  # 10 minute timeout
-            result_ttl=300,   # Keep results for 5 minutes
-            failure_ttl=60    # Keep failure info for 1 minute
-        )
+        # Check for active workers
+        workers = rq.Worker.all(connection=r)
+        active_workers = [w for w in workers if w.get_state() == 'busy']
         
-        response = {
-            "status": "queued",
-            "task": job.id,
-            "poll_url": f"/discovery/candidates?task={job.id}",
-            "message": "Discovery job started. Use task ID to check progress.",
-            "estimated_time_seconds": 30
-        }
-        
-        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=response)
+        if len(workers) == 0:
+            # FALLBACK: No workers available, run discovery directly in web process
+            logger.warning("No RQ workers available, running discovery directly in web process")
+            
+            try:
+                # Import and run discovery function directly
+                from backend.src.worker import run_discovery
+                candidates = await asyncio.to_thread(run_discovery, limit)
+                
+                # Cache results immediately
+                cache_data = {
+                    'candidates': candidates,
+                    'count': len(candidates),
+                    'timestamp': time.time(),
+                    'cached': True,
+                    'engine': 'BMS v1.1 - Direct (No Workers)'
+                }
+                _cache_set(CACHE_KEY, cache_data)
+                
+                return {
+                    "status": "ready",
+                    "candidates": candidates[:limit],
+                    "count": len(candidates[:limit]),
+                    "timestamp": datetime.now().isoformat(),
+                    "engine": "BMS v1.1 - Direct (No Workers)",
+                    "cached": False,
+                    "fallback_mode": True
+                }
+                
+            except Exception as e:
+                logger.error(f"Direct discovery failed: {e}")
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "status": "error", 
+                        "error": f"Discovery failed: {str(e)}",
+                        "fallback_attempted": True
+                    }
+                )
+        else:
+            # Normal path: enqueue job for worker processing
+            logger.info(f"Enqueueing discovery job for {len(workers)} available workers")
+            
+            job = q.enqueue(
+                "backend.src.worker.run_discovery",
+                limit,
+                job_timeout=600,  # 10 minute timeout
+                result_ttl=300,   # Keep results for 5 minutes
+                failure_ttl=60    # Keep failure info for 1 minute
+            )
+            
+            response = {
+                "status": "queued",
+                "task": job.id,
+                "poll_url": f"/discovery/candidates?task={job.id}",
+                "message": "Discovery job started. Use task ID to check progress.",
+                "estimated_time_seconds": 30
+            }
+            
+            return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=response)
         
     except Exception as e:
         logger.error(f"Error in get_candidates: {e}")
@@ -217,6 +265,22 @@ async def clear_cache():
         return {"cache_cleared": bool(result), "key": CACHE_KEY}
     except Exception as e:
         logger.error(f"Error clearing cache: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/queue")
+async def clear_queue():
+    """Clear the job queue (emergency cleanup)"""
+    try:
+        from rq import Queue
+        q = Queue("discovery", connection=r)
+        cleared = q.empty()
+        return {
+            "queue_cleared": True, 
+            "jobs_removed": cleared,
+            "message": "All pending discovery jobs removed"
+        }
+    except Exception as e:
+        logger.error(f"Error clearing queue: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/queue-status")
