@@ -50,7 +50,7 @@ services:
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: rq worker discovery --url $REDIS_URL
+    startCommand: python start_worker.py
     envVars:
       # Redis connection (from managed service)
       - key: REDIS_URL
