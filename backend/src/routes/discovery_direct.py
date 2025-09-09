@@ -82,7 +82,7 @@ async def get_market_movers() -> List[Dict]:
                         "atr_pct": abs(round(change_pct, 1)),  # Simplified
                         "confidence": "HIGH" if bms_score >= 75 else "MEDIUM",
                         "risk_level": "HIGH" if change_pct > 10 else "MEDIUM",
-                        "thesis": f"{"Strong" if volume_surge > 2 else "Moderate"} volume surge with {change_pct:.1f}% gain",
+                        "thesis": f"{'Strong' if volume_surge > 2 else 'Moderate'} volume surge with {change_pct:.1f}% gain",
                         "component_scores": {
                             "volume_surge": min(100, int(volume_surge * 20)),
                             "price_momentum": min(100, int(change_pct * 5)),
