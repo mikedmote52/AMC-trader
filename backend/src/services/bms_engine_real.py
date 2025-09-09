@@ -245,18 +245,25 @@ class RealBMSEngine:
             by_ticker = {t["ticker"]: t for t in response.json().get("tickers", [])}
             
             kept = []
+            skipped_no_data = 0
+            
             for sym in symbols:
                 row = by_ticker.get(sym)
                 if not row:
+                    skipped_no_data += 1
                     continue
                     
                 # Get current price from last trade or day data
                 last = row.get("lastTrade") or {}
                 day = row.get("day") or {}
-                price = last.get("p") or day.get("c")
-                vol = day.get("v")
+                prev_day = row.get("prevDay") or {}
+                
+                # Try multiple price sources
+                price = last.get("p") or day.get("c") or prev_day.get("c")
+                vol = day.get("v") or prev_day.get("v")
                 
                 if not price or vol is None:
+                    skipped_no_data += 1
                     continue
                     
                 # Check current price and volume bounds
@@ -266,6 +273,16 @@ class RealBMSEngine:
                 
                 if min_price <= price <= max_price and dv_m >= min_dv_m:
                     kept.append(sym)
+            
+            # If we kept very few symbols, it might be market hours issue - be more permissive
+            if len(kept) < 100 and len(symbols) > 1000:
+                logger.warning(f"Very few symbols passed intraday filter ({len(kept)}/{len(symbols)})")
+                logger.warning(f"Skipped {skipped_no_data} symbols due to missing data - may be market closed")
+                logger.info("Using more permissive filtering for discovery continuity...")
+                
+                # Use a subset of the original symbols for processing
+                kept = symbols[:min(1000, len(symbols))]
+                logger.info(f"Fallback: proceeding with {len(kept)} symbols for analysis")
             
             # Track timing and counts
             self.stage_timings.intraday_ms = int((time.perf_counter() - start_time) * 1000)
@@ -279,9 +296,10 @@ class RealBMSEngine:
         except Exception as e:
             logger.error(f"Intraday filter error: {e}")
             # Fallback to original list if snapshot fails
+            logger.warning("Snapshot filter failed - using original symbol list for always-on discovery")
             self.stage_timings.intraday_ms = 0
             self.last_universe_counts['intraday_pass'] = len(symbols)
-            return symbols
+            return symbols[:min(1000, len(symbols))]  # Limit to prevent overload
 
     async def fetch_all_active_stocks_fallback(self) -> List[str]:
         """Fallback: Fetch ALL active stock symbols from Polygon"""

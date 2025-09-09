@@ -180,104 +180,57 @@ async def get_active_stocks() -> List[Dict]:
 async def get_candidates(
     limit: int = Query(20, description="Maximum number of candidates to return")
 ):
-    """Get real market candidates from Polygon API"""
+    """Get real discovery candidates using the actual BMS engine"""
     try:
-        # Try to get gainers first
-        candidates = await get_market_movers()
+        # Import and use the real BMS discovery engine
+        from backend.src.services.bms_engine_real import RealBMSEngine
         
-        # If not enough, get active stocks
-        if len(candidates) < 5:
-            active = await get_active_stocks()
-            candidates.extend(active)
-        
-        # Remove duplicates
-        seen = set()
-        unique_candidates = []
-        for c in candidates:
-            if c["symbol"] not in seen:
-                seen.add(c["symbol"])
-                unique_candidates.append(c)
-        
-        # Sort and limit
-        unique_candidates.sort(key=lambda x: x["bms_score"], reverse=True)
-        unique_candidates = unique_candidates[:limit]
-        
-        # If still no candidates, use fallback data (market closed scenario)
-        if not unique_candidates:
-            logger.warning("No candidates from API, using fallback data")
-            # Return some reasonable fallback candidates for demo/testing
-            fallback_candidates = [
-                {
-                    "symbol": "SPY",
-                    "bms_score": 65.2,
-                    "action": "MONITOR",
-                    "price": 445.50,
-                    "volume_surge": 1.2,
-                    "dollar_volume": 85000000,
-                    "momentum_1d": 0.5,
-                    "atr_pct": 1.2,
-                    "confidence": "MEDIUM",
-                    "risk_level": "LOW",
-                    "thesis": "Market ETF - baseline activity",
-                    "component_scores": {"volume_surge": 60, "price_momentum": 65, "volatility_expansion": 70, "risk_filter": 65}
-                },
-                {
-                    "symbol": "QQQ",
-                    "bms_score": 68.5,
-                    "action": "MONITOR",
-                    "price": 385.20,
-                    "volume_surge": 1.5,
-                    "dollar_volume": 92000000,
-                    "momentum_1d": 0.8,
-                    "atr_pct": 1.5,
-                    "confidence": "MEDIUM",
-                    "risk_level": "LOW",
-                    "thesis": "Tech sector ETF showing strength",
-                    "component_scores": {"volume_surge": 65, "price_momentum": 70, "volatility_expansion": 68, "risk_filter": 70}
-                },
-                {
-                    "symbol": "AAPL",
-                    "bms_score": 62.3,
-                    "action": "MONITOR",
-                    "price": 182.50,
-                    "volume_surge": 0.9,
-                    "dollar_volume": 75000000,
-                    "momentum_1d": 0.3,
-                    "atr_pct": 1.8,
-                    "confidence": "MEDIUM",
-                    "risk_level": "LOW",
-                    "thesis": "Large cap tech - stable momentum",
-                    "component_scores": {"volume_surge": 55, "price_momentum": 60, "volatility_expansion": 65, "risk_filter": 75}
-                }
-            ]
+        # Initialize the BMS engine
+        polygon_key = os.getenv('POLYGON_API_KEY')
+        if not polygon_key:
+            raise ValueError("POLYGON_API_KEY not found")
             
+        logger.info("Initializing BMS engine for discovery...")
+        bms_engine = RealBMSEngine(polygon_key)
+        
+        # Run the real discovery process
+        logger.info(f"Running BMS discovery with limit={limit}")
+        candidates = await bms_engine.discover_real_candidates(limit=limit)
+        
+        if candidates:
+            logger.info(f"BMS engine found {len(candidates)} real discovery candidates")
             return {
                 "status": "ready",
-                "candidates": fallback_candidates[:limit],
-                "count": len(fallback_candidates[:limit]),
+                "candidates": candidates,
+                "count": len(candidates),
                 "timestamp": datetime.now().isoformat(),
-                "engine": "BMS Direct - Fallback Data (Market Closed)",
-                "message": "Using fallback data - market appears to be closed"
+                "engine": "BMS Real Engine v1.1 - Always-On Discovery",
+                "cached": False
+            }
+        else:
+            # BMS engine ran but found no qualifying candidates after full analysis
+            logger.info("BMS engine completed full analysis but found no candidates meeting criteria")
+            return {
+                "status": "ready",
+                "candidates": [],
+                "count": 0,
+                "timestamp": datetime.now().isoformat(),
+                "engine": "BMS Real Engine v1.1 - Analysis Complete",
+                "message": "Real market analysis complete - no candidates meet BMS scoring thresholds"
             }
         
-        return {
-            "status": "ready",
-            "candidates": unique_candidates,
-            "count": len(unique_candidates),
-            "timestamp": datetime.now().isoformat(),
-            "engine": "BMS Direct - Real Market Data",
-            "cached": False
-        }
-        
     except Exception as e:
-        logger.error(f"Error in get_candidates: {e}")
-        # Return empty result instead of error
+        logger.error(f"Error in BMS discovery: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
+        # Return error details for debugging
         return {
-            "status": "ready",
+            "status": "error",
             "candidates": [],
             "count": 0,
             "timestamp": datetime.now().isoformat(),
-            "engine": "BMS Direct - Error",
+            "engine": "BMS - Error",
             "error": str(e)
         }
 
