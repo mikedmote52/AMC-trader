@@ -212,7 +212,7 @@ app.include_router(trades_router)
 app.include_router(polygon_debug, prefix="/debug")
 
 # Include discovery, portfolio, learning, daily updates, thesis, analytics, and pattern memory routers  
-from backend.src.routes import discovery_async as discovery_routes
+from backend.src.routes import discovery_simple as discovery_routes
 # Remove calibration routes - not needed with unified BMS system
 from backend.src.routes import portfolio as portfolio_routes
 from backend.src.routes import learning as learning_routes
