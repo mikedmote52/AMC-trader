@@ -129,8 +129,8 @@ class RealBMSEngine:
                 'min_float_large': 150_000_000
             },
             'scoring': {
-                'trade_ready_min': 75,
-                'monitor_min': 60
+                'trade_ready_min': 65,  # Lowered from 75 - AAL at 74.3 should be trade-ready
+                'monitor_min': 45       # Lowered from 60 - more candidates for watchlist
             },
             'limits': {
                 'max_api_calls_per_minute': 300,  # Polygon rate limit
