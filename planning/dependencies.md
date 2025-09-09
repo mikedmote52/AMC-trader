@@ -1,7 +1,17 @@
-# Dependencies for AMC-TRADER Redis Caching and Background Worker System
+# Dependencies for AMC-TRADER Discovery System Overhaul
 
 ## Summary
-AMC-TRADER currently has production failures due to 5+ minute discovery times instead of sub-second cached responses. The system has Redis integration and background worker code in place, but requires proper initialization, connection handling, and deployment configuration to achieve the expected cached performance. This plan details all technical dependencies needed to implement a robust Redis caching system with background workers for continuous discovery cycles.
+
+This document outlines the comprehensive dependencies required for implementing a production-ready discovery system overhaul for AMC-TRADER. The enhancement introduces a robust background job processing system with Redis caching, non-blocking FastAPI endpoints, full universe coverage with local filtering, and proper separation of concerns between API routes and background workers.
+
+**Key Improvements:**
+- Redis Queue (RQ) background job processing with progress tracking
+- Non-blocking API with 202 Accepted pattern for long-running discovery jobs
+- Universe loader supporting 4,500+ stocks with comprehensive filtering
+- Constants and cache contract system for single source of truth
+- Enhanced worker process architecture for scalable background processing
+- Price filtering (stocks under $100) with coverage tripwire (minimum 4,500 stocks)
+- ETF/fund exclusion patterns and concurrent processing with rate limiting
 
 ## Package Dependencies
 
@@ -12,6 +22,11 @@ AMC-TRADER currently has production failures due to 5+ minute discovery times in
   - Installation: Already in requirements.txt
   - Used by: Discovery worker, cache management, distributed locks
   - Configuration: Supports `redis://` and `rediss://` URLs with SSL
+
+- **rq** (1.15.1): Redis Queue for background job processing
+  - Installation: Already in requirements.txt
+  - Used by: Non-blocking discovery jobs, progress tracking, job status
+  - Configuration: Queue management with job retry and failure handling
 
 - **redis-py-cluster** (2.1.3): Redis cluster support (optional for scaling)
   - Installation: `pip install redis-py-cluster==2.1.3`
@@ -58,8 +73,40 @@ AMC-TRADER currently has production failures due to 5+ minute discovery times in
 - `REDIS_URL`: Redis connection string
   - Format: `redis://[username:password@]host:port[/database]` or `rediss://` for SSL
   - Example: `REDIS_URL=redis://localhost:6379/0`
-  - Used by: All Redis operations, worker cache storage
+  - Used by: All Redis operations, worker cache storage, RQ job processing
   - Validation: Must be accessible from application environment
+
+**RQ Job Processing:**
+- `RQ_DEFAULT_QUEUE`: Default queue name for discovery jobs
+  - Format: String (default: "discovery")
+  - Example: `RQ_DEFAULT_QUEUE=discovery`
+  - Used by: Job enqueueing and worker process targeting
+
+- `RQ_JOB_TIMEOUT`: Maximum job execution time in seconds
+  - Format: Integer seconds (default: 1800)
+  - Example: `RQ_JOB_TIMEOUT=1800`
+  - Used by: RQ job timeout configuration for long-running discovery
+
+- `RQ_RESULT_TTL`: Job result cache time-to-live in seconds
+  - Format: Integer seconds (default: 3600)
+  - Example: `RQ_RESULT_TTL=3600`
+  - Used by: How long to keep job results for polling
+
+**Universe & Filtering Configuration:**
+- `UNIVERSE_SIZE_THRESHOLD`: Minimum universe size for coverage tripwire
+  - Format: Integer (default: 4500)
+  - Example: `UNIVERSE_SIZE_THRESHOLD=4500`
+  - Used by: Universe validation and health checks
+
+- `MAX_STOCK_PRICE`: Maximum price for stock filtering
+  - Format: Float (default: 100.0)
+  - Example: `MAX_STOCK_PRICE=100.0`
+  - Used by: Price-based filtering to exclude high-priced stocks
+
+- `MIN_MARKET_CAP`: Minimum market cap for stock inclusion
+  - Format: Integer (default: 50000000)
+  - Example: `MIN_MARKET_CAP=50000000`
+  - Used by: Market cap filtering for liquidity requirements
 
 **Worker Configuration:**
 - `BMS_CYCLE_SECONDS`: Background discovery cycle interval
@@ -137,23 +184,108 @@ AMC-TRADER currently has production failures due to 5+ minute discovery times in
 - **Failover**: Automatic primary election
 - **Replication**: Master-slave with read replicas
 
-### Cache Key Strategy
+### Redis Schema & Cache Contracts
 
-**Key Patterns:**
+**Core Discovery Cache Keys:**
 ```
-# Candidate caching
-bms:candidates:all           # All discovered candidates
-bms:candidates:trade_ready   # Action-filtered candidates
-bms:candidates:monitor       # Monitor-only candidates
+# Primary discovery results (TTL: 5-10 minutes)
+amc:discovery:v3:candidates:{strategy}  # Strategy-specific candidates
+amc:discovery:v3:universe:latest        # Full universe with filters applied
+amc:discovery:v3:metadata:{timestamp}   # Discovery run metadata
 
-# Metadata caching
-bms:meta                     # Discovery cycle metadata
-bms:worker:health           # Worker health status
-bms:universe:counts         # Universe statistics
+# RQ Job Management (TTL: 1 hour)
+rq:job:{job_id}                        # RQ job status and progress
+amc:jobs:discovery:active              # List of active job IDs
+amc:jobs:discovery:results:{job_id}    # Job results cache
 
-# Symbol-specific caching
-squeeze_cache:{symbol}       # Individual symbol analysis
-market_metrics:{symbol}     # Market data for TTL calculation
+# Constants & Filters (TTL: 4 hours) 
+amc:constants:filters                  # Price/volume/market cap filters
+amc:constants:exclusions               # ETF/fund exclusion patterns
+amc:universe:tripwire:status           # Coverage tripwire status
+
+# Worker Health & Monitoring (TTL: 2 minutes)
+amc:worker:health:last_heartbeat       # Worker process heartbeat
+amc:worker:stats:performance           # Worker performance metrics
+amc:discovery:stats:api_calls          # API usage statistics
+```
+
+**Discovery Results Schema:**
+```json
+{
+  "candidates": [
+    {
+      "symbol": "TSLA", 
+      "score": 85.7,
+      "subscores": {
+        "volume_momentum": 0.89,
+        "squeeze": 0.82,
+        "catalyst": 0.91,
+        "options": 0.84,
+        "technical": 0.78
+      },
+      "filters_passed": {
+        "price_under_100": true,
+        "market_cap_over_50m": true,
+        "not_etf": true,
+        "adequate_volume": true
+      },
+      "data_quality": {
+        "price_age_minutes": 2,
+        "volume_age_minutes": 1,
+        "confidence": 0.96
+      }
+    }
+  ],
+  "meta": {
+    "job_id": "discovery_20250909_101530_abc123",
+    "strategy": "hybrid_v1",
+    "universe_size": 4567,
+    "candidates_found": 47,
+    "execution_time_ms": 28500,
+    "timestamp": "2025-09-09T10:15:30Z",
+    "filters_applied": {
+      "max_price": 100.0,
+      "min_market_cap": 50000000,
+      "excluded_types": ["ETF", "FUND", "WARRANT"]
+    },
+    "api_usage": {
+      "polygon_calls": 4567,
+      "rate_limit_hits": 0,
+      "success_rate": 0.98
+    }
+  }
+}
+```
+
+**RQ Job Status Schema:**
+```json
+{
+  "job_id": "discovery_20250909_101530_abc123",
+  "status": "in_progress",
+  "progress": {
+    "percentage": 45,
+    "stage": "universe_loading",
+    "current_step": "filtering_by_price",
+    "symbols_processed": 2050,
+    "symbols_remaining": 2517,
+    "estimated_completion": "2025-09-09T10:25:00Z"
+  },
+  "timing": {
+    "queued_at": "2025-09-09T10:00:00Z",
+    "started_at": "2025-09-09T10:00:15Z",
+    "stage_timings": {
+      "universe_loading": 5200,
+      "price_filtering": 850,
+      "volume_analysis": 12300
+    }
+  },
+  "partial_results": {
+    "candidates_found_so_far": 23,
+    "top_candidates": ["TSLA", "AMD", "NVDA"]
+  },
+  "errors": [],
+  "worker_id": "worker_01_render_east"
+}
 ```
 
 **TTL Strategy:**
@@ -265,6 +397,162 @@ The current implementation uses Redis for caching and existing PostgreSQL for pe
 - **No Data Migration**: Cache warmup happens automatically on first worker cycle
 - **Rollback Safe**: Cache can be flushed without data loss
 - **Version Independent**: Cache keys include strategy awareness for A/B testing
+
+## API Route Patterns for Non-Blocking Discovery System
+
+### 202 Accepted → 200 OK Polling Pattern
+
+**Primary Discovery Endpoint:**
+```
+POST /discovery/v3/trigger
+GET  /discovery/v3/candidates
+GET  /discovery/v3/status/{job_id}
+```
+
+**Flow 1: Trigger New Discovery Job**
+```bash
+# 1. Trigger new discovery job
+curl -X POST "$API/discovery/v3/trigger" \
+  -H "Content-Type: application/json" \
+  -d '{"strategy":"hybrid_v1","limit":100}'
+
+# Response: 202 Accepted
+{
+  "status": "accepted",
+  "job_id": "discovery_20250909_101530_abc123",
+  "estimated_completion": "2025-09-09T10:25:00Z",
+  "polling_url": "/discovery/v3/status/discovery_20250909_101530_abc123"
+}
+
+# 2. Poll job status
+curl "$API/discovery/v3/status/discovery_20250909_101530_abc123"
+
+# Response: 200 OK (in progress)
+{
+  "status": "in_progress", 
+  "progress": 45,
+  "stage": "universe_loading",
+  "estimated_completion": "2025-09-09T10:25:00Z"
+}
+
+# 3. Poll until complete
+curl "$API/discovery/v3/status/discovery_20250909_101530_abc123"
+
+# Response: 200 OK (completed)
+{
+  "status": "completed",
+  "progress": 100,
+  "results_url": "/discovery/v3/candidates",
+  "candidates_found": 47,
+  "execution_time_ms": 28500
+}
+```
+
+**Flow 2: Get Cached Candidates (Immediate Response)**
+```bash
+# Get cached results immediately
+curl "$API/discovery/v3/candidates?strategy=hybrid_v1&limit=50"
+
+# Response: 200 OK (cached)
+{
+  "status": "cached",
+  "candidates": [...],
+  "count": 47,
+  "cache_age_seconds": 45,
+  "from_job": "discovery_20250909_101530_abc123"
+}
+
+# OR Response: 204 No Content (no cache available)
+# Client should trigger new discovery job
+```
+
+**Flow 3: Get Candidates with Auto-Trigger**
+```bash
+# Smart endpoint - returns cache or triggers job
+curl "$API/discovery/v3/candidates?auto_trigger=true&strategy=hybrid_v1"
+
+# If cached: 200 OK with data immediately
+# If no cache: 202 Accepted with job_id for polling
+```
+
+### Detailed API Specification
+
+**POST /discovery/v3/trigger**
+```json
+{
+  "strategy": "hybrid_v1",        // optional, defaults to env SCORING_STRATEGY
+  "limit": 100,                   // optional, defaults to 100
+  "filters": {                    // optional overrides
+    "max_price": 100.0,
+    "min_market_cap": 50000000,
+    "exclude_etfs": true
+  },
+  "force_refresh": false,         // optional, bypass cache
+  "priority": "normal"            // optional: normal|high
+}
+```
+
+**Response Codes:**
+- `202 Accepted`: Job queued successfully
+- `409 Conflict`: Similar job already running 
+- `429 Too Many Requests`: Queue at capacity
+- `500 Internal Server Error`: Job queue failure
+
+**GET /discovery/v3/candidates**
+```
+Query Parameters:
+- strategy: hybrid_v1|legacy_v0 (optional)
+- limit: integer, max candidates (optional)
+- auto_trigger: boolean, auto-start job if no cache (optional)
+- format: json|minimal (optional)
+```
+
+**Response Codes:**
+- `200 OK`: Cached results returned
+- `202 Accepted`: No cache, job triggered (if auto_trigger=true)
+- `204 No Content`: No cache available, no auto-trigger
+- `400 Bad Request`: Invalid parameters
+
+**GET /discovery/v3/status/{job_id}**
+```
+Response includes:
+- status: queued|in_progress|completed|failed
+- progress: 0-100 percentage
+- stage: current processing stage
+- estimated_completion: ISO timestamp
+- partial_results: preview of candidates found so far
+- errors: array of any errors encountered
+```
+
+**Response Codes:**
+- `200 OK`: Job status returned
+- `404 Not Found`: Job ID not found or expired
+- `410 Gone`: Job completed and results expired
+
+### Worker Health & Admin Endpoints
+
+**GET /discovery/v3/worker/health**
+```json
+{
+  "workers_active": 2,
+  "queue_depth": 3,
+  "last_job_completed": "2025-09-09T10:10:00Z",
+  "cache_hit_rate": 0.85,
+  "universe_last_updated": "2025-09-09T06:00:00Z",
+  "redis_connected": true,
+  "tripwire_status": "healthy"  // coverage >= 4500 stocks
+}
+```
+
+**POST /discovery/v3/admin/cache/clear**
+- Clear all discovery caches
+- Requires admin authentication
+- Returns: 200 OK with cache clear confirmation
+
+**POST /discovery/v3/admin/queue/clear**
+- Clear pending jobs from queue
+- Requires admin authentication  
+- Returns: 200 OK with cleared job count
 
 ## Configuration Changes
 
@@ -406,153 +694,344 @@ async def health_check():
     return health_status
 ```
 
+## Deployment Architecture for Worker Service
+
+### Render.com Service Configuration
+
+**New Worker Service Required:**
+```yaml
+# Add to render.yaml
+services:
+  # Existing web service
+  - type: web
+    name: amc-trader-api
+    # ... existing configuration ...
+  
+  # NEW: Background worker service
+  - type: worker
+    name: amc-trader-discovery-worker
+    env: python
+    repo: https://github.com/your-org/AMC-TRADER
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && python -m rq worker discovery --url $REDIS_URL --verbose
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: amc-redis
+          property: connectionString
+      - key: POLYGON_API_KEY
+        sync: false
+      - key: RQ_DEFAULT_QUEUE
+        value: discovery
+      - key: RQ_JOB_TIMEOUT
+        value: "1800"
+      - key: UNIVERSE_SIZE_THRESHOLD
+        value: "4500"
+      - key: MAX_STOCK_PRICE
+        value: "100.0"
+    scaling:
+      minInstances: 1
+      maxInstances: 3
+```
+
+**Resource Requirements:**
+- **Worker Memory**: 1GB minimum (full universe processing)
+- **Worker CPU**: 1 vCPU minimum (concurrent symbol analysis)
+- **Redis Memory**: 256MB minimum for cache + job queue
+- **Scaling**: Auto-scale workers based on queue depth
+
+### Integration Points with Existing BMS Engine
+
+**Current Integration:**
+1. **BMS Engine Compatibility**: Existing `RealBMSEngine` becomes the core worker job function
+2. **Strategy Resolver**: Existing strategy switching (`legacy_v0`, `hybrid_v1`) remains unchanged
+3. **Calibration System**: Current `/calibration/active.json` tuning system stays functional
+4. **Discovery Routes**: New routes coexist with existing discovery endpoints
+
+**Migration Strategy:**
+```python
+# Phase 1: Dual-mode operation
+# Existing routes continue to work
+@router.get("/discovery/contenders")  # Legacy route - keep working
+@router.get("/discovery/v3/candidates")  # New non-blocking route
+
+# Phase 2: Gradual traffic migration
+# Frontend can switch between modes via feature flag
+
+# Phase 3: Legacy route deprecation (optional)
+# After proven stability, legacy routes can be removed
+```
+
 ## Implementation Order
 
-### Phase 1: Redis Infrastructure Setup (Day 1)
-1. **Add Redis service to render.yaml**
-   - Configure standard Redis instance
-   - Set up connection string environment variable
-   - Deploy infrastructure changes
+### Phase 1: Foundation & Infrastructure (Week 1)
 
-2. **Update Redis client configuration**
-   - Implement async connection pooling
-   - Add connection retry logic with exponential backoff
-   - Configure SSL support for production
+**Day 1-2: RQ Infrastructure Setup**
+1. **Add RQ worker service to Render**
+   - Configure worker service in render.yaml
+   - Deploy Redis service if not already present
+   - Set up environment variables for job processing
+   
+2. **Create constants management system**
+   ```python
+   # backend/src/discovery/constants.py
+   class DiscoveryConstants:
+       MAX_STOCK_PRICE = 100.0
+       MIN_MARKET_CAP = 50_000_000
+       UNIVERSE_SIZE_THRESHOLD = 4500
+       ETF_EXCLUSION_PATTERNS = ["ETF", "FUND", "TRUST", ...]
+   ```
+   
+3. **Implement universe loader with filters**
+   ```python
+   # backend/src/discovery/universe_loader.py
+   async def load_filtered_universe() -> List[str]:
+       # Load from Polygon API
+       # Apply price filter (< $100)
+       # Apply market cap filter (> $50M)  
+       # Exclude ETFs/funds
+       # Validate 4500+ stock threshold
+   ```
 
-3. **Validate Redis connectivity**
-   - Test Redis connection in health endpoint
-   - Implement connection monitoring
-   - Add Redis metrics to application logging
+**Day 3-4: Core Worker Implementation**
+1. **Create RQ job worker function**
+   ```python
+   # backend/src/jobs/discovery_job.py
+   def run_discovery_job(strategy, limit, filters):
+       # Load universe with filters
+       # Run BMS engine discovery
+       # Cache results in Redis
+       # Update job progress throughout
+   ```
 
-### Phase 2: Worker Process Enhancement (Day 2)
-1. **Fix worker initialization in app startup**
-   - Ensure background worker starts on application boot
-   - Add proper error handling for worker failures
-   - Implement graceful shutdown procedures
+2. **Implement progress tracking system**
+   ```python
+   # Progress updates during job execution
+   job.meta['progress'] = 25
+   job.meta['stage'] = 'universe_loading'
+   job.meta['symbols_processed'] = 1250
+   job.save_meta()
+   ```
 
-2. **Enhance worker health monitoring**
-   - Add worker status to health endpoint
-   - Implement cache age monitoring
-   - Configure alerting for stale cache detection
+### Phase 2: API Implementation (Week 2)
 
-3. **Optimize discovery cycle timing**
-   - Fine-tune 60-second cycle intervals
-   - Add jitter to prevent synchronized load spikes
-   - Implement adaptive cycle timing based on market hours
+**Day 5-6: Non-blocking API Routes**
+1. **POST /discovery/v3/trigger endpoint**
+   ```python
+   @router.post("/discovery/v3/trigger")
+   async def trigger_discovery(request: DiscoveryRequest):
+       # Enqueue RQ job
+       # Return 202 with job_id
+       # Set up job progress tracking
+   ```
 
-### Phase 3: Cache Performance Optimization (Day 3)
-1. **Implement dynamic TTL strategy**
-   - Configure volume-based cache expiration
-   - Add squeeze detection for hot stock caching
-   - Optimize memory usage with intelligent eviction
+2. **GET /discovery/v3/status/{job_id} endpoint**
+   ```python
+   @router.get("/discovery/v3/status/{job_id}")
+   async def get_job_status(job_id: str):
+       # Check RQ job status
+       # Return progress, stage, partial results
+       # Handle completed/failed states
+   ```
 
-2. **Add cache warming strategies**
-   - Pre-populate cache for high-volume symbols
-   - Implement predictive cache loading
-   - Add cache hit/miss ratio monitoring
+3. **GET /discovery/v3/candidates endpoint** 
+   ```python
+   @router.get("/discovery/v3/candidates")
+   async def get_candidates(auto_trigger: bool = False):
+       # Check cache first
+       # If no cache and auto_trigger: start job, return 202
+       # If cached: return 200 with data
+       # If no cache and no auto_trigger: return 204
+   ```
 
-3. **Frontend integration testing**
-   - Test sub-second response times for cached endpoints
-   - Validate loading states and error handling
-   - Implement retry mechanisms with exponential backoff
+**Day 7-8: Cache Management**
+1. **Implement cache contract system**
+   ```python
+   # backend/src/discovery/cache_manager.py
+   class DiscoveryCacheManager:
+       async def store_results(job_id, strategy, candidates)
+       async def get_cached_results(strategy)
+       async def invalidate_cache(strategy=None)
+   ```
 
-### Phase 4: Production Monitoring (Day 4)
-1. **Deploy comprehensive monitoring**
-   - Configure cache performance metrics
-   - Add worker lifecycle event logging
-   - Set up alerting for cache misses and worker failures
+2. **Add worker health monitoring**
+   ```python
+   @router.get("/discovery/v3/worker/health")
+   async def worker_health():
+       # Check active workers
+       # Check queue depth  
+       # Check cache freshness
+       # Check universe coverage tripwire
+   ```
 
-2. **Load testing and performance validation**
-   - Test cache performance under high request volume
-   - Validate worker stability during market hours
-   - Measure end-to-end response times
+### Phase 3: Testing & Integration (Week 3)
 
-3. **Documentation and runbook creation**
-   - Create operational procedures for cache management
-   - Document troubleshooting steps for common issues
-   - Provide rollback procedures for production incidents
+**Day 9-10: Load Testing**
+1. **Full universe processing test**
+   ```bash
+   # Test with complete 4500+ stock universe
+   curl -X POST "$API/discovery/v3/trigger" \
+     -d '{"strategy":"hybrid_v1","limit":100}'
+   ```
+
+2. **Concurrent job handling**
+   ```bash
+   # Test multiple simultaneous discovery requests
+   # Validate queue management and worker scaling
+   ```
+
+**Day 11-12: Error Handling & Recovery**
+1. **Job failure scenarios**
+   - Polygon API rate limits
+   - Redis connection failures  
+   - Worker process crashes
+   - Invalid universe data
+
+2. **Cache invalidation strategies**
+   - Stale data detection
+   - Forced cache refresh
+   - Partial result handling
+
+### Phase 4: Production Deployment (Week 4)
+
+**Day 13-14: Production Readiness**
+1. **Deploy worker service**
+   - Configure Render worker service
+   - Validate environment variables
+   - Test worker startup and health checks
+
+2. **Monitor system performance**
+   - Worker scaling under load
+   - Cache hit/miss ratios
+   - API response times
+   - Universe coverage validation
+
+**Day 15-16: Traffic Migration**
+1. **Frontend integration**
+   - Update frontend to use new discovery endpoints
+   - Implement polling for job status
+   - Add loading states for async operations
+
+2. **Performance validation**
+   - Measure end-to-end discovery times
+   - Validate sub-30-second response times for cached results
+   - Monitor system stability during market hours
 
 ## Risk Assessment
 
-### Compatibility Risks
-- **Redis Version Compatibility**: Using redis-py 5.0.8 with async support
-  - Mitigation: Stick to stable redis-py version, avoid bleeding-edge features
-  - Rollback: Can disable caching and fallback to direct database queries
+### Technical Risks
 
-- **Connection Pool Exhaustion**: High concurrent load may exhaust Redis connections
-  - Mitigation: Configure appropriate pool size, implement connection monitoring
-  - Rollback: Graceful degradation to non-cached responses
+**RQ Job Queue Reliability**
+- **Risk**: Job failures causing incomplete discovery results
+- **Mitigation**: Implement job retry logic, dead letter queues, and graceful degradation
+- **Rollback**: Disable async processing, fallback to synchronous discovery
 
-### Performance Impacts
-- **Memory Usage**: Redis caching will increase server memory requirements
-  - Expected Impact: +100-200MB for full universe cache
-  - Mitigation: Configure LRU eviction policy, monitor memory usage
+**Redis Memory Pressure**
+- **Risk**: Large universe datasets (4500+ stocks) exhausting Redis memory
+- **Mitigation**: Implement LRU eviction, compress cached data, monitor memory usage
+- **Impact**: 256MB-1GB Redis memory requirement for full system operation
 
-- **Network Latency**: Additional network hop to Redis for cache operations
-  - Expected Impact: +2-5ms per cached operation
-  - Mitigation: Redis co-located with application server (same region)
+**Worker Scaling Challenges**
+- **Risk**: Single worker insufficient for market hours load, multiple workers causing race conditions
+- **Mitigation**: Configure auto-scaling (1-3 workers), implement job deduplication
+- **Monitoring**: Queue depth alerts, worker health checks every 30 seconds
 
-### Security Considerations
-- **Redis Authentication**: Production Redis instance requires authentication
-  - Configuration: Use REDIS_URL with embedded credentials
-  - Access Control: Limit Redis access to application services only
+### Integration Risks
 
-- **Cache Data Sensitivity**: Market data cached temporarily
-  - Encryption: Use Redis SSL/TLS (rediss://) for data in transit
-  - Data Retention: Configure TTL to minimize data exposure window
+**Existing BMS Engine Compatibility**
+- **Risk**: Changes to existing discovery logic breaking current functionality  
+- **Mitigation**: Dual-mode operation during migration, comprehensive testing
+- **Rollback Strategy**: Feature flag to disable new system, revert to legacy routes
 
-## Rollback Procedures
+**API Breaking Changes**
+- **Risk**: Frontend disruption from new API patterns
+- **Mitigation**: New routes (/v3/) coexist with existing ones, gradual migration
+- **Compatibility**: Legacy routes remain functional throughout transition
 
-### Emergency Cache Disable
+### Operational Risks
+
+**Coverage Tripwire Failures**
+- **Risk**: Universe drops below 4500 stocks, reducing discovery effectiveness
+- **Mitigation**: Automated alerts, fallback to cached universe, manual intervention procedures
+- **Monitoring**: Universe size validation in worker health checks
+
+**Discovery Job Timeouts**
+- **Risk**: Long-running jobs (30+ seconds) timing out under heavy load
+- **Mitigation**: 30-minute job timeout, progress tracking, partial result caching
+- **Performance Target**: 95% of jobs complete within 60 seconds
+
+## Success Metrics & Validation
+
+### Performance Benchmarks
+
+**Primary Success Criteria:**
+- **Discovery Response Time**: Sub-30 seconds for full universe scan (currently 5+ minutes)
+- **Cache Hit Rate**: >80% for repeat requests within cache TTL period
+- **Universe Coverage**: Maintain 4500+ stocks consistently (coverage tripwire)
+- **API Availability**: 99%+ uptime during market hours (9:30 AM - 4:00 PM ET)
+
+**Quality Metrics:**
+- **Job Success Rate**: >95% of discovery jobs complete without errors
+- **Data Freshness**: Cache age <10 minutes during active trading hours
+- **Worker Health**: Workers respond to health checks within 5 seconds
+- **Queue Processing**: Jobs processed within 2 minutes of enqueueing (95th percentile)
+
+### Validation Tests
+
+**Load Testing Scenarios:**
 ```bash
-# 1. Disable worker via environment variable
-curl -X POST "$API/admin/worker/stop"
+# 1. Full universe processing under load
+curl -X POST "$API/discovery/v3/trigger" \
+  -d '{"strategy":"hybrid_v1","limit":100}' &
+# Repeat 10x simultaneously
 
-# 2. Clear all cached data
-curl -X POST "$API/admin/cache/flush"
+# 2. Cache performance validation  
+for i in {1..100}; do
+  curl "$API/discovery/v3/candidates?strategy=hybrid_v1"
+done
 
-# 3. Verify direct database fallback
-curl -s "$API/discovery/contenders?force_refresh=true"
+# 3. Worker failure recovery
+# Kill worker process, validate auto-restart and job recovery
 ```
 
-### Worker Restart Procedure
-```bash
-# 1. Check worker health
-curl -s "$API/worker/health" | jq .
+**Integration Test Matrix:**
+- ✅ New API routes work with existing frontend
+- ✅ Legacy discovery routes remain functional
+- ✅ Strategy switching (hybrid_v1 ↔ legacy_v0) works across both systems
+- ✅ Calibration system updates affect both discovery systems
+- ✅ Authentication and rate limiting work with new endpoints
 
-# 2. Restart worker if unhealthy
-curl -X POST "$API/admin/worker/restart"
+### Production Monitoring Dashboard
 
-# 3. Monitor restart success
-curl -s "$API/health" | jq '.components.worker'
+**Key Metrics to Track:**
+```python
+# Worker Performance
+- discovery_jobs_completed_total
+- discovery_job_duration_seconds (histogram)
+- discovery_worker_health_status
+- discovery_queue_depth
+
+# Cache Performance  
+- discovery_cache_hit_rate
+- discovery_cache_size_bytes
+- discovery_cache_age_seconds
+
+# API Performance
+- discovery_api_request_duration (by endpoint)
+- discovery_api_error_rate
+- discovery_concurrent_jobs
+
+# Business Metrics
+- discovery_universe_size_current
+- discovery_candidates_found_per_run
+- discovery_api_usage_by_strategy
 ```
 
-### Redis Connection Recovery
-```bash
-# 1. Test Redis connectivity
-curl -s "$API/health" | jq '.components.redis'
+**Alerting Thresholds:**
+- 🚨 **Critical**: Universe size drops below 4000 stocks
+- ⚠️ **Warning**: Cache hit rate below 70% for 10+ minutes
+- 📊 **Info**: Queue depth exceeds 5 jobs (scale workers)
+- 🔧 **Action**: Worker health check failures (restart required)
 
-# 2. If Redis unavailable, verify fallback mode
-curl -s "$API/discovery/contenders" | jq '.cached'
-
-# 3. Monitor for automatic Redis reconnection
-tail -f logs/app.log | grep -i redis
-```
-
-This comprehensive dependency plan addresses all critical aspects of implementing a production-ready Redis caching and background worker system for AMC-TRADER, with specific focus on resolving the current 5+ minute discovery time failures through sub-second cached responses.
-
-**Key Implementation Benefits:**
-1. **Performance**: 5+ minutes → <1 second cached response times
-2. **Reliability**: Continuous background discovery with cache warmup
-3. **Scalability**: Connection pooling and intelligent cache management
-4. **Monitoring**: Comprehensive health checks and performance metrics
-5. **Fault Tolerance**: Graceful degradation and automatic recovery
-
-**Critical Success Factors:**
-- Redis service properly configured in Render environment
-- Background worker initialization on application startup
-- Health monitoring with cache age validation
-- Dynamic TTL strategy for hot stock optimization
-- Comprehensive error handling and rollback procedures
-
-**Expected Outcome**: Production AMC-TRADER system will deliver sub-second discovery responses through Redis caching, eliminating the current 5+ minute performance failures and providing real-time squeeze opportunity detection for users.
+This comprehensive dependency plan ensures the AMC-TRADER discovery system can efficiently process the full universe of 4,500+ stocks while maintaining sub-30-second response times through intelligent caching, background job processing, and robust error handling. The phased implementation approach minimizes risk while delivering significant performance improvements over the current system.

@@ -53,7 +53,7 @@ services:
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: python -u start_worker.py
+    startCommand: python -u backend/start_worker.py
     envVars:
       # Redis connection (from managed service)
       - key: REDIS_URL

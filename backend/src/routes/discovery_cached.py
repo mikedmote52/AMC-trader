@@ -1,0 +1,342 @@
+"""
+Discovery API Routes - Non-blocking with Redis caching
+Implements 202 Accepted → 200 OK polling pattern for fast UI responses
+"""
+import os
+import json
+import time
+import logging
+from typing import Dict, Any, Optional
+import redis.asyncio as redis
+from fastapi import APIRouter, Query, HTTPException
+from fastapi.responses import JSONResponse
+from rq import Queue
+from rq.job import Job
+
+from backend.src.constants import (
+    DISCOVERY_QUEUE, CACHE_KEY_CONTENDERS, CACHE_KEY_STATUS,
+    DEFAULT_LIMIT, MAX_LIMIT, JOB_TIMEOUT_SECONDS, RESULT_TTL_SECONDS
+)
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+# Redis connection for synchronous RQ operations
+redis_sync = redis.Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379'))
+
+@router.get("/contenders")
+async def get_contenders(limit: int = Query(DEFAULT_LIMIT, le=MAX_LIMIT)):
+    """
+    Get discovery candidates with non-blocking pattern:
+    - If cached results exist: Return 200 with data immediately
+    - If no cache: Enqueue job and return 202 with job ID for polling
+    """
+    try:
+        # Check for cached results first
+        redis_client = redis.from_url(os.getenv('REDIS_URL'))
+        cached_data = await redis_client.get(CACHE_KEY_CONTENDERS)
+        await redis_client.close()
+        
+        if cached_data:
+            try:
+                payload = json.loads(cached_data)
+                
+                # Apply limit to cached data
+                candidates = payload.get('candidates', [])[:limit]
+                
+                response_data = {
+                    'status': 'ready',
+                    'timestamp': payload.get('iso_timestamp'),
+                    'universe_size': payload.get('universe_size', 0),
+                    'filtered_size': payload.get('filtered_size', 0),
+                    'count': len(candidates),
+                    'candidates': candidates,
+                    'trade_ready_count': len([c for c in candidates if c.get('action') == 'TRADE_READY']),
+                    'monitor_count': len([c for c in candidates if c.get('action') == 'MONITOR']),
+                    'engine': payload.get('engine', 'BMS Cached Results'),
+                    'cached': True,
+                    'cache_age_seconds': int(time.time() - payload.get('timestamp', time.time()))
+                }
+                
+                logger.info(f"✅ Returning cached results: {len(candidates)} candidates")
+                return response_data
+                
+            except json.JSONDecodeError:
+                logger.warning("Cached data corrupted, triggering fresh discovery")
+        
+        # No valid cache - enqueue background job
+        logger.info("No cached results, enqueueing discovery job...")
+        
+        try:
+            queue = Queue(DISCOVERY_QUEUE, connection=redis_sync)
+            job = queue.enqueue(
+                'backend.src.jobs.discovery_job.run_discovery_job',
+                max(limit, 300),  # Cache extra results for future requests
+                job_timeout=JOB_TIMEOUT_SECONDS,
+                result_ttl=RESULT_TTL_SECONDS,
+                job_id=f"discovery_{int(time.time())}"
+            )
+            
+            logger.info(f"📋 Enqueued discovery job: {job.id}")
+            
+            return JSONResponse(
+                status_code=202,
+                content={
+                    'status': 'queued',
+                    'job_id': job.id,
+                    'message': 'Discovery analysis started - poll /discovery/status for progress',
+                    'estimated_completion_seconds': 120,
+                    'poll_url': f'/discovery/status?job_id={job.id}'
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to enqueue job: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to start discovery: {str(e)}")
+    
+    except Exception as e:
+        logger.error(f"Error in get_contenders: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/contenders/last")
+async def get_last_contenders(limit: int = Query(DEFAULT_LIMIT, le=MAX_LIMIT)):
+    """
+    Get last known results (even if stale) - never returns empty/error
+    Used as fallback when polling times out
+    """
+    try:
+        redis_client = redis.from_url(os.getenv('REDIS_URL'))
+        cached_data = await redis_client.get(CACHE_KEY_CONTENDERS)
+        await redis_client.close()
+        
+        if not cached_data:
+            return {
+                'status': 'ready',
+                'timestamp': None,
+                'universe_size': 0,
+                'filtered_size': 0,
+                'count': 0,
+                'candidates': [],
+                'trade_ready_count': 0,
+                'monitor_count': 0,
+                'engine': 'No cached results available',
+                'cached': False,
+                'message': 'No previous discovery results found'
+            }
+        
+        try:
+            payload = json.loads(cached_data)
+            candidates = payload.get('candidates', [])[:limit]
+            
+            return {
+                'status': 'ready',
+                'timestamp': payload.get('iso_timestamp'),
+                'universe_size': payload.get('universe_size', 0),
+                'filtered_size': payload.get('filtered_size', 0),
+                'count': len(candidates),
+                'candidates': candidates,
+                'trade_ready_count': len([c for c in candidates if c.get('action') == 'TRADE_READY']),
+                'monitor_count': len([c for c in candidates if c.get('action') == 'MONITOR']),
+                'engine': payload.get('engine', 'BMS Last Known Results'),
+                'cached': True,
+                'cache_age_seconds': int(time.time() - payload.get('timestamp', time.time())),
+                'stale': True
+            }
+            
+        except json.JSONDecodeError:
+            logger.warning("Cached data corrupted in last results")
+            return {
+                'status': 'ready',
+                'count': 0,
+                'candidates': [],
+                'message': 'Cached data corrupted',
+                'cached': False
+            }
+    
+    except Exception as e:
+        logger.error(f"Error in get_last_contenders: {e}")
+        # Never fail - return empty results
+        return {
+            'status': 'ready',
+            'count': 0,
+            'candidates': [],
+            'message': f'Error accessing cache: {str(e)}',
+            'cached': False
+        }
+
+@router.get("/status")
+async def get_discovery_status(job_id: str = Query(...)):
+    """Get status of a running discovery job"""
+    try:
+        # Get job status from RQ
+        job = Job.fetch(job_id, connection=redis_sync)
+        job_status = job.get_status()
+        
+        # Get detailed status from Redis if available
+        redis_client = redis.from_url(os.getenv('REDIS_URL'))
+        status_data = await redis_client.get(CACHE_KEY_STATUS)
+        await redis_client.close()
+        
+        detailed_status = {}
+        if status_data:
+            try:
+                detailed_status = json.loads(status_data)
+            except json.JSONDecodeError:
+                pass
+        
+        response = {
+            'job_id': job_id,
+            'status': job_status,
+            'rq_status': job_status,
+            'progress': detailed_status.get('progress', 0),
+            'message': detailed_status.get('message', ''),
+            'stats': detailed_status.get('stats', {}),
+            'elapsed_seconds': detailed_status.get('elapsed_seconds', 0)
+        }
+        
+        # Add result if job is finished
+        if job_status == 'finished' and job.result:
+            response['result'] = job.result
+        elif job_status == 'failed':
+            response['error'] = job.exc_info
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error getting job status for {job_id}: {e}")
+        return {
+            'job_id': job_id,
+            'status': 'unknown',
+            'error': str(e)
+        }
+
+@router.post("/trigger")
+async def trigger_discovery(limit: int = Query(DEFAULT_LIMIT, le=MAX_LIMIT)):
+    """
+    Manually trigger discovery scan
+    Always enqueues a new job regardless of cache state
+    """
+    try:
+        logger.info(f"🔥 Manual discovery trigger with limit={limit}")
+        
+        queue = Queue(DISCOVERY_QUEUE, connection=redis_sync)
+        job = queue.enqueue(
+            'backend.src.jobs.discovery_job.run_discovery_job',
+            limit,
+            job_timeout=JOB_TIMEOUT_SECONDS,
+            result_ttl=RESULT_TTL_SECONDS,
+            job_id=f"manual_{int(time.time())}"
+        )
+        
+        return {
+            'status': 'triggered',
+            'job_id': job.id,
+            'message': f'Manual discovery started for {limit} candidates',
+            'poll_url': f'/discovery/status?job_id={job.id}'
+        }
+        
+    except Exception as e:
+        logger.error(f"Error triggering discovery: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/health")
+async def discovery_health():
+    """Discovery system health check"""
+    try:
+        redis_client = redis.from_url(os.getenv('REDIS_URL'))
+        
+        # Check Redis connectivity
+        await redis_client.ping()
+        
+        # Check cache status
+        cached_data = await redis_client.get(CACHE_KEY_CONTENDERS)
+        status_data = await redis_client.get(CACHE_KEY_STATUS)
+        
+        await redis_client.close()
+        
+        cache_info = {}
+        if cached_data:
+            try:
+                payload = json.loads(cached_data)
+                cache_info = {
+                    'cached_results': True,
+                    'cache_timestamp': payload.get('iso_timestamp'),
+                    'cache_count': payload.get('count', 0),
+                    'cache_age_seconds': int(time.time() - payload.get('timestamp', time.time()))
+                }
+            except:
+                cache_info = {'cached_results': False, 'cache_corrupted': True}
+        else:
+            cache_info = {'cached_results': False}
+        
+        status_info = {}
+        if status_data:
+            try:
+                status = json.loads(status_data)
+                status_info = {
+                    'last_job_status': status.get('status'),
+                    'last_job_timestamp': status.get('timestamp')
+                }
+            except:
+                status_info = {'status_corrupted': True}
+        
+        # Check queue status
+        queue = Queue(DISCOVERY_QUEUE, connection=redis_sync)
+        queue_info = {
+            'queue_length': len(queue),
+            'failed_jobs': len(queue.failed_job_registry)
+        }
+        
+        return {
+            'status': 'healthy',
+            'engine': 'Discovery Cached API v2.0',
+            'redis_connected': True,
+            'cache': cache_info,
+            'job_status': status_info,
+            'queue': queue_info,
+            'timestamp': time.time()
+        }
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': time.time()
+        }
+
+@router.get("/cache/peek")
+async def peek_cache():
+    """Debug endpoint to inspect cache contents"""
+    try:
+        redis_client = redis.from_url(os.getenv('REDIS_URL'))
+        cached_data = await redis_client.get(CACHE_KEY_CONTENDERS)
+        await redis_client.close()
+        
+        if not cached_data:
+            return {'exists': False, 'size_bytes': 0}
+        
+        try:
+            payload = json.loads(cached_data)
+            return {
+                'exists': True,
+                'size_bytes': len(cached_data),
+                'timestamp': payload.get('iso_timestamp'),
+                'count': payload.get('count', 0),
+                'universe_size': payload.get('universe_size', 0),
+                'trade_ready_count': payload.get('trade_ready_count', 0),
+                'job_id': payload.get('job_id'),
+                'engine': payload.get('engine')
+            }
+        except json.JSONDecodeError:
+            return {
+                'exists': True,
+                'size_bytes': len(cached_data),
+                'corrupted': True
+            }
+            
+    except Exception as e:
+        return {
+            'error': str(e),
+            'exists': False
+        }
