@@ -100,21 +100,21 @@ class RealBMSEngine:
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': 'AMC-TRADER/1.0'})
         
-        # Real BMS Configuration with environment overrides
+        # Real BMS Configuration - targeting explosive small-cap opportunities
         self.config = {
             'universe': {
-                'min_price': _float_env('BMS_PRICE_MIN', 0.5),
-                'max_price': _float_env('BMS_PRICE_MAX', 100.0),
-                'min_dollar_volume_m': _float_env('BMS_MIN_DOLLAR_VOLUME_M', 10.0),
-                'require_liquid_options': os.getenv('BMS_REQUIRE_LIQUID_OPTIONS', 'true').lower() == 'true',
-                'universe_k': _int_env('BMS_UNIVERSE_K', 3000)  # Increased for more recall
+                'min_price': _float_env('BMS_PRICE_MIN', 0.50),  # No penny stocks under $0.50
+                'max_price': _float_env('BMS_PRICE_MAX', 100.0),  # CRITICAL: Under $100 only
+                'min_dollar_volume_m': _float_env('BMS_MIN_DOLLAR_VOLUME_M', 5.0),  # $5M+ dollar volume for liquidity
+                'require_liquid_options': False,  # Don't require options
+                'universe_k': _int_env('BMS_UNIVERSE_K', 10000)  # Process all that qualify
             },
             'performance': {
                 'concurrency': _int_env('BMS_CONCURRENCY', 8),
                 'req_per_sec': _int_env('BMS_REQ_PER_SEC', 5),
                 'cycle_seconds': _int_env('BMS_CYCLE_SECONDS', 60),
-                'early_stop_scan': _int_env('BMS_EARLY_STOP_SCAN', 1500),  # Increased for more coverage
-                'target_trade_ready': _int_env('BMS_TARGET_TRADE_READY', 25)
+                'early_stop_scan': _int_env('BMS_EARLY_STOP_SCAN', 100000),  # NO EARLY STOP - scan everything
+                'target_trade_ready': _int_env('BMS_TARGET_TRADE_READY', 10000)  # Never stop early
             },
             'weights': {
                 'volume_surge': 0.40,      # 40% - Volume breakout detection
@@ -171,11 +171,12 @@ class RealBMSEngine:
             logger.info("Fetching filtered universe with price bounds...")
             
             # Get recent trading day data for all stocks with price filtering
-            # Use previous business day or current data
+            # Use previous business day to ensure data availability
             from datetime import datetime, timedelta
             today = datetime.now()
-            # Go back a few days to ensure we get a valid trading day
-            date_to_use = (today - timedelta(days=3)).strftime('%Y-%m-%d')
+            # Calculate last Friday if today is Monday-Wednesday, else use 2 days ago
+            days_back = 3 if today.weekday() < 3 else 2
+            date_to_use = (today - timedelta(days=days_back)).strftime('%Y-%m-%d')
             
             url = f"https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/{date_to_use}"
             params = {
@@ -196,7 +197,7 @@ class RealBMSEngine:
                 logger.warning("No grouped results, falling back to full fetch")
                 return await self.fetch_all_active_stocks_fallback()
             
-            # Apply price bounds filtering immediately
+            # Apply smart filtering at API level - get stocks under $100 with volume
             filtered_symbols = []
             min_price = self.config['universe']['min_price']
             max_price = self.config['universe']['max_price']
@@ -204,22 +205,29 @@ class RealBMSEngine:
             
             for result in data['results']:
                 symbol = result['T']  # Ticker
-                close_price = float(result['c'])  # Close price
-                volume = int(result['v'])  # Volume
+                close_price = float(result.get('c', 0))  # Close price
+                volume = int(result.get('v', 0))  # Volume
                 dollar_volume_m = (close_price * volume) / 1_000_000
                 
-                # Apply universe filters at API level (no symbol length hack)
-                if (min_price <= close_price <= max_price and 
+                # Exclude ETFs/funds by checking symbol patterns
+                symbol_upper = symbol.upper()
+                is_fund = any(keyword in symbol_upper for keyword in ['ETF', 'FUND', 'TRUST', 'INDEX'])
+                
+                # Smart filter: price under $100, volume over $5M, not a fund
+                if (not is_fund and
+                    min_price <= close_price <= max_price and 
                     dollar_volume_m >= min_volume_m):
                     filtered_symbols.append(symbol)
+            
+            logger.info(f"📊 UNIVERSE: {len(filtered_symbols)} stocks under $100 with ${min_volume_m}M+ volume")
             
             # Update universe counts for health reporting
             self.last_universe_counts['total_grouped'] = len(data['results'])
             self.last_universe_counts['prefiltered'] = len(filtered_symbols)
             
-            logger.info(f"✅ Pre-filtered to {len(filtered_symbols)} stocks from {len(data['results'])} total")
-            logger.info(f"   Price range: ${min_price}-${max_price}")
-            logger.info(f"   Min volume: ${min_volume_m}M")
+            logger.info(f"✅ TARGET UNIVERSE: {len(filtered_symbols)} stocks qualify")
+            logger.info(f"   Price range: ${min_price}-${max_price} (under $100)")
+            logger.info(f"   Min volume: ${min_volume_m}M dollar volume")
             return filtered_symbols
             
         except Exception as e:
@@ -274,15 +282,11 @@ class RealBMSEngine:
                 if min_price <= price <= max_price and dv_m >= min_dv_m:
                     kept.append(sym)
             
-            # If we kept very few symbols, it might be market hours issue - be more permissive
-            if len(kept) < 100 and len(symbols) > 1000:
-                logger.warning(f"Very few symbols passed intraday filter ({len(kept)}/{len(symbols)})")
-                logger.warning(f"Skipped {skipped_no_data} symbols due to missing data - may be market closed")
-                logger.info("Using more permissive filtering for discovery continuity...")
-                
-                # Use a subset of the original symbols for processing
-                kept = symbols[:min(1000, len(symbols))]
-                logger.info(f"Fallback: proceeding with {len(kept)} symbols for analysis")
+            # If too many symbols dropped, use fallback but be smart about it
+            if len(kept) < len(symbols) * 0.5:  # Lost more than 50%
+                logger.warning(f"Intraday filter dropped too many: {len(kept)}/{len(symbols)}")
+                logger.info(f"Using original filtered universe of {len(symbols)} stocks")
+                kept = symbols  # Use the already price/volume filtered universe
             
             # Track timing and counts
             self.stage_timings.intraday_ms = int((time.perf_counter() - start_time) * 1000)
@@ -643,11 +647,10 @@ class RealBMSEngine:
             # Step 2: Intraday snapshot second-pass
             intraday_symbols = await self.intraday_snapshot_filter(filtered_symbols)
             
-            # Limit to universe_k if configured
-            universe_limit = self.config['universe']['universe_k']
-            if len(intraday_symbols) > universe_limit:
-                logger.info(f"Limiting universe to {universe_limit} symbols (from {len(intraday_symbols)})")
-                intraday_symbols = intraday_symbols[:universe_limit]
+            # MANDATORY: Always scan the ENTIRE universe - no exceptions
+            logger.info(f"🌐 FULL UNIVERSE SCAN: Processing ALL {len(intraday_symbols)} symbols")
+            logger.info(f"✅ UNIVERSE SIZE CONFIRMED: {len(intraday_symbols)} stocks will be analyzed")
+            # Never restrict, never limit - scan EVERYTHING
             
             logger.info(f"📊 Processing {len(intraday_symbols)} symbols with parallel scoring...")
             
