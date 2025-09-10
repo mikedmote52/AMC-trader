@@ -94,12 +94,12 @@ async def emergency_populate_cache(limit: int = Query(DEFAULT_LIMIT, le=100)):
                 'message': 'Created fallback cache to unblock frontend'
             }
             
-    finally:
-        await redis_client.close()
-        
     except Exception as e:
         logger.error(f"Emergency populate failed: {e}")
         raise HTTPException(status_code=500, detail=f"Emergency populate failed: {str(e)}")
+    finally:
+        if 'redis_client' in locals():
+            await redis_client.close()
 
 @router.post("/emergency/clear-queue")
 async def emergency_clear_queue():
