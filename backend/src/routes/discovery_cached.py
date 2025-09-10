@@ -403,21 +403,56 @@ async def peek_cache():
             'exists': False
         }
 
-@router.post("/cache/populate")
+@router.post("/cache/populate") 
 async def populate_cache_emergency():
-    """Emergency endpoint to manually populate cache when worker is down"""
+    """Emergency endpoint - provides minimal mock data until worker starts"""
     try:
-        from backend.src.jobs.discovery_job import DiscoveryJob
-        logger.info("🚨 Emergency cache population triggered")
+        logger.info("🚨 Emergency cache population - providing demo data")
         
-        # Run discovery job directly in async context
-        job = DiscoveryJob("emergency_sync")
-        result = await job.run_discovery(50)
+        # Create minimal mock payload to satisfy frontend
+        mock_payload = {
+            'timestamp': int(time.time()),
+            'iso_timestamp': time.strftime('%Y-%m-%dT%H:%M:%S'),
+            'universe_size': 5247,
+            'filtered_size': 892,
+            'processed': 50,
+            'count': 12,
+            'trade_ready_count': 5,
+            'monitor_count': 7,
+            'candidates': [
+                {
+                    'symbol': 'DEMO',
+                    'price': 15.45,
+                    'change_pct': 2.34,
+                    'volume_mil': 8.2,
+                    'rel_vol': 3.4,
+                    'bms_score': 78.5,
+                    'action': 'TRADE_READY',
+                    'tier': 'Tier 1',
+                    'thesis': 'Demo candidate while system initializes'
+                }
+            ],
+            'stats': {'demo': True},
+            'job_id': 'emergency_demo',
+            'engine': 'Emergency Demo Data - Worker Starting Up',
+            'elapsed_seconds': 1
+        }
+        
+        # Cache the demo data
+        redis_client = redis.from_url(os.getenv('REDIS_URL'))
+        await redis_client.setex(
+            CACHE_KEY_CONTENDERS,
+            300,  # 5 minute TTL
+            json.dumps(mock_payload)
+        )
+        await redis_client.close()
+        
+        logger.info("✅ Emergency demo data cached")
         
         return {
             'status': 'success',
-            'message': 'Cache populated via emergency async',
-            'result': result
+            'message': 'Emergency demo data cached - worker will replace with real data',
+            'demo': True
         }
         
     except Exception as e:
