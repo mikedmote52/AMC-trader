@@ -494,7 +494,8 @@ async def get_squeeze_candidates(min_score: float = Query(0.25, ge=0.0, le=1.0),
                     'status': 'ready',
                     'timestamp': payload.get('iso_timestamp'),
                     'count': len(squeeze_candidates),
-                    'squeeze_candidates': squeeze_candidates,
+                    'candidates': squeeze_candidates,  # Frontend expects 'candidates' 
+                    'squeeze_candidates': squeeze_candidates,  # Keep both for compatibility
                     'min_score': min_score,
                     'engine': f"{payload.get('engine', 'BMS')} - Squeeze Filter",
                     'cached': True
@@ -507,7 +508,8 @@ async def get_squeeze_candidates(min_score: float = Query(0.25, ge=0.0, le=1.0),
             'status': 'ready',
             'timestamp': None,
             'count': 0,
-            'squeeze_candidates': [],
+            'candidates': [],  # Frontend expects 'candidates'
+            'squeeze_candidates': [],  # Keep both for compatibility
             'min_score': min_score,
             'message': 'No cached discovery results - trigger discovery first',
             'cached': False
