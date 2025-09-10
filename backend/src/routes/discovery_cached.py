@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Redis connection for synchronous RQ operations
-redis_sync = redis.Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379'))
+import redis as redis_sync_lib
+redis_sync = redis_sync_lib.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379'), decode_responses=True)
 
 @router.get("/contenders")
 async def get_contenders(limit: int = Query(DEFAULT_LIMIT, le=MAX_LIMIT)):
@@ -281,11 +282,14 @@ async def discovery_health():
                 status_info = {'status_corrupted': True}
         
         # Check queue status
-        queue = Queue(DISCOVERY_QUEUE, connection=redis_sync)
-        queue_info = {
-            'queue_length': len(queue),
-            'failed_jobs': len(queue.failed_job_registry)
-        }
+        try:
+            queue = Queue(DISCOVERY_QUEUE, connection=redis_sync)
+            queue_info = {
+                'queue_length': len(queue),
+                'failed_jobs': len(queue.failed_job_registry)
+            }
+        except Exception as e:
+            queue_info = {'error': str(e)}
         
         return {
             'status': 'healthy',
