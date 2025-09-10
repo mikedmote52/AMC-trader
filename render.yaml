@@ -49,11 +49,11 @@ services:
 
   # Dedicated Discovery Worker Service
   - type: worker
-    name: amc-trader-worker
+    name: amc-discovery-worker
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: python -u backend/start_worker.py
+    startCommand: python -m backend.src.services.rq_worker_main
     envVars:
       # Redis connection (from managed service)
       - key: REDIS_URL
@@ -65,16 +65,28 @@ services:
       # API keys needed by worker
       - key: POLYGON_API_KEY
         sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ALPACA_API_KEY
+        sync: false
+      - key: ALPACA_SECRET_KEY
+        sync: false
+      - key: ALPACA_BASE_URL
+        sync: false
+      
+      # Worker configuration
       - key: SCORING_STRATEGY
         value: bms_v1
-        
-      # Worker configuration
+      - key: AMC_ENV
+        value: production
       - key: ENV
         value: prod
       - key: LOG_LEVEL
         value: INFO
       - key: DISCOVERY_CACHE_TTL
-        value: "60"
+        value: "600"
+      - key: BMS_UNIVERSE_MIN_EXPECTED
+        value: "4500"
 
   # Frontend Static Site
   - type: web

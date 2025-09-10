@@ -63,10 +63,24 @@ class DiscoveryJob:
     
     async def run_discovery(self, limit: int = DEFAULT_LIMIT) -> Dict[str, Any]:
         """Main discovery pipeline"""
+        lock_key = os.getenv("DISCOVERY_LOCK_KEY", "discovery_job_lock")
+        lock_token = f"{os.getpid()}:{int(time.time())}"
+        
         try:
             # Connect to Redis
             redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
             self.redis_client = redis.from_url(redis_url)
+            
+            # Acquire lock with TTL and token ownership
+            lock_acquired = await self.redis_client.set(lock_key, lock_token, nx=True, ex=240)  # 4 minute TTL
+            if not lock_acquired:
+                existing_lock = await self.redis_client.get(lock_key)
+                logger.warning(f"Another discovery job is running (lock held by: {existing_lock}) - exiting")
+                return {
+                    'status': 'skipped',
+                    'reason': 'Another discovery job is already running',
+                    'lock_holder': existing_lock
+                }
             
             await self.update_status('starting', 0, 'Initializing discovery scan...')
             
@@ -186,7 +200,16 @@ class DiscoveryJob:
             raise
             
         finally:
+            # Release lock if we own it
             if self.redis_client:
+                try:
+                    current_lock = await self.redis_client.get(lock_key)
+                    if current_lock == lock_token:
+                        await self.redis_client.delete(lock_key)
+                        logger.info(f"Released discovery lock: {lock_token}")
+                except Exception as e:
+                    logger.warning(f"Error releasing lock: {e}")
+                
                 await self.redis_client.close()
 
 
