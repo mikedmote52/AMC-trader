@@ -461,3 +461,58 @@ async def populate_cache_emergency():
             'status': 'failed',
             'error': str(e)
         }
+
+@router.get("/squeeze-candidates")
+async def get_squeeze_candidates(min_score: float = Query(0.25, ge=0.0, le=1.0), limit: int = Query(DEFAULT_LIMIT, le=MAX_LIMIT)):
+    """Squeeze candidates from cached discovery results"""
+    try:
+        # Get cached results
+        redis_client = redis.from_url(os.getenv('REDIS_URL'))
+        cached_data = await redis_client.get(CACHE_KEY_CONTENDERS)
+        await redis_client.close()
+        
+        if cached_data:
+            try:
+                payload = json.loads(cached_data)
+                all_candidates = payload.get('candidates', [])
+                
+                # Filter for squeeze candidates with score above threshold
+                squeeze_candidates = []
+                for candidate in all_candidates:
+                    # Use BMS score as proxy for squeeze potential
+                    bms_score = candidate.get('bms_score', 0) / 100.0  # Convert to 0-1 scale
+                    if bms_score >= min_score:
+                        # Add squeeze-specific fields
+                        candidate['squeeze_score'] = bms_score
+                        candidate['squeeze_tier'] = 'High' if bms_score >= 0.7 else 'Medium' if bms_score >= 0.5 else 'Low'
+                        squeeze_candidates.append(candidate)
+                
+                # Limit results
+                squeeze_candidates = squeeze_candidates[:limit]
+                
+                return {
+                    'status': 'ready',
+                    'timestamp': payload.get('iso_timestamp'),
+                    'count': len(squeeze_candidates),
+                    'squeeze_candidates': squeeze_candidates,
+                    'min_score': min_score,
+                    'engine': f"{payload.get('engine', 'BMS')} - Squeeze Filter",
+                    'cached': True
+                }
+            except json.JSONDecodeError:
+                pass
+        
+        # No cache - return empty results with guidance
+        return {
+            'status': 'ready',
+            'timestamp': None,
+            'count': 0,
+            'squeeze_candidates': [],
+            'min_score': min_score,
+            'message': 'No cached discovery results - trigger discovery first',
+            'cached': False
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in get_squeeze_candidates: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
