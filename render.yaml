@@ -53,7 +53,7 @@ services:
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: python backend/src/services/rq_worker_improved.py
+    startCommand: python -m backend.src.services.rq_worker_main
     envVars:
       # Redis connection (from managed service)
       - key: REDIS_URL
