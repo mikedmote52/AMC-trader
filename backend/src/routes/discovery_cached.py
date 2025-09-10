@@ -407,15 +407,16 @@ async def peek_cache():
 async def populate_cache_emergency():
     """Emergency endpoint to manually populate cache when worker is down"""
     try:
-        from backend.src.jobs.discovery_job import run_discovery_sync
+        from backend.src.jobs.discovery_job import DiscoveryJob
         logger.info("🚨 Emergency cache population triggered")
         
-        # Run discovery synchronously with small limit
-        result = run_discovery_sync(50)
+        # Run discovery job directly in async context
+        job = DiscoveryJob("emergency_sync")
+        result = await job.run_discovery(50)
         
         return {
             'status': 'success',
-            'message': 'Cache populated via emergency sync',
+            'message': 'Cache populated via emergency async',
             'result': result
         }
         
