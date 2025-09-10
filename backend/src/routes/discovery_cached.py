@@ -402,3 +402,26 @@ async def peek_cache():
             'error': str(e),
             'exists': False
         }
+
+@router.post("/cache/populate")
+async def populate_cache_emergency():
+    """Emergency endpoint to manually populate cache when worker is down"""
+    try:
+        from backend.src.jobs.discovery_job import run_discovery_sync
+        logger.info("🚨 Emergency cache population triggered")
+        
+        # Run discovery synchronously with small limit
+        result = run_discovery_sync(50)
+        
+        return {
+            'status': 'success',
+            'message': 'Cache populated via emergency sync',
+            'result': result
+        }
+        
+    except Exception as e:
+        logger.error(f"Emergency cache population failed: {e}")
+        return {
+            'status': 'failed',
+            'error': str(e)
+        }
