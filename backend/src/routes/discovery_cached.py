@@ -26,6 +26,7 @@ import redis as redis_sync_lib
 redis_sync = redis_sync_lib.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379'), decode_responses=True)
 
 @router.get("/contenders")
+@router.get("/candidates")  # Frontend expects this endpoint
 async def get_contenders(limit: int = Query(DEFAULT_LIMIT, le=MAX_LIMIT)):
     """
     Get discovery candidates with non-blocking pattern:
@@ -99,7 +100,64 @@ async def get_contenders(limit: int = Query(DEFAULT_LIMIT, le=MAX_LIMIT)):
         logger.error(f"Error in get_contenders: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/candidates/trade-ready")  # Frontend expects this endpoint
+async def get_trade_ready_candidates(limit: int = Query(DEFAULT_LIMIT, le=MAX_LIMIT)):
+    """Get only TRADE_READY candidates - frontend specific endpoint"""
+    # Get cached results first  
+    redis_client = redis.from_url(os.getenv('REDIS_URL'))
+    cached_data = await redis_client.get(CACHE_KEY_CONTENDERS)
+    await redis_client.close()
+    
+    if cached_data:
+        try:
+            payload = json.loads(cached_data)
+            all_candidates = payload.get('candidates', [])
+            
+            # Filter for trade-ready only
+            trade_ready = [c for c in all_candidates if c.get('action') == 'TRADE_READY'][:limit]
+            
+            return {
+                'status': 'ready',
+                'timestamp': payload.get('iso_timestamp'),
+                'universe_size': payload.get('universe_size', 0),
+                'filtered_size': payload.get('filtered_size', 0), 
+                'count': len(trade_ready),
+                'candidates': trade_ready,
+                'trade_ready_count': len(trade_ready),
+                'monitor_count': 0,
+                'engine': f"{payload.get('engine', 'BMS')} - Trade Ready Filter",
+                'cached': True,
+                'filter': 'TRADE_READY'
+            }
+        except json.JSONDecodeError:
+            pass
+    
+    # No cache - enqueue job
+    try:
+        queue = Queue(DISCOVERY_QUEUE, connection=redis_sync)
+        job = queue.enqueue(
+            'backend.src.jobs.discovery_job.run_discovery_job',
+            max(limit, 100),  # Cache extra for future requests
+            job_timeout=JOB_TIMEOUT_SECONDS,
+            result_ttl=RESULT_TTL_SECONDS,
+            job_id=f"trade_ready_{int(time.time())}"
+        )
+        
+        return JSONResponse(
+            status_code=202,
+            content={
+                'status': 'queued', 
+                'job_id': job.id,
+                'message': 'Trade-ready discovery started',
+                'filter': 'TRADE_READY',
+                'poll_url': f'/discovery/status?job_id={job.id}'
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/contenders/last")
+@router.get("/candidates/last")  # Frontend alias  
 async def get_last_contenders(limit: int = Query(DEFAULT_LIMIT, le=MAX_LIMIT)):
     """
     Get last known results (even if stale) - never returns empty/error
