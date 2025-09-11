@@ -21,7 +21,11 @@ class PolygonFixed:
         r = await self.c.get(url, params={"adjusted":"true"})
         
         if r.status_code != 200:
-            raise RuntimeError(f"❌ CRITICAL: Polygon API failed for {symbol}: {r.status_code} {r.text[:200]}")
+            try:
+                error_text = r.text[:200]
+            except UnicodeDecodeError:
+                error_text = str(r.content[:200])
+            raise RuntimeError(f"❌ CRITICAL: Polygon API failed for {symbol}: {r.status_code} {error_text}")
         
         js = r.json()
         res = (js.get("results") or [])
