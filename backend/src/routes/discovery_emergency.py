@@ -205,6 +205,40 @@ async def emergency_status():
             'timestamp': datetime.now().isoformat()
         }
 
+@router.post("/emergency/clear-lock")
+async def emergency_clear_lock():
+    """
+    Clear stuck discovery job lock
+    """
+    try:
+        logger.info("🚨 Emergency lock clear triggered")
+        
+        # Use sync Redis for lock operations
+        import redis as redis_sync
+        r = redis_sync.from_url(os.getenv('REDIS_URL'), decode_responses=True)
+        
+        lock_key = "discovery_job_lock"
+        
+        # Check if lock exists
+        lock_exists = r.exists(lock_key)
+        lock_value = r.get(lock_key) if lock_exists else None
+        
+        # Clear the lock
+        if lock_exists:
+            r.delete(lock_key)
+            logger.info(f"✅ Cleared discovery job lock: {lock_key}")
+        
+        return {
+            'status': 'cleared' if lock_exists else 'no_lock',
+            'lock_key': lock_key,
+            'lock_existed': bool(lock_exists),
+            'previous_value': lock_value
+        }
+        
+    except Exception as e:
+        logger.error(f"Emergency lock clear failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/emergency/reset-system")
 async def emergency_reset_system():
     """
