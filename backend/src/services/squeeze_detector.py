@@ -19,7 +19,7 @@ def _load_squeeze_calibration():
         import os
         calibration_path = os.path.join(os.path.dirname(__file__), "../../calibration/active.json")
         if os.path.exists(calibration_path):
-            with open(calibration_path, 'r') as f:
+            with open(calibration_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
     except Exception as e:
         logger.warning(f"Could not load squeeze calibration: {e}")

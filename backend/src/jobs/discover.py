@@ -39,7 +39,7 @@ def _load_calibration():
         import os
         calibration_path = os.path.join(os.path.dirname(__file__), "../../../calibration/active.json")
         if os.path.exists(calibration_path):
-            with open(calibration_path, 'r') as f:
+            with open(calibration_path, 'r', encoding='utf-8') as f:
                 cal = json.load(f)
                 return cal
     except Exception as e:
