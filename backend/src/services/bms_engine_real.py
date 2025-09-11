@@ -335,7 +335,7 @@ class RealBMSEngine:
                 response = self.session.get(url, params=params, timeout=30)
                 
                 if response.status_code != 200:
-                    logger.error(f"Polygon API error: {response.status_code} - {response.text}")
+                    logger.error(f"Polygon API error: {response.status_code} - {str(response.content[:200])}")
                     break
                 
                 data = response.json()

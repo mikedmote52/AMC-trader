@@ -951,7 +951,7 @@ class DiscoveryPipeline:
                         break
                     page += 1
                 else:
-                    error_msg = f"❌ Polygon API error on page {page}: {response.status_code} - {response.text[:500]}"
+                    error_msg = f"❌ Polygon API error on page {page}: {response.status_code} - {str(response.content[:500])}"
                     logger.error(error_msg)
                     if response.status_code == 401:
                         raise RuntimeError("❌ CRITICAL: Polygon API authentication failed - check API key")

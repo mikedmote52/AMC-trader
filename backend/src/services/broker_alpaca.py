@@ -24,7 +24,7 @@ class AlpacaBroker:
             payload["limit_price"] = limit_price
         r = await self.client.post("/v2/orders", json=payload)
         if r.status_code >= 400:
-            return {"status": "error", "broker_status": r.status_code, "broker_body": r.text}
+            return {"status": "error", "broker_status": r.status_code, "broker_body": str(r.content[:200])}
         return r.json()
 
     async def get_positions(self):

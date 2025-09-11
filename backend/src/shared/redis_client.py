@@ -10,7 +10,12 @@ logger = logging.getLogger(__name__)
 def get_redis_client():
     """Get Redis client with configuration from environment"""
     redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-    return redis.from_url(redis_url, decode_responses=True)
+    return redis.from_url(redis_url, decode_responses=False)
+
+def get_redis():
+    """Get Redis client for byte-safe operations"""
+    redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    return redis.from_url(redis_url, decode_responses=False)
 
 @contextmanager
 def redis_lock(lock_key, ttl_seconds=240):  # 4 minutes default
@@ -29,7 +34,7 @@ def redis_lock(lock_key, ttl_seconds=240):  # 4 minutes default
     
     try:
         # Try to acquire lock with TTL
-        lock_acquired = client.set(lock_key, "locked", nx=True, ex=ttl_seconds)
+        lock_acquired = client.set(lock_key, b"locked", nx=True, ex=ttl_seconds)
         
         if lock_acquired:
             logger.info(f"Lock acquired: {lock_key}")
@@ -122,11 +127,11 @@ class SqueezeCache:
                 'cache_reason': self._get_cache_reason(metrics)
             }
             
-            self.redis_client.setex(cache_key, ttl, json.dumps(cached_data))
+            self.redis_client.setex(cache_key, ttl, json.dumps(cached_data).encode('utf-8'))
             
             # Also cache the metrics separately for TTL calculations
             metrics_key = f"{self.METRICS_PREFIX}{symbol}"
-            self.redis_client.setex(metrics_key, ttl * 2, json.dumps(metrics))  # Metrics live longer
+            self.redis_client.setex(metrics_key, ttl * 2, json.dumps(metrics).encode('utf-8'))  # Metrics live longer
             
             logger.debug(f"Cached {symbol} with {ttl}s TTL: {cached_data.get('cache_reason', 'standard')}")
             return True
@@ -154,7 +159,7 @@ class SqueezeCache:
             
             if cached_data:
                 import json
-                data = json.loads(cached_data)
+                data = json.loads(cached_data.decode('utf-8') if isinstance(cached_data, bytes) else cached_data)
                 result['data'] = data
                 result['cache_hit'] = True
                 
@@ -165,7 +170,7 @@ class SqueezeCache:
             
             if cached_metrics:
                 import json
-                result['metrics'] = json.loads(cached_metrics)
+                result['metrics'] = json.loads(cached_metrics.decode('utf-8') if isinstance(cached_metrics, bytes) else cached_metrics)
             
             return result
             

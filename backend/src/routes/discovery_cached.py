@@ -23,7 +23,7 @@ router = APIRouter()
 
 # Redis connection for synchronous RQ operations
 import redis as redis_sync_lib
-redis_sync = redis_sync_lib.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379'), decode_responses=True)
+redis_sync = redis_sync_lib.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379'), decode_responses=False)
 
 @router.get("/contenders")
 @router.get("/candidates")  # Frontend expects this endpoint
@@ -41,7 +41,7 @@ async def get_contenders(limit: int = Query(DEFAULT_LIMIT, le=MAX_LIMIT)):
         
         if cached_data:
             try:
-                payload = json.loads(cached_data)
+                payload = json.loads(cached_data.decode('utf-8') if isinstance(cached_data, bytes) else cached_data)
                 
                 # Apply limit to cached data
                 candidates = payload.get('candidates', [])[:limit]
@@ -110,7 +110,7 @@ async def get_trade_ready_candidates(limit: int = Query(DEFAULT_LIMIT, le=MAX_LI
     
     if cached_data:
         try:
-            payload = json.loads(cached_data)
+            payload = json.loads(cached_data.decode('utf-8') if isinstance(cached_data, bytes) else cached_data)
             all_candidates = payload.get('candidates', [])
             
             # Filter for trade-ready only
@@ -184,7 +184,7 @@ async def get_last_contenders(limit: int = Query(DEFAULT_LIMIT, le=MAX_LIMIT)):
             }
         
         try:
-            payload = json.loads(cached_data)
+            payload = json.loads(cached_data.decode('utf-8') if isinstance(cached_data, bytes) else cached_data)
             candidates = payload.get('candidates', [])[:limit]
             
             return {
@@ -239,7 +239,7 @@ async def get_discovery_status(job_id: str = Query(...)):
         detailed_status = {}
         if status_data:
             try:
-                detailed_status = json.loads(status_data)
+                detailed_status = json.loads(status_data.decode('utf-8') if isinstance(status_data, bytes) else status_data)
             except json.JSONDecodeError:
                 pass
         
@@ -316,7 +316,7 @@ async def discovery_health():
         cache_info = {}
         if cached_data:
             try:
-                payload = json.loads(cached_data)
+                payload = json.loads(cached_data.decode('utf-8') if isinstance(cached_data, bytes) else cached_data)
                 cache_info = {
                     'cached_results': True,
                     'cache_timestamp': payload.get('iso_timestamp'),
@@ -331,7 +331,7 @@ async def discovery_health():
         status_info = {}
         if status_data:
             try:
-                status = json.loads(status_data)
+                status = json.loads(status_data.decode('utf-8') if isinstance(status_data, bytes) else status_data)
                 status_info = {
                     'last_job_status': status.get('status'),
                     'last_job_timestamp': status.get('timestamp')
@@ -379,7 +379,7 @@ async def peek_cache():
             return {'exists': False, 'size_bytes': 0}
         
         try:
-            payload = json.loads(cached_data)
+            payload = json.loads(cached_data.decode('utf-8') if isinstance(cached_data, bytes) else cached_data)
             return {
                 'exists': True,
                 'size_bytes': len(cached_data),
@@ -463,45 +463,105 @@ async def populate_cache_emergency():
         }
 
 @router.get("/squeeze-candidates")
-async def get_squeeze_candidates(min_score: float = Query(0.25, ge=0.0, le=1.0), limit: int = Query(DEFAULT_LIMIT, le=MAX_LIMIT)):
-    """Squeeze candidates from cached discovery results"""
+async def get_squeeze_candidates(
+    min_score: float = Query(0.25, ge=0.0, le=100.0), 
+    limit: int = Query(DEFAULT_LIMIT, le=MAX_LIMIT),
+    strategy: str = Query("", description="Scoring strategy: legacy_v0, hybrid_v1")
+):
+    """Squeeze candidates from cached discovery results - FIXED to use correct Redis keys"""
     try:
-        # Get cached results
+        # Get cached results from CORRECT Redis keys
         redis_client = redis.from_url(os.getenv('REDIS_URL'))
-        cached_data = await redis_client.get(CACHE_KEY_CONTENDERS)
+        
+        # Strategy-aware key lookup (matching discovery.py pattern)
+        strategy_suffix = f":{strategy}" if strategy and strategy in ["legacy_v0", "hybrid_v1"] else ""
+        
+        redis_keys_to_try = [
+            f"amc:discovery:v2:contenders.latest{strategy_suffix}",  # V2 key with strategy
+            f"amc:discovery:contenders.latest{strategy_suffix}",     # V1 key with strategy
+            "amc:discovery:v2:contenders.latest",                    # V2 fallback (no strategy)
+            "amc:discovery:contenders.latest",                       # V1 fallback (no strategy)
+            CACHE_KEY_CONTENDERS                                     # Original cached key (might still work)
+        ]
+        
+        cached_data = None
+        found_key = None
+        
+        for key in redis_keys_to_try:
+            test_data = await redis_client.get(key)
+            if test_data:
+                cached_data = test_data
+                found_key = key
+                break
+        
         await redis_client.close()
         
         if cached_data:
             try:
-                payload = json.loads(cached_data)
-                all_candidates = payload.get('candidates', [])
+                # Handle different data formats
+                if found_key == CACHE_KEY_CONTENDERS:
+                    # Original cached format
+                    payload = json.loads(cached_data.decode('utf-8') if isinstance(cached_data, bytes) else cached_data)
+                    all_candidates = payload.get('candidates', [])
+                else:
+                    # Discovery.py format - direct array
+                    all_candidates = json.loads(cached_data.decode('utf-8') if isinstance(cached_data, bytes) else cached_data)
+                    if not isinstance(all_candidates, list):
+                        all_candidates = []
+                
+                # Helper function to normalize min_score input
+                def normalize_min_score(score):
+                    if score is None:
+                        return 0
+                    # Handle both 0-1 and 0-100 scale inputs
+                    return score * 100 if score <= 1 else score
+                
+                # Helper function to extract candidate score (handle different formats)
+                def get_candidate_score(candidate):
+                    # Try different score field names and normalize to 0-100 scale
+                    score = candidate.get('score') or candidate.get('meta_score') or candidate.get('bms_score', 0)
+                    # Normalize to 0-100 if needed
+                    return score * 100 if score <= 1 else score
+                
+                min_score_pct = normalize_min_score(min_score)
                 
                 # Filter for squeeze candidates with score above threshold
                 squeeze_candidates = []
                 for candidate in all_candidates:
-                    # Use BMS score as proxy for squeeze potential
-                    bms_score = candidate.get('bms_score', 0) / 100.0  # Convert to 0-1 scale
-                    if bms_score >= min_score:
-                        # Add squeeze-specific fields
-                        candidate['squeeze_score'] = bms_score
-                        candidate['squeeze_tier'] = 'High' if bms_score >= 0.7 else 'Medium' if bms_score >= 0.5 else 'Low'
-                        squeeze_candidates.append(candidate)
+                    candidate_score = get_candidate_score(candidate)
+                    
+                    if candidate_score >= min_score_pct:
+                        # Normalize candidate for response 
+                        normalized_candidate = dict(candidate)  # Copy original data
+                        
+                        # Ensure consistent score format (0-100)
+                        normalized_candidate['score'] = candidate_score
+                        normalized_candidate['squeeze_score'] = candidate_score / 100.0  # 0-1 for squeeze_score
+                        normalized_candidate['squeeze_tier'] = (
+                            'High' if candidate_score >= 70 else 
+                            'Medium' if candidate_score >= 50 else 
+                            'Low'
+                        )
+                        squeeze_candidates.append(normalized_candidate)
                 
-                # Limit results
+                # Sort by score descending and limit results
+                squeeze_candidates.sort(key=lambda x: x.get('score', 0), reverse=True)
                 squeeze_candidates = squeeze_candidates[:limit]
                 
                 return {
                     'status': 'ready',
-                    'timestamp': payload.get('iso_timestamp'),
+                    'timestamp': time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     'count': len(squeeze_candidates),
                     'candidates': squeeze_candidates,  # Frontend expects 'candidates' 
-                    'squeeze_candidates': squeeze_candidates,  # Keep both for compatibility
+                    'strategy': strategy if strategy else 'default',
                     'min_score': min_score,
-                    'engine': f"{payload.get('engine', 'BMS')} - Squeeze Filter",
+                    'min_score_pct': min_score_pct,
+                    'found_key': found_key,  # Debug info
+                    'engine': 'Discovery Redis - Squeeze Filter (FIXED)',
                     'cached': True
                 }
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error for key {found_key}: {e}")
         
         # No cache - return empty results with guidance
         return {
@@ -509,9 +569,10 @@ async def get_squeeze_candidates(min_score: float = Query(0.25, ge=0.0, le=1.0),
             'timestamp': None,
             'count': 0,
             'candidates': [],  # Frontend expects 'candidates'
-            'squeeze_candidates': [],  # Keep both for compatibility
+            'strategy': strategy if strategy else 'default',
             'min_score': min_score,
-            'message': 'No cached discovery results - trigger discovery first',
+            'message': 'No discovery results found in Redis - trigger discovery first',
+            'keys_tried': redis_keys_to_try,
             'cached': False
         }
         

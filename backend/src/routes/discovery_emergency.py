@@ -111,7 +111,7 @@ async def emergency_clear_queue():
         
         # Use sync Redis for RQ operations
         import redis as redis_sync
-        r = redis_sync.from_url(os.getenv('REDIS_URL'), decode_responses=True)
+        r = redis_sync.from_url(os.getenv('REDIS_URL'), decode_responses=False)
         
         # Clear queue keys
         from backend.src.constants import DISCOVERY_QUEUE
@@ -180,7 +180,7 @@ async def emergency_status():
         # Check queue status (sync)
         import redis as redis_sync
         from backend.src.constants import DISCOVERY_QUEUE
-        r = redis_sync.from_url(os.getenv('REDIS_URL'), decode_responses=True)
+        r = redis_sync.from_url(os.getenv('REDIS_URL'), decode_responses=False)
         
         queue_length = r.llen(f"rq:queue:{DISCOVERY_QUEUE}")
         failed_length = r.llen(f"rq:queue:{DISCOVERY_QUEUE}:failed") if r.exists(f"rq:queue:{DISCOVERY_QUEUE}:failed") else 0
@@ -215,13 +215,13 @@ async def emergency_clear_lock():
         
         # Use sync Redis for lock operations
         import redis as redis_sync
-        r = redis_sync.from_url(os.getenv('REDIS_URL'), decode_responses=True)
+        r = redis_sync.from_url(os.getenv('REDIS_URL'), decode_responses=False)
         
         lock_key = "discovery_job_lock"
         
         # Check if lock exists
         lock_exists = r.exists(lock_key)
-        lock_value = r.get(lock_key) if lock_exists else None
+        lock_value = r.get(lock_key).decode('utf-8') if lock_exists and r.get(lock_key) else None
         lock_ttl = r.ttl(lock_key) if lock_exists else None
         
         # Clear the lock
@@ -297,3 +297,48 @@ async def emergency_reset_system():
     except Exception as e:
         logger.error(f"Emergency reset failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/emergency/test-polygon")
+async def test_polygon():
+    """
+    Test Polygon API response encoding to diagnose compression issues
+    """
+    try:
+        from backend.src.services.polygon_client_fixed import session as poly_session
+        
+        # Test a simple endpoint to check response encoding
+        response = poly_session.get("https://api.polygon.io/v2/reference/exchanges", timeout=20)
+        
+        # Check content encoding and type
+        content_encoding = response.headers.get("Content-Encoding", "none")
+        content_type = response.headers.get("Content-Type", "unknown")
+        
+        # Get sample of raw content (as hex) for diagnosis
+        sample_hex = response.content[:16].hex() if response.content else "empty"
+        
+        # Check if content looks compressed
+        is_gzipped = response.content.startswith(b"\x1f\x8b") if response.content else False
+        is_zlib = any(response.content.startswith(h) for h in [b"\x78\x01", b"\x78\x9c", b"\x78\xda"]) if response.content else False
+        
+        return {
+            "status_code": response.status_code,
+            "content_encoding": content_encoding,
+            "content_type": content_type,
+            "sample_hex": sample_hex,
+            "content_length": len(response.content) if response.content else 0,
+            "compression_detected": {
+                "gzip": is_gzipped,
+                "zlib": is_zlib,
+                "header_declares": content_encoding != "none"
+            },
+            "headers": dict(response.headers),
+            "safe_parsing_test": "success" if response.status_code == 200 else "failed"
+        }
+        
+    except Exception as e:
+        logger.error(f"Polygon encoding test failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Failed to test Polygon API encoding"
+        }

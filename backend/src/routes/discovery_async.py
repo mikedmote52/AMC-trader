@@ -20,7 +20,7 @@ router = APIRouter()
 
 # Redis and RQ setup
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-r = redis.from_url(REDIS_URL, decode_responses=True)
+r = redis.from_url(REDIS_URL, decode_responses=False)
 q = rq.Queue("discovery", connection=r)
 
 # Cache settings
@@ -31,7 +31,7 @@ def _cache_get(key: str) -> Optional[Dict]:
     """Get data from Redis cache"""
     try:
         val = r.get(key)
-        return json.loads(val) if val else None
+        return json.loads(val.decode('utf-8') if isinstance(val, bytes) else val) if val else None
     except Exception as e:
         logger.error(f"Cache get error: {e}")
         return None
@@ -39,7 +39,7 @@ def _cache_get(key: str) -> Optional[Dict]:
 def _cache_set(key: str, value: Dict, ttl: int = CACHE_TTL) -> bool:
     """Set data in Redis cache"""
     try:
-        r.set(key, json.dumps(value, default=str), ex=ttl)
+        r.set(key, json.dumps(value, default=str).encode('utf-8'), ex=ttl)
         return True
     except Exception as e:
         logger.error(f"Cache set error: {e}")

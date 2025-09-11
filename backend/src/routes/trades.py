@@ -237,7 +237,7 @@ async def execute(req: TradeReq):
             r = await c.post("/v2/orders", json=payload)
         if r.status_code >= 400:
             trade_submissions.labels(mode="live", result="error").inc()
-            body = r.json() if "json" in r.headers.get("content-type","") else {"text": r.text}
+            body = r.json() if "json" in r.headers.get("content-type","") else {"text": str(r.content[:200])}
             raise HTTPException(status_code=502, detail={
                 "error":"broker_reject",
                 "status":r.status_code,

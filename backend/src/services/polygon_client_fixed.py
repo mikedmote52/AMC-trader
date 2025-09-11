@@ -1,9 +1,31 @@
-import os, time, httpx
+import os, time, httpx, requests
 from datetime import datetime, timedelta
+from backend.src.services.http_safe import json_from_response_bytes
 
 POLY_KEY = os.getenv("POLYGON_API_KEY","")
 BASE = "https://api.polygon.io"
-HDRS = {"Authorization": f"Bearer {POLY_KEY}"} if POLY_KEY else {}
+HDRS = {"Authorization": f"Bearer {POLY_KEY}", "Accept": "application/json", "Accept-Encoding": "gzip, deflate"} if POLY_KEY else {"Accept": "application/json", "Accept-Encoding": "gzip, deflate"}
+
+# Create a requests session for synchronous calls (safer for byte handling)
+session = requests.Session()
+session.headers.update(HDRS)
+session.headers.update({"Connection": "keep-alive"})
+
+def _parse_response(resp):
+    """Parse response using safe byte handling"""
+    resp.raise_for_status()
+    return json_from_response_bytes(resp.content, resp.headers)
+
+def get_agg(ticker: str, **params):
+    """Get aggregates using safe byte parsing"""
+    url = f"{BASE}/v2/aggs/ticker/{ticker}/range/1/day/2024-01-01/2024-12-31"
+    params.setdefault("adjusted", "true")
+    return _parse_response(session.get(url, params=params, timeout=30))
+
+def get_quote(ticker: str):
+    """Get quote using safe byte parsing"""
+    url = f"{BASE}/v3/quotes/{ticker}"
+    return _parse_response(session.get(url, timeout=30))
 
 class PolygonFixed:
     """
@@ -22,9 +44,10 @@ class PolygonFixed:
         
         if r.status_code != 200:
             try:
-                error_text = r.text[:200]
-            except UnicodeDecodeError:
+                # Use safe byte parsing for error messages too
                 error_text = str(r.content[:200])
+            except Exception:
+                error_text = f"status_{r.status_code}"
             raise RuntimeError(f"❌ CRITICAL: Polygon API failed for {symbol}: {r.status_code} {error_text}")
         
         js = r.json()
