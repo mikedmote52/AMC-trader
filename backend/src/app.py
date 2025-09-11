@@ -213,7 +213,7 @@ app.include_router(polygon_debug, prefix="/debug")
 
 # Include discovery, portfolio, learning, daily updates, thesis, analytics, and pattern memory routers  
 from backend.src.routes import discovery_cached as discovery_routes
-# from backend.src.routes import discovery_emergency as discovery_emergency_routes  # Temporarily disabled
+from backend.src.routes import discovery_emergency as discovery_emergency_routes
 # Remove calibration routes - not needed with unified BMS system
 from backend.src.routes import portfolio as portfolio_routes
 from backend.src.routes import learning as learning_routes
@@ -235,7 +235,7 @@ app.include_router(discovery_routes.router, prefix="/api/discovery", tags=["disc
 app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery-legacy"])
 # Emergency discovery routes for worker issues
 # app.include_router(discovery_emergency_routes.router, prefix="/api/discovery", tags=["discovery-emergency"])
-# app.include_router(discovery_emergency_routes.router, prefix="/discovery", tags=["discovery-emergency-legacy"])
+app.include_router(discovery_emergency_routes.router, prefix="/discovery", tags=["discovery-emergency"])
 # Calibration routes removed - unified BMS system
 app.include_router(advanced_ranking_routes.router, prefix="/advanced-ranking", tags=["advanced-ranking"])
 app.include_router(portfolio_routes.router, prefix="/portfolio", tags=["portfolio"])
