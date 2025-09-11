@@ -2119,8 +2119,19 @@ def main():
     """Main entry point with Redis locking using live selector"""
     lock_key = "discovery_job_lock"
     
+    # Safety cleanup - check for stale locks older than TTL
     try:
-        with redis_lock(lock_key, ttl_seconds=240) as acquired:  # 4 minute TTL
+        from shared.redis_client import get_redis_client
+        r = get_redis_client()
+        ttl = r.ttl(lock_key)
+        if ttl == -1:  # Lock exists but no TTL (should not happen but safety)
+            r.delete(lock_key)
+            logger.warning(f"Cleared stale lock without TTL: {lock_key}")
+    except Exception as e:
+        logger.warning(f"Lock safety check failed: {e}")
+    
+    try:
+        with redis_lock(lock_key, ttl_seconds=120) as acquired:  # 2 minute TTL (reduced)
             if not acquired:
                 logger.warning("Another discovery job is running - exiting")
                 sys.exit(1)
