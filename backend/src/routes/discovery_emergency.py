@@ -222,6 +222,7 @@ async def emergency_clear_lock():
         # Check if lock exists
         lock_exists = r.exists(lock_key)
         lock_value = r.get(lock_key) if lock_exists else None
+        lock_ttl = r.ttl(lock_key) if lock_exists else None
         
         # Clear the lock
         if lock_exists:
@@ -232,11 +233,41 @@ async def emergency_clear_lock():
             'status': 'cleared' if lock_exists else 'no_lock',
             'lock_key': lock_key,
             'lock_existed': bool(lock_exists),
-            'previous_value': lock_value
+            'previous_value': lock_value,
+            'ttl_remaining': lock_ttl
         }
         
     except Exception as e:
         logger.error(f"Emergency lock clear failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/emergency/force-unlock-and-run")
+async def emergency_force_unlock_and_run(limit: int = Query(25, le=100)):
+    """
+    Force clear any locks and run discovery directly with emergency bypass
+    """
+    try:
+        logger.info("🚨 Emergency force unlock and run triggered")
+        
+        # Force clear lock first
+        clear_result = await emergency_clear_lock()
+        
+        # Wait a moment
+        import asyncio
+        await asyncio.sleep(1)
+        
+        # Try direct cache population 
+        populate_result = await emergency_populate_cache(limit)
+        
+        return {
+            'status': 'force_completed',
+            'lock_cleared': clear_result,
+            'cache_populated': populate_result,
+            'ready_for_use': populate_result.get('status') in ['success', 'fallback']
+        }
+        
+    except Exception as e:
+        logger.error(f"Emergency force unlock and run failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/emergency/reset-system")
