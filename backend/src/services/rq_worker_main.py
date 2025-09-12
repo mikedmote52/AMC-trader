@@ -3,6 +3,7 @@ import os, time, signal, sys, logging, threading
 from rq import Connection, Worker, Queue
 from redis import Redis
 from backend.src.constants import DISCOVERY_QUEUE
+from backend.src.services.worker_health import worker_health
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("rq_worker")
@@ -10,12 +11,13 @@ log = logging.getLogger("rq_worker")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 HEARTBEAT_KEY = os.getenv("WORKER_HEARTBEAT_KEY", "amc:discovery:worker:heartbeat")
 
-def hb(r):
+def hb():
     while True:
         try:
-            r.set(HEARTBEAT_KEY, str(int(time.time())), ex=120)
-            log.info("💓 HEARTBEAT OK - Worker is alive")
-            print(f"💓 HEARTBEAT OK - Worker is alive at {time.ctime()}")  # Render stdout
+            worker_health.update_heartbeat()
+            queue_stats = worker_health.get_queue_stats()
+            log.info(f"💓 HEARTBEAT OK - Worker alive, {queue_stats.get('pending_jobs', 0)} jobs pending")
+            print(f"💓 HEARTBEAT OK - Worker alive, {queue_stats.get('pending_jobs', 0)} jobs pending at {time.ctime()}")
         except Exception as e:
             log.error(f"❌ HEARTBEAT ERROR: {e}")
             print(f"❌ HEARTBEAT ERROR: {e}")
@@ -68,7 +70,7 @@ def main():
             print("✅ REDIS CONNECTION OK")
             
             # Start heartbeat thread
-            threading.Thread(target=hb, args=(r,), daemon=True).start()
+            threading.Thread(target=hb, daemon=True).start()
             
             with Connection(r):
                 q = Queue(DISCOVERY_QUEUE)

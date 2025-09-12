@@ -342,3 +342,176 @@ async def test_polygon():
             "error": str(e),
             "message": "Failed to test Polygon API encoding"
         }
+
+@router.get("/emergency/worker-health")
+async def worker_health_check():
+    """
+    Check RQ worker health and queue status
+    """
+    try:
+        from backend.src.services.worker_health import worker_health
+        
+        health_report = worker_health.health_report()
+        
+        # Determine overall status
+        worker_alive = health_report.get('worker_alive', False)
+        redis_connected = health_report.get('redis_connected', False)
+        
+        if worker_alive and redis_connected:
+            status = "healthy"
+        elif redis_connected and not worker_alive:
+            status = "worker_down"
+        else:
+            status = "unhealthy"
+            
+        return {
+            "status": status,
+            "health_report": health_report,
+            "recommendations": _get_health_recommendations(health_report),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Worker health check failed: {e}")
+        return {
+            "status": "error", 
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+@router.post("/emergency/clear-stuck-jobs")
+async def clear_stuck_jobs():
+    """
+    Clear stuck jobs from RQ queues
+    """
+    try:
+        from backend.src.services.worker_health import worker_health
+        
+        result = worker_health.clear_stuck_jobs()
+        
+        return {
+            "status": "cleared",
+            "result": result,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Clear stuck jobs failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+def _get_health_recommendations(health_report):
+    """Get recommendations based on health report"""
+    recommendations = []
+    
+    if not health_report.get('worker_alive', False):
+        recommendations.append("RQ worker is not responding - restart worker service")
+        
+    if not health_report.get('redis_connected', False):
+        recommendations.append("Redis connection failed - check Redis service")
+        
+    queue_stats = health_report.get('queue_stats', {})
+    pending = queue_stats.get('pending_jobs', 0)
+    failed = queue_stats.get('failed_jobs', 0)
+    
+    if pending > 10:
+        recommendations.append(f"High queue backlog ({pending} jobs) - worker may be overloaded")
+        
+    if failed > 5:
+        recommendations.append(f"Many failed jobs ({failed}) - check worker error logs")
+        
+    heartbeat_age = health_report.get('heartbeat_age')
+    if heartbeat_age and heartbeat_age > 300:  # 5 minutes
+        recommendations.append(f"Stale heartbeat ({heartbeat_age}s) - worker may be stuck")
+        
+    return recommendations
+
+@router.post("/emergency/auto-recovery")
+async def auto_recovery():
+    """
+    Intelligent auto-recovery: Check worker health and run fallback if needed
+    """
+    try:
+        from backend.src.services.worker_health import worker_health
+        from backend.src.services.discovery_fallback import discovery_fallback
+        
+        # Check worker health first
+        health_report = worker_health.health_report()
+        worker_alive = health_report.get('worker_alive', False)
+        
+        recovery_actions = []
+        
+        # Step 1: Clear stuck jobs if worker is down
+        if not worker_alive:
+            logger.info("🚨 Worker down - clearing stuck jobs")
+            clear_result = worker_health.clear_stuck_jobs()
+            recovery_actions.append({
+                "action": "clear_stuck_jobs",
+                "result": clear_result
+            })
+            
+        # Step 2: Run fallback discovery if no recent data
+        try:
+            # Check if we have recent cached data
+            import redis as redis_sync
+            from backend.src.constants import CACHE_KEY_CONTENDERS
+            
+            r = redis_sync.from_url(os.getenv('REDIS_URL'), decode_responses=False)
+            cached_data = r.get(CACHE_KEY_CONTENDERS)
+            
+            needs_refresh = False
+            if not cached_data:
+                needs_refresh = True
+                logger.info("No cached data - running fallback discovery")
+            else:
+                try:
+                    import json
+                    payload = json.loads(cached_data.decode('utf-8'))
+                    cache_age = time.time() - payload.get('timestamp', 0)
+                    if cache_age > 600:  # 10 minutes old
+                        needs_refresh = True
+                        logger.info(f"Cached data is {cache_age:.0f}s old - running fallback discovery")
+                except:
+                    needs_refresh = True
+                    logger.info("Invalid cached data - running fallback discovery")
+                    
+            if needs_refresh and discovery_fallback.can_run_sync():
+                logger.info("🔄 Running fallback discovery...")
+                fallback_result = await discovery_fallback.run_discovery_sync(
+                    strategy="hybrid_v1", 
+                    limit=50
+                )
+                recovery_actions.append({
+                    "action": "fallback_discovery",
+                    "result": fallback_result
+                })
+            
+        except Exception as e:
+            logger.error(f"Fallback discovery failed: {e}")
+            recovery_actions.append({
+                "action": "fallback_discovery",
+                "result": {"status": "error", "error": str(e)}
+            })
+            
+        # Final health check
+        final_health = worker_health.health_report()
+        
+        return {
+            "status": "completed",
+            "recovery_actions": recovery_actions,
+            "initial_health": health_report,
+            "final_health": final_health,
+            "system_ready": len(recovery_actions) > 0,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Auto-recovery failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }

@@ -51,9 +51,17 @@ services:
   - type: worker
     name: amc-discovery-worker
     env: python
-    plan: starter
+    plan: standard  # Upgraded from starter for better reliability
     buildCommand: pip install -r requirements.txt
     startCommand: python -m backend.src.services.rq_worker_main
+    
+    # Health monitoring
+    healthCheckPath: /health  # Worker doesn't have HTTP but Render will check process
+    
+    # Auto-restart configuration
+    numInstances: 1
+    maxSurge: 0
+    maxUnavailable: 0
     envVars:
       # Redis connection (from managed service)
       - key: REDIS_URL
