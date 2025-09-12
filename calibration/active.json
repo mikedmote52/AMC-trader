@@ -95,8 +95,8 @@
         "max_soft_pass": 0
       },
       "entry_rules": {
-        "watchlist_min": 5,
-        "trade_ready_min": 8
+        "watchlist_min": 50,
+        "trade_ready_min": 70
       },
       "safety_guardrails": {
         "max_candidates": 100,

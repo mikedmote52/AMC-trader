@@ -24,6 +24,8 @@ interface SqueezeOpportunity {
 interface SqueezeMonitorProps {
   watchedSymbols?: string[];
   showPatternHistory?: boolean;
+  strategy?: 'legacy_v0' | 'hybrid_v1';
+  minScore?: number;
 }
 
 interface PortfolioAction {
@@ -36,7 +38,9 @@ interface PortfolioAction {
 
 export default function SqueezeMonitor({ 
   watchedSymbols = [], 
-  showPatternHistory = true 
+  showPatternHistory = true,
+  strategy = 'hybrid_v1',
+  minScore = 40
 }: SqueezeMonitorProps) {
   const [squeezeOpportunities, setSqueezeOpportunities] = useState<SqueezeOpportunity[]>([]);
   const [portfolioActions, setPortfolioActions] = useState<PortfolioAction[]>([]);
@@ -46,7 +50,9 @@ export default function SqueezeMonitor({
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [lastApiCall, setLastApiCall] = useState<{url: string, candidateCount: number, timestamp: string} | null>(null);
+  const [lastApiCall, setLastApiCall] = useState<{url: string, candidateCount: number, timestamp: string, strategy: string} | null>(null);
+  const [currentStrategy, setCurrentStrategy] = useState<'legacy_v0' | 'hybrid_v1'>(strategy);
+  const [currentMinScore, setCurrentMinScore] = useState(minScore);
 
   const getRefreshInterval = () => {
     const now = new Date();
@@ -79,7 +85,7 @@ export default function SqueezeMonitor({
     console.log(`Scanner refresh rate: ${minutes} minutes`);
     
     return () => clearInterval(interval);
-  }, [watchedSymbols]);
+  }, [watchedSymbols, currentStrategy, currentMinScore]);
 
   const loadSqueezeOpportunities = async () => {
     try {
@@ -94,10 +100,11 @@ export default function SqueezeMonitor({
       let reasonStats = {};
       
       if (useTestEndpoint) {
-        discoveryResponse = await getJSON<any>(`${API_BASE}/discovery/test?strategy=legacy_v0&limit=20`);
+        discoveryResponse = await getJSON<any>(`${API_BASE}/discovery/test?strategy=${currentStrategy}&limit=20`);
       } else {
-        // Use fetch to capture headers - FIXED: Use squeeze-candidates endpoint with min_score
-        const response = await fetch(`${API_BASE}/discovery/squeeze-candidates?min_score=0.1&cache=${Date.now()}`, {
+        // FIXED: Use correct endpoint with strategy parameter and integer scale (0-100)
+        const apiUrl = `${API_BASE}/discovery/squeeze-candidates?strategy=${currentStrategy}&min_score=${currentMinScore}&cache=${Date.now()}`;
+        const response = await fetch(apiUrl, {
           cache: 'no-store'
         });
         
@@ -108,11 +115,12 @@ export default function SqueezeMonitor({
         
         discoveryResponse = await response.json();
         
-        // FIXED: Track API call details for debugging
+        // FIXED: Track API call details for debugging with strategy
         setLastApiCall({
-          url: `${API_BASE}/discovery/squeeze-candidates?min_score=0.1`,
+          url: apiUrl,
           candidateCount: discoveryResponse?.candidates?.length || 0,
-          timestamp: new Date().toLocaleTimeString()
+          timestamp: new Date().toLocaleTimeString(),
+          strategy: currentStrategy
         });
       }
       
@@ -122,19 +130,26 @@ export default function SqueezeMonitor({
       // Transform discovery candidates to squeeze opportunities format (test endpoint uses .items)
       const candidates = Array.isArray(discoveryResponse?.items) ? discoveryResponse.items :
                          Array.isArray(discoveryResponse?.candidates) ? discoveryResponse.candidates :
+                         Array.isArray(discoveryResponse?.squeeze_candidates) ? discoveryResponse.squeeze_candidates :
                          Array.isArray(discoveryResponse) ? discoveryResponse : [];
+      
+      // FIXED: Handle both 0-1 and 0-100 scales from API response
+      const normalizeScore = (score: number) => {
+        if (!score) return 0;
+        return score > 1 ? score / 100 : score; // Convert 0-100 to 0-1 if needed
+      };
       
       const response: SqueezeOpportunity[] = candidates.map((candidate: any) => ({
             symbol: candidate.symbol,
-            squeeze_score: candidate.squeeze_score || candidate.score || 0, // Use squeeze_score first, then fallback to score
+            squeeze_score: normalizeScore(candidate.squeeze_score || candidate.score || 0),
             volume_spike: candidate.factors?.volume_spike_ratio || candidate.volume_spike || 0,
             short_interest: candidate.short_interest_data?.percent * 100 || candidate.short_interest || 0,
             price: candidate.price || 0,
             pattern_type: candidate.action_tag || candidate.pattern_match || 'WATCH',
-            confidence: candidate.confidence || (candidate.score || 0) / 100,
+            confidence: normalizeScore(candidate.confidence || candidate.score || 0),
             detected_at: new Date().toISOString(),
-            advanced_score: (candidate.score || 0) / 100,
-            success_probability: candidate.confidence || (candidate.score || 0) / 100,
+            advanced_score: normalizeScore(candidate.score || 0),
+            success_probability: normalizeScore(candidate.confidence || candidate.score || 0),
             action: candidate.action_tag || 'WATCH',
             vigl_similarity: candidate.vigl_similarity || 0,
             position_size_pct: candidate.position_size_pct || 0
@@ -157,7 +172,8 @@ export default function SqueezeMonitor({
           action: item.action,
           vigl_similarity: item.vigl_similarity,
           position_size_pct: item.position_size_pct
-        })).filter(opp => opp.advanced_score >= 0.1); // Show candidates with 10%+ score (matches API min_score)
+        // FIXED: Remove redundant client-side filtering since API already filters by min_score
+        })); // API already filtered by min_score parameter
       }
       
       if (watchedSymbols.length > 0) {
@@ -171,7 +187,7 @@ export default function SqueezeMonitor({
       let debugInfo = null;
       if (!useTestEndpoint && systemState === "HEALTHY" && opportunities.length === 0) {
         try {
-          debugInfo = await getJSON<any>(`${API_BASE}/discovery/contenders/debug?strategy=legacy_v0`);
+          debugInfo = await getJSON<any>(`${API_BASE}/discovery/contenders/debug?strategy=${currentStrategy}`);
           console.log("Debug info:", debugInfo);
           setDebugInfo(debugInfo);
         } catch (e) {
@@ -203,7 +219,20 @@ export default function SqueezeMonitor({
       
     } catch (err: any) {
       console.error("Squeeze monitoring error:", err);
-      setError(err?.message || "Failed to load squeeze opportunities");
+      
+      // Enhanced error messaging for common integration issues
+      let errorMessage = "Failed to load squeeze opportunities";
+      if (err?.message?.includes('timeout')) {
+        errorMessage = "Discovery system timeout - this may indicate heavy load or system startup";
+      } else if (err?.message?.includes('404') || err?.message?.includes('Not Found')) {
+        errorMessage = "Discovery endpoint not available - check API deployment";
+      } else if (err?.message?.includes('500')) {
+        errorMessage = "Discovery system error - backend processing issue";
+      } else if (err?.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -215,11 +244,11 @@ export default function SqueezeMonitor({
     setTimeout(loadSqueezeOpportunities, 2000);
   };
 
-  // Categorize opportunities by advanced score tiers (FIXED: More realistic thresholds)
+  // Categorize opportunities by advanced score tiers (SAFE THRESHOLDS)
   const categorizeOpportunities = (opportunities: SqueezeOpportunity[]) => {
-    const critical = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.30); // STRONG_BUY (30%+)
-    const developing = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.20 && (opp.advanced_score || opp.squeeze_score) < 0.30); // BUY (20-30%)
-    const early = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.10 && (opp.advanced_score || opp.squeeze_score) < 0.20); // WATCH (10-20%)
+    const critical = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.70); // STRONG_BUY (70%+)
+    const developing = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.50 && (opp.advanced_score || opp.squeeze_score) < 0.70); // BUY (50-70%)
+    const early = opportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) >= 0.30 && (opp.advanced_score || opp.squeeze_score) < 0.50); // WATCH (30-50%)
     
     return { critical, developing, early };
   };
@@ -304,6 +333,8 @@ export default function SqueezeMonitor({
           </div>
           <div style={{ color: '#e5e7eb', fontSize: '13px', lineHeight: '1.4' }}>
             <div>Endpoint: {lastApiCall.url}</div>
+            <div>Strategy: {lastApiCall.strategy}</div>
+            <div>Min Score: {currentMinScore}% (threshold)</div>
             <div>Candidates received: {lastApiCall.candidateCount}</div>
             <div>Candidates displayed: {squeezeOpportunities.length}</div>
             <div>Last call: {lastApiCall.timestamp}</div>
@@ -356,6 +387,37 @@ export default function SqueezeMonitor({
         </div>
         
         <div style={actionsStyle}>
+          {/* Strategy Selector */}
+          <select 
+            value={currentStrategy}
+            onChange={(e) => setCurrentStrategy(e.target.value as 'legacy_v0' | 'hybrid_v1')}
+            style={{
+              ...actionButtonStyle,
+              backgroundColor: "#1a1a1a",
+              color: "#fff",
+              padding: "6px 12px",
+              minWidth: "120px"
+            }}
+          >
+            <option value="legacy_v0">Legacy V0</option>
+            <option value="hybrid_v1">Hybrid V1</option>
+          </select>
+          
+          {/* Min Score Slider */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ color: '#ccc', fontSize: '12px' }}>Min Score:</span>
+            <input
+              type="range"
+              min="10"
+              max="80"
+              step="5"
+              value={currentMinScore}
+              onChange={(e) => setCurrentMinScore(Number(e.target.value))}
+              style={{ width: '60px' }}
+            />
+            <span style={{ color: '#ccc', fontSize: '12px', minWidth: '30px' }}>{currentMinScore}%</span>
+          </div>
+          
           {showPatternHistory && (
             <button 
               onClick={() => setShowHistory(!showHistory)}
