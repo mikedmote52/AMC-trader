@@ -526,7 +526,11 @@ async def run_direct_discovery(limit: int = Query(50, le=200)):
         logger.info(f"🚨 Direct discovery triggered with limit={limit}")
         
         # Import and run direct discovery
-        from backend.src.services.discovery_direct import direct_discovery
+        try:
+            from backend.src.services.discovery_direct import direct_discovery
+        except ImportError:
+            # Try relative import for deployment
+            from ..services.discovery_direct import direct_discovery
         
         # Run discovery and get immediate results
         result = direct_discovery.run_direct(limit=limit)
