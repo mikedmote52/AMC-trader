@@ -515,3 +515,45 @@ async def auto_recovery():
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
+
+@router.post("/emergency/run-direct")
+async def run_direct_discovery(limit: int = Query(50, le=200)):
+    """
+    Run direct synchronous discovery bypassing RQ worker completely
+    Uses simple Polygon API calls for immediate results
+    """
+    try:
+        logger.info(f"🚨 Direct discovery triggered with limit={limit}")
+        
+        # Import and run direct discovery
+        from backend.src.services.discovery_direct import direct_discovery
+        
+        # Run discovery and get immediate results
+        result = direct_discovery.run_direct(limit=limit)
+        
+        if result.get('status') == 'success':
+            logger.info(f"✅ Direct discovery completed: {result.get('count', 0)} candidates")
+            return {
+                "status": "success",
+                "method": "direct_discovery",
+                "count": result.get('count', 0),
+                "candidates": result.get('candidates', []),
+                "elapsed_seconds": result.get('elapsed_seconds', 0),
+                "cached": True,
+                "message": "Direct discovery completed successfully"
+            }
+        else:
+            logger.error(f"Direct discovery failed: {result}")
+            return {
+                "status": "error", 
+                "error": result.get('error', 'Unknown error'),
+                "elapsed_seconds": result.get('elapsed_seconds', 0)
+            }
+            
+    except Exception as e:
+        logger.error(f"Direct discovery endpoint failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
