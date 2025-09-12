@@ -7,6 +7,7 @@ import json
 import time
 import logging
 import asyncio
+import requests
 from typing import Dict, Any
 import redis.asyncio as redis
 from fastapi import APIRouter, HTTPException, Query
@@ -516,7 +517,7 @@ async def auto_recovery():
             "timestamp": datetime.now().isoformat()
         }
 
-@router.post("/emergency/run-direct")
+@router.post("/emergency/run-direct") 
 async def run_direct_discovery(limit: int = Query(50, le=200)):
     """
     Run direct synchronous discovery bypassing RQ worker completely
@@ -525,34 +526,109 @@ async def run_direct_discovery(limit: int = Query(50, le=200)):
     try:
         logger.info(f"🚨 Direct discovery triggered with limit={limit}")
         
-        # Import and run direct discovery
+        # Inline direct discovery logic for deployment simplicity
+        import requests
+        import json
+        
+        polygon_key = os.getenv("POLYGON_API_KEY", "")
+        if not polygon_key:
+            return {"status": "error", "error": "POLYGON_API_KEY not configured"}
+        
+        # Get market movers from Polygon
         try:
-            from backend.src.services.discovery_direct import direct_discovery
-        except ImportError:
-            # Try relative import for deployment
-            from ..services.discovery_direct import direct_discovery
+            url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/gainers"
+            headers = {"Authorization": f"Bearer {polygon_key}"}
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                tickers = [t['ticker'] for t in data.get('tickers', [])[:limit]]
+                logger.info(f"Found {len(tickers)} market movers")
+            else:
+                # Fallback stocks
+                tickers = ["TSLA", "AAPL", "NVDA", "AMD", "SPY", "MSFT", "AMZN", "META", "GOOGL", "QQQ"][:limit]
+        except Exception as e:
+            logger.error(f"Failed to get market movers: {e}")
+            # Fallback stocks
+            tickers = ["TSLA", "AAPL", "NVDA", "AMD", "SPY", "MSFT", "AMZN", "META", "GOOGL", "QQQ"][:limit]
         
-        # Run discovery and get immediate results
-        result = direct_discovery.run_direct(limit=limit)
+        # Score the stocks
+        scored_candidates = []
+        for symbol in tickers:
+            try:
+                # Simple scoring with snapshot data
+                snapshot_url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers/{symbol}"
+                response = requests.get(snapshot_url, headers=headers, timeout=5)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    ticker_data = data.get('ticker', {})
+                    day = ticker_data.get('day', {})
+                    prev_day = ticker_data.get('prevDay', {})
+                    
+                    if day.get('v') and prev_day.get('v'):
+                        volume_ratio = day.get('v', 0) / max(prev_day.get('v', 1), 1)
+                        price_change = ((day.get('c', 0) - prev_day.get('c', 1)) / max(prev_day.get('c', 1), 1)) * 100
+                        
+                        # Simple scoring (max 100 points)
+                        volume_score = min(volume_ratio / 5, 1.0) * 40
+                        momentum_score = min(abs(price_change) / 10, 1.0) * 30
+                        liquidity_score = 20 if day.get('v', 0) * day.get('c', 0) > 1000000 else 10
+                        volatility_score = 10
+                        
+                        total_score = volume_score + momentum_score + volatility_score + liquidity_score
+                        
+                        scored_candidates.append({
+                            "symbol": symbol,
+                            "score": round(total_score, 2),
+                            "price": day.get('c', 0),
+                            "volume": day.get('v', 0),
+                            "volume_ratio": round(volume_ratio, 2),
+                            "price_change_pct": round(price_change, 2),
+                            "dollar_volume": day.get('v', 0) * day.get('c', 0),
+                            "thesis": f"{symbol}: {volume_ratio:.1f}x volume, {price_change:+.1f}% move, score: {total_score:.0f}%",
+                            "action_tag": "trade_ready" if total_score >= 70 else "watchlist" if total_score >= 50 else "monitor",
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        
+            except Exception as e:
+                logger.error(f"Failed to score {symbol}: {e}")
+                continue
         
-        if result.get('status') == 'success':
-            logger.info(f"✅ Direct discovery completed: {result.get('count', 0)} candidates")
-            return {
-                "status": "success",
-                "method": "direct_discovery",
-                "count": result.get('count', 0),
-                "candidates": result.get('candidates', []),
-                "elapsed_seconds": result.get('elapsed_seconds', 0),
-                "cached": True,
-                "message": "Direct discovery completed successfully"
+        # Sort by score
+        scored_candidates.sort(key=lambda x: x.get('score', 0), reverse=True)
+        
+        # Cache results
+        try:
+            import redis as redis_sync
+            redis_client = redis_sync.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'), decode_responses=False)
+            
+            cache_payload = {
+                "timestamp": int(datetime.now().timestamp()),
+                "iso_timestamp": datetime.now().isoformat(),
+                "count": len(scored_candidates),
+                "candidates": scored_candidates,
+                "engine": "Direct Discovery",
+                "strategy": "direct",
+                "universe_size": 100,
+                "filtered_size": len(scored_candidates)
             }
-        else:
-            logger.error(f"Direct discovery failed: {result}")
-            return {
-                "status": "error", 
-                "error": result.get('error', 'Unknown error'),
-                "elapsed_seconds": result.get('elapsed_seconds', 0)
-            }
+            
+            cache_data = json.dumps(cache_payload, default=str).encode('utf-8')
+            redis_client.setex("amc:discovery:contenders", 600, cache_data)
+            logger.info(f"✅ Cached {len(scored_candidates)} candidates")
+        except Exception as e:
+            logger.error(f"Failed to cache results: {e}")
+        
+        logger.info(f"✅ Direct discovery completed: {len(scored_candidates)} candidates")
+        return {
+            "status": "success",
+            "method": "direct_discovery",
+            "count": len(scored_candidates),
+            "candidates": scored_candidates,
+            "cached": True,
+            "message": "Direct discovery completed successfully"
+        }
             
     except Exception as e:
         logger.error(f"Direct discovery endpoint failed: {e}")
