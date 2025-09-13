@@ -285,11 +285,11 @@ class MarketDataProvider:
     async def get_current_metrics(self, symbol: str) -> Dict[str, Any]:
         """Get current market metrics for a symbol"""
         try:
-            # Try to get data from existing BMS engine
-            from .bms_engine_real import RealBMSEngine
+            # Use enhanced BMS engine
+            from .bms_engine_enhanced import EnhancedBMSEngine
             
             if self.polygon_api_key:
-                bms_engine = RealBMSEngine(self.polygon_api_key)
+                bms_engine = EnhancedBMSEngine(self.polygon_api_key)
                 market_data = await bms_engine.get_real_market_data(symbol)
                 
                 if market_data:

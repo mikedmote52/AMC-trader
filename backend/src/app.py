@@ -116,9 +116,7 @@ import asyncpg
 from prometheus_client import CollectorRegistry, Counter, make_asgi_app
 import redis.asyncio as redis
 
-# Discovery worker imports
-from backend.src.services.bms_engine_real import RealBMSEngine
-from backend.src.services.discovery_worker import start_background_worker
+# Discovery worker imports removed - using enhanced discovery system only
 
 DISCOVERY_TRIGGERED = Counter("amc_discovery_triggered_total", "manual discovery trigger calls")
 DISCOVERY_ERRORS = Counter("amc_discovery_errors_total", "manual discovery trigger errors")

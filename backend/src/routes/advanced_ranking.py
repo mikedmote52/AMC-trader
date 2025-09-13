@@ -242,11 +242,11 @@ async def test_ranking_system(
         # Use provided test data or fetch real market data
         if not test_data:
             try:
-                from ..services.bms_engine_real import RealBMSEngine
+                from ..services.bms_engine_enhanced import EnhancedBMSEngine
                 import os
                 
                 polygon_key = os.getenv('POLYGON_API_KEY', '1ORwpSzeOV20X6uaA8G3Zuxx7hLJ0KIC')
-                bms_engine = RealBMSEngine(polygon_key)
+                bms_engine = EnhancedBMSEngine(polygon_key)
                 
                 # Get current candidates instead of hardcoded test data
                 candidates = await bms_engine.discover_real_candidates(limit=10)

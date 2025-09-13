@@ -361,11 +361,11 @@ async def squeeze_scanner():
         for symbol in watchlist_symbols:
             # Get real market data for the symbol
             try:
-                from ..services.bms_engine_real import RealBMSEngine
+                from ..services.bms_engine_enhanced import EnhancedBMSEngine
                 import os
                 
                 polygon_key = os.getenv('POLYGON_API_KEY', '1ORwpSzeOV20X6uaA8G3Zuxx7hLJ0KIC')
-                bms_engine = RealBMSEngine(polygon_key)
+                bms_engine = EnhancedBMSEngine(polygon_key)
                 
                 market_data = await bms_engine.get_real_market_data(symbol)
                 if not market_data:
