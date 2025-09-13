@@ -517,11 +517,12 @@ async def auto_recovery():
             "timestamp": datetime.now().isoformat()
         }
 
-@router.post("/emergency/universe-filter")
+@router.post("/emergency/universe-filter") 
 async def run_universe_filtering(limit: int = Query(50, le=500), trace: bool = Query(False)):
     """
     Run complete universe filtering using the real BMS engine
     Shows filtering from thousands of stocks down to final candidates
+    Updated: 2025-09-12 for full universe filtering implementation
     """
     try:
         logger.info(f"🌍 Universe filtering triggered with limit={limit}, trace={trace}")
