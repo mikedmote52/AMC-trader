@@ -663,7 +663,7 @@ export default function SqueezeMonitor({
                 <div style={{color: '#10b981'}}>70-79: {universeFilterData.trace.scoring_distribution?.['70_79'] || 0}</div>
                 <div style={{color: '#3b82f6'}}>60-69: {universeFilterData.trace.scoring_distribution?.['60_69'] || 0}</div>
                 <div style={{color: '#8b5cf6'}}>50-59: {universeFilterData.trace.scoring_distribution?.['50_59'] || 0}</div>
-                <div style={{color: '#6b7280'}}>< 50: {universeFilterData.trace.scoring_distribution?.below_50 || 0}</div>
+                <div style={{color: '#6b7280'}}>&lt; 50: {universeFilterData.trace.scoring_distribution?.below_50 || 0}</div>
               </div>
             </div>
           )}
