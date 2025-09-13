@@ -211,10 +211,8 @@ async def health():
 app.include_router(trades_router)
 app.include_router(polygon_debug, prefix="/debug")
 
-# Include discovery, portfolio, learning, daily updates, thesis, analytics, and pattern memory routers  
-from backend.src.routes import discovery_cached as discovery_routes
-from backend.src.routes import discovery_emergency as discovery_emergency_routes
-# Remove calibration routes - not needed with unified BMS system
+# Include discovery (enhanced only), portfolio, learning, daily updates, thesis, analytics, and pattern memory routers  
+from backend.src.routes import discovery_emergency as discovery_routes
 from backend.src.routes import portfolio as portfolio_routes
 from backend.src.routes import learning as learning_routes
 from backend.src.routes import daily_updates as daily_updates_routes
@@ -230,12 +228,9 @@ from backend.src.routes import data_integrity as data_integrity_routes
 from backend.src.routes import advanced_ranking as advanced_ranking_routes
 from backend.src.routes import thesis_monitor as thesis_monitor_routes
 
-# Canonical + legacy discovery routes
+# Enhanced discovery system - single unified system
 app.include_router(discovery_routes.router, prefix="/api/discovery", tags=["discovery"])
-app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery-legacy"])
-# Emergency discovery routes for worker issues
-# app.include_router(discovery_emergency_routes.router, prefix="/api/discovery", tags=["discovery-emergency"])
-app.include_router(discovery_emergency_routes.router, prefix="/discovery", tags=["discovery-emergency"])
+app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery"])
 # Calibration routes removed - unified BMS system
 app.include_router(advanced_ranking_routes.router, prefix="/advanced-ranking", tags=["advanced-ranking"])
 app.include_router(portfolio_routes.router, prefix="/portfolio", tags=["portfolio"])
@@ -258,7 +253,7 @@ from starlette.responses import RedirectResponse
 @app.get("/api/recommendations")
 @app.get("/recommendations")
 async def compat_recommendations():
-    return RedirectResponse(url="/discovery/contenders", status_code=307)
+    return RedirectResponse(url="/discovery/emergency/enhanced-discovery", status_code=307)
 
 @app.get("/api/holdings")
 @app.get("/holdings")
@@ -267,9 +262,8 @@ async def compat_holdings():
 
 @app.get("/api/contenders")
 async def api_contenders():
-    # Non-breaking alias route - returns BMS candidates
-    from backend.src.routes.bms_discovery import get_candidates
-    return await get_candidates(limit=20)
+    # Enhanced discovery system - redirect to enhanced endpoint
+    return RedirectResponse(url="/discovery/emergency/enhanced-discovery?limit=20", status_code=307)
 
 # Optional buy-now alias if the UI ever posts here:
 from fastapi import Body

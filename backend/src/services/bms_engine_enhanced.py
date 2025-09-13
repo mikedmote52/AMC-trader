@@ -123,11 +123,36 @@ class EnhancedBMSEngine:
         return ticker.exchange in {'XNYS', 'XNAS', 'ARCX', 'BATS'}
     
     def is_fund_etf_reit_spac_preferred(self, ticker: TickerState) -> bool:
-        """Identify funds, ETFs, REITs, SPACs, preferred stocks"""
+        """Identify funds, ETFs, REITs, SPACs, preferred stocks - COMPREHENSIVE DETECTION"""
         fund_keywords = ['ETF', 'ETN', 'TRUST', 'FUND', 'SPDR', 'INDEX', 'BDC', 
                         'CLOSED-END', 'PREFERRED', 'PFD', 'UNIT', 'WARRANT', 'SPAC', 'REIT']
+        
+        # Check symbol patterns
         symbol_upper = ticker.symbol.upper()
-        return any(keyword in symbol_upper for keyword in fund_keywords)
+        if any(keyword in symbol_upper for keyword in fund_keywords):
+            return True
+        
+        # Specific ETF symbols that don't contain "ETF" in name
+        known_etfs = {
+            'SOXL', 'SOXS', 'TQQQ', 'SQQQ', 'UPRO', 'SPXU', 'TNA', 'TZA',
+            'LABU', 'LABD', 'TECL', 'TECS', 'CURE', 'RWM', 'PSQ', 'QID',
+            'DXD', 'DOG', 'SDS', 'QQQ', 'SPY', 'IWM', 'DIA', 'VTI', 'VOO',
+            'ARKK', 'ARKQ', 'ARKG', 'ARKW', 'GDXJ', 'GDX', 'SLV', 'GLD',
+            'XLE', 'XLF', 'XLK', 'XLV', 'XLI', 'XLP', 'XLU', 'XLY', 'XLB',
+            'UVXY', 'VXX', 'SVXY', 'TMF', 'TMV', 'FAZ', 'FAS', 'ERX', 'ERY'
+        }
+        
+        if ticker.symbol.upper() in known_etfs:
+            return True
+        
+        # Pattern-based detection for leveraged/inverse funds
+        if (ticker.symbol.endswith('L') or ticker.symbol.endswith('S') or 
+            ticker.symbol.endswith('X') or ticker.symbol.endswith('U')):
+            # Additional check for 3-4 character leveraged symbols
+            if len(ticker.symbol) <= 4 and ticker.symbol.upper() in known_etfs:
+                return True
+        
+        return False
     
     def stage1_universe_filter(self, t: TickerState) -> bool:
         """Stage 1: Universe filtering with preference + tradability gates"""

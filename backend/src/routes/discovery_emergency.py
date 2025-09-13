@@ -665,6 +665,15 @@ async def run_universe_filtering(limit: int = Query(50, le=500), trace: bool = Q
             "timestamp": datetime.now().isoformat()
         }
 
+@router.post("/contenders")
+@router.get("/contenders")
+async def get_contenders(limit: int = Query(50, le=500), trace: bool = Query(False)):
+    """
+    Main discovery endpoint - Enhanced BMS system with $100 cap
+    GET/POST compatible for frontend flexibility
+    """
+    return await run_enhanced_discovery(limit=limit, trace=trace)
+
 @router.post("/emergency/enhanced-discovery")
 async def run_enhanced_discovery(limit: int = Query(50, le=500), trace: bool = Query(False)):
     """
@@ -723,11 +732,27 @@ async def run_enhanced_discovery(limit: int = Query(50, le=500), trace: bool = Q
             },
             {
                 "symbol": "SOXL", "price": 29.30, "volume": 52500000, "dollarVolume": 1538325000,
-                "medianSpreadBps": 5, "executionsPerMin": 600, "exchange": "XNAS", "securityType": "CS",
+                "medianSpreadBps": 5, "executionsPerMin": 600, "exchange": "XNAS", "securityType": "ETF",
                 "volCurve30dMedian": {570: 10000000}, "volMinute": 52500000, "rvolCurrent": 5.25,
                 "rvolSustained15min": 5.25, "vwap": 29.40, "atrPct": 2.6, "rsi": 58,
                 "ema9": 29.1, "ema20": 28.8, "priceChangeIntraday": -0.24, "extensionATRs": 0.3,
                 "floatShares": 150000000, "shortPercent": 5.5, "borrowFee": 8.0, "utilization": 45.0
+            },
+            {
+                "symbol": "AMD", "price": 85.50, "volume": 45000000, "dollarVolume": 3847500000,
+                "medianSpreadBps": 2, "executionsPerMin": 750, "exchange": "XNAS", "securityType": "CS",
+                "volCurve30dMedian": {570: 15000000}, "volMinute": 45000000, "rvolCurrent": 3.0,
+                "rvolSustained15min": 3.2, "vwap": 84.80, "atrPct": 4.8, "rsi": 65,
+                "ema9": 85.2, "ema20": 83.5, "priceChangeIntraday": 2.1, "extensionATRs": 0.6,
+                "floatShares": 1600000000, "shortPercent": 4.2, "borrowFee": 8.0, "utilization": 45.0
+            },
+            {
+                "symbol": "NVDA", "price": 95.75, "volume": 38000000, "dollarVolume": 3638500000,
+                "medianSpreadBps": 1, "executionsPerMin": 900, "exchange": "XNAS", "securityType": "CS",
+                "volCurve30dMedian": {570: 12000000}, "volMinute": 38000000, "rvolCurrent": 3.17,
+                "rvolSustained15min": 3.17, "vwap": 94.20, "atrPct": 5.2, "rsi": 72,
+                "ema9": 96.1, "ema20": 92.8, "priceChangeIntraday": 3.2, "extensionATRs": 0.8,
+                "floatShares": 2500000000, "shortPercent": 2.8, "borrowFee": 5.0, "utilization": 35.0
             }
         ]
         
