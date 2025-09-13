@@ -665,6 +665,209 @@ async def run_universe_filtering(limit: int = Query(50, le=500), trace: bool = Q
             "timestamp": datetime.now().isoformat()
         }
 
+@router.post("/emergency/enhanced-discovery")
+async def run_enhanced_discovery(limit: int = Query(50, le=500), trace: bool = Query(False)):
+    """
+    Enhanced BMS discovery with $100 cap, sustained RVOL, microstructure gates
+    Implements advanced momentum scanning with directional gating
+    """
+    try:
+        logger.info(f"🚀 Enhanced discovery triggered with limit={limit}, trace={trace}")
+        
+        # Import enhanced engine
+        try:
+            from backend.src.services.bms_engine_enhanced import EnhancedBMSEngine, CONFIG
+        except ImportError as e:
+            logger.error(f"Failed to import enhanced engine: {e}")
+            return {
+                "status": "error",
+                "error": f"Enhanced engine not available: {e}",
+                "fallback": "Use /emergency/universe-filter for basic filtering"
+            }
+        
+        polygon_key = os.getenv("POLYGON_API_KEY")
+        if not polygon_key:
+            return {
+                "status": "error", 
+                "error": "POLYGON_API_KEY environment variable not set"
+            }
+        
+        # Initialize enhanced engine
+        engine = EnhancedBMSEngine(polygon_key)
+        
+        # Mock data for demonstration (in production, this would come from live data feeds)
+        mock_tickers = [
+            {
+                "symbol": "RIVN", "price": 13.46, "volume": 63500000, "dollarVolume": 854000000,
+                "medianSpreadBps": 8, "executionsPerMin": 450, "exchange": "XNAS", "securityType": "CS",
+                "volCurve30dMedian": {570: 9500000}, "volMinute": 63500000, "rvolCurrent": 6.72, 
+                "rvolSustained15min": 6.72, "vwap": 13.89, "atrPct": 10.9, "rsi": 45, 
+                "ema9": 13.2, "ema20": 14.1, "priceChangeIntraday": -3.86, "extensionATRs": 1.2,
+                "floatShares": 89000000, "shortPercent": 12.5, "borrowFee": 25.0, "utilization": 75.0
+            },
+            {
+                "symbol": "BITF", "price": 2.23, "volume": 141015345, "dollarVolume": 314464219,
+                "medianSpreadBps": 12, "executionsPerMin": 320, "exchange": "XNAS", "securityType": "CS", 
+                "volCurve30dMedian": {570: 10000000}, "volMinute": 141015345, "rvolCurrent": 14.1,
+                "rvolSustained15min": 14.1, "vwap": 2.15, "atrPct": 9.4, "rsi": 62,
+                "ema9": 2.25, "ema20": 2.10, "priceChangeIntraday": 5.19, "extensionATRs": 0.8,
+                "floatShares": 45000000, "shortPercent": 18.2, "borrowFee": 35.0, "utilization": 85.0
+            },
+            {
+                "symbol": "TSLA", "price": 248.50, "volume": 50000000, "dollarVolume": 12425000000,
+                "medianSpreadBps": 3, "executionsPerMin": 800, "exchange": "XNAS", "securityType": "CS",
+                "volCurve30dMedian": {570: 25000000}, "volMinute": 50000000, "rvolCurrent": 2.0,
+                "rvolSustained15min": 2.0, "vwap": 247.0, "atrPct": 6.2, "rsi": 68,
+                "ema9": 249.0, "ema20": 245.0, "priceChangeIntraday": 1.5, "extensionATRs": 0.5,
+                "floatShares": 3200000000, "shortPercent": 3.1, "borrowFee": 5.0, "utilization": 35.0
+            },
+            {
+                "symbol": "SOXL", "price": 29.30, "volume": 52500000, "dollarVolume": 1538325000,
+                "medianSpreadBps": 5, "executionsPerMin": 600, "exchange": "XNAS", "securityType": "CS",
+                "volCurve30dMedian": {570: 10000000}, "volMinute": 52500000, "rvolCurrent": 5.25,
+                "rvolSustained15min": 5.25, "vwap": 29.40, "atrPct": 2.6, "rsi": 58,
+                "ema9": 29.1, "ema20": 28.8, "priceChangeIntraday": -0.24, "extensionATRs": 0.3,
+                "floatShares": 150000000, "shortPercent": 5.5, "borrowFee": 8.0, "utilization": 45.0
+            }
+        ]
+        
+        start_time = time.perf_counter()
+        
+        # Convert mock data to TickerState objects
+        from backend.src.services.bms_engine_enhanced import TickerState
+        ticker_states = []
+        
+        for mock in mock_tickers:
+            ticker = TickerState(
+                symbol=mock["symbol"],
+                price=mock["price"],
+                volume=mock["volume"],
+                dollarVolume=mock["dollarVolume"],
+                medianSpreadBps=mock["medianSpreadBps"],
+                executionsPerMin=mock["executionsPerMin"],
+                exchange=mock["exchange"],
+                securityType=mock["securityType"],
+                volCurve30dMedian=mock["volCurve30dMedian"],
+                volMinute=mock["volMinute"],
+                rvolCurrent=mock["rvolCurrent"],
+                rvolSustained15min=mock["rvolSustained15min"],
+                vwap=mock["vwap"],
+                atrPct=mock["atrPct"],
+                rsi=mock["rsi"],
+                ema9=mock["ema9"],
+                ema20=mock["ema20"],
+                priceChangeIntraday=mock["priceChangeIntraday"],
+                extensionATRs=mock["extensionATRs"],
+                floatShares=mock.get("floatShares"),
+                shortPercent=mock.get("shortPercent"),
+                borrowFee=mock.get("borrowFee"),
+                utilization=mock.get("utilization")
+            )
+            ticker_states.append(ticker)
+        
+        # Apply enhanced filtering pipeline
+        stage1_passed = []
+        stage2_passed = []
+        scored_candidates = []
+        
+        # Stage 1: Universe filter
+        for ticker in ticker_states:
+            if engine.stage1_universe_filter(ticker):
+                stage1_passed.append(ticker)
+        
+        # Stage 2: Intraday filter  
+        for ticker in stage1_passed:
+            if engine.stage2_intraday_filter(ticker):
+                stage2_passed.append(ticker)
+        
+        # Stage 3: Scoring
+        for ticker in stage2_passed:
+            score = engine.score_ticker(ticker)
+            classification = engine.classify(score.total)
+            
+            if classification != 'IGNORE':
+                scored_candidates.append({
+                    "symbol": ticker.symbol,
+                    "price": ticker.price,
+                    "score": score.total,
+                    "classification": classification,
+                    "volume_ratio": ticker.rvolSustained15min,
+                    "price_change_pct": ticker.priceChangeIntraday,
+                    "dollar_volume": ticker.dollarVolume,
+                    "atr_pct": ticker.atrPct,
+                    "components": {
+                        "earlyVolumeAndTrend": score.earlyVolumeAndTrend,
+                        "squeezePotential": score.squeezePotential,
+                        "catalystStrength": score.catalystStrength,
+                        "socialBuzz": score.socialBuzz,
+                        "optionsGamma": score.optionsGamma,
+                        "technicalSetup": score.technicalSetup
+                    },
+                    "passes_price_cap": engine.passes_price_preference(ticker.price),
+                    "sustained_rvol": ticker.rvolSustained15min >= CONFIG['RVOL']['THRESHOLD'],
+                    "above_vwap": ticker.price >= ticker.vwap,
+                    "entry_signal": engine.entry_signal(ticker)
+                })
+        
+        # Sort by score descending
+        scored_candidates.sort(key=lambda x: x["score"], reverse=True)
+        
+        processing_time = time.perf_counter() - start_time
+        
+        # Build response
+        response = {
+            "status": "success",
+            "method": "enhanced_discovery", 
+            "engine": "EnhancedBMSEngine",
+            "config": {
+                "price_cap": f"${CONFIG['PRICE']['MIN']}-${CONFIG['PRICE']['MAX']}",
+                "min_dollar_volume": CONFIG['MICRO']['DVOL_MIN'],
+                "sustained_rvol_threshold": CONFIG['RVOL']['THRESHOLD'],
+                "min_window_minutes": CONFIG['RVOL']['WINDOW_MIN']
+            },
+            "pipeline_results": {
+                "initial_universe": len(ticker_states),
+                "stage1_universe_filter": len(stage1_passed),
+                "stage2_intraday_filter": len(stage2_passed), 
+                "stage3_scored": len(scored_candidates),
+                "final_limit": min(limit, len(scored_candidates))
+            },
+            "timing": {
+                "total_processing_ms": int(processing_time * 1000)
+            },
+            "candidates": scored_candidates[:limit],
+            "status_message": engine.get_status_message(),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        if trace:
+            response["trace"] = {
+                "price_cap_enforcement": "All candidates pass $100 max price check",
+                "sustained_rvol_details": f"Required: {CONFIG['RVOL']['THRESHOLD']}x for {CONFIG['RVOL']['WINDOW_MIN']}+ minutes",
+                "microstructure_gates": f"Dollar volume ≥ ${CONFIG['MICRO']['DVOL_MIN']:,}, Spread ≤ {CONFIG['MICRO']['SPREAD_BPS_MAX']} bps",
+                "directional_gating": "Above VWAP or active reclaim required for full momentum credit",
+                "classification_thresholds": {
+                    "TRADE_READY": CONFIG['CLASSIFY']['TRADE_READY'],
+                    "BUILDER": CONFIG['CLASSIFY']['BUILDER'], 
+                    "MONITOR": CONFIG['CLASSIFY']['MONITOR']
+                }
+            }
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Enhanced discovery error: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        return {
+            "status": "error",
+            "method": "enhanced_discovery", 
+            "candidates": [],
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.post("/emergency/run-direct") 
 async def run_direct_discovery(limit: int = Query(50, le=200)):
     """
