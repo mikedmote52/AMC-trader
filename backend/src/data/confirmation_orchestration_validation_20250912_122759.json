@@ -1,0 +1,15 @@
+{
+  "request_id": "orchestration_validation_20250912_122759",
+  "agent": "BacktestingAgent",
+  "command": "VALIDATE_ALGORITHMS",
+  "status": "SUCCESS",
+  "timestamp": "2025-09-12T12:28:00.183309",
+  "report_id": "validation_orchestration_validation_20250912_122759_20250912_122800",
+  "summary": {
+    "total_backtests": 2,
+    "win_rate": 100.0,
+    "avg_return": 21.88,
+    "recommendations_count": 6
+  },
+  "error_message": null
+}

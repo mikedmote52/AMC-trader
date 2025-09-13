@@ -1,0 +1,216 @@
+{
+  "emergency_mode": {
+    "enabled": true,
+    "reason": "CRITICAL SYSTEM FAILURE: RQ worker service offline with 349+ stuck jobs",
+    "fallback_strategy": "direct_execution",
+    "bypass_queue": true,
+    "direct_cache_population": true,
+    "worker_bypass": true,
+    "emergency_endpoints_active": true
+  },
+  "recovery_configuration": {
+    "queue_management": {
+      "max_queue_depth": 10,
+      "queue_cleanup_threshold": 50,
+      "auto_purge_stuck_jobs": true,
+      "job_timeout_seconds": 300,
+      "retry_attempts": 0
+    },
+    "cache_strategy": {
+      "emergency_cache_ttl": 300,
+      "force_cache_refresh": true,
+      "bypass_stale_data": true,
+      "use_direct_execution": true
+    },
+    "worker_recovery": {
+      "disable_rq_queue": true,
+      "use_synchronous_execution": true,
+      "direct_api_calls": true,
+      "bypass_background_processing": true
+    }
+  },
+  "emergency_thresholds": {
+    "queue_depth_alert": 20,
+    "worker_offline_alert": 120,
+    "cache_staleness_alert": 300,
+    "job_failure_rate_alert": 0.5,
+    "discovery_success_rate_min": 0.1
+  },
+  "discovery_overrides": {
+    "force_direct_execution": true,
+    "skip_background_jobs": true,
+    "immediate_response_mode": true,
+    "use_fallback_discovery": true,
+    "emergency_candidate_limit": 10
+  },
+  "system_recovery_plan": {
+    "phase_1_immediate": {
+      "clear_stuck_jobs": true,
+      "purge_corrupted_cache": true,
+      "reset_worker_state": true,
+      "enable_direct_execution": true,
+      "priority": "CRITICAL",
+      "duration_minutes": 30
+    },
+    "phase_2_stabilization": {
+      "validate_job_processing": true,
+      "test_cache_population": true,
+      "verify_data_quality": true,
+      "restore_background_processing": false,
+      "priority": "HIGH",
+      "duration_hours": 2
+    },
+    "phase_3_restoration": {
+      "gradual_queue_reactivation": true,
+      "worker_service_debugging": true,
+      "end_to_end_validation": true,
+      "monitoring_implementation": true,
+      "priority": "MEDIUM",
+      "duration_days": 1
+    }
+  },
+  "monitoring_requirements": {
+    "worker_heartbeat": {
+      "enabled": true,
+      "interval_seconds": 60,
+      "failure_threshold": 3,
+      "alert_channel": "critical"
+    },
+    "queue_depth": {
+      "enabled": true,
+      "check_interval_seconds": 30,
+      "alert_threshold": 20,
+      "critical_threshold": 100
+    },
+    "cache_freshness": {
+      "enabled": true,
+      "max_age_seconds": 300,
+      "alert_on_stale": true,
+      "auto_refresh": true
+    },
+    "discovery_success_rate": {
+      "enabled": true,
+      "minimum_rate": 0.8,
+      "measurement_window_minutes": 60,
+      "alert_on_failure": true
+    }
+  },
+  "api_overrides": {
+    "bypass_queue_endpoints": [
+      "/discovery/candidates",
+      "/discovery/contenders",
+      "/discovery/squeeze-candidates"
+    ],
+    "force_direct_execution": true,
+    "emergency_cache_only": false,
+    "enable_emergency_routes": true,
+    "timeout_override_seconds": 120
+  },
+  "data_quality_controls": {
+    "minimum_candidates": 5,
+    "require_real_market_data": true,
+    "reject_demo_data": true,
+    "validate_scoring_pipeline": true,
+    "ensure_fresh_data": true
+  },
+  "rollback_triggers": {
+    "queue_overload": {
+      "threshold": 200,
+      "action": "purge_and_restart"
+    },
+    "worker_failure_rate": {
+      "threshold": 0.9,
+      "action": "disable_background_processing"
+    },
+    "cache_corruption": {
+      "detection": "utf8_decode_errors",
+      "action": "clear_and_repopulate"
+    },
+    "api_timeout": {
+      "threshold_seconds": 30,
+      "action": "force_emergency_mode"
+    }
+  },
+  "recovery_validation": {
+    "required_tests": [
+      "job_queue_processing",
+      "cache_population_success", 
+      "real_market_data_generation",
+      "api_response_accuracy",
+      "scoring_pipeline_execution",
+      "end_to_end_workflow"
+    ],
+    "success_criteria": {
+      "job_processing_rate": ">=1 job/minute",
+      "cache_hit_rate": ">=0.8",
+      "discovery_success_rate": ">=0.9",
+      "api_latency": "<=5000ms",
+      "data_freshness": "<=300 seconds"
+    }
+  },
+  "communication_plan": {
+    "stakeholder_alerts": {
+      "operations": "immediate",
+      "development": "immediate", 
+      "business": "within_1_hour"
+    },
+    "status_updates": {
+      "frequency": "every_30_minutes",
+      "channels": ["slack", "email", "dashboard"],
+      "include_metrics": true
+    },
+    "recovery_notifications": {
+      "milestone_completion": true,
+      "success_confirmation": true,
+      "validation_results": true
+    }
+  },
+  "implementation_checklist": [
+    {
+      "step": "Deploy emergency configuration",
+      "priority": "CRITICAL",
+      "duration": "5 minutes",
+      "validation": "config_loaded"
+    },
+    {
+      "step": "Clear stuck job queue",
+      "priority": "CRITICAL", 
+      "duration": "10 minutes",
+      "validation": "queue_empty"
+    },
+    {
+      "step": "Purge corrupted cache data",
+      "priority": "CRITICAL",
+      "duration": "5 minutes", 
+      "validation": "cache_clean"
+    },
+    {
+      "step": "Enable direct execution mode",
+      "priority": "CRITICAL",
+      "duration": "10 minutes",
+      "validation": "discovery_working"
+    },
+    {
+      "step": "Populate fresh market data",
+      "priority": "HIGH",
+      "duration": "30 minutes",
+      "validation": "real_data_available"
+    },
+    {
+      "step": "Validate end-to-end flow",
+      "priority": "HIGH", 
+      "duration": "15 minutes",
+      "validation": "user_data_correct"
+    }
+  ],
+  "effective_at": "2025-09-11T09:40:00Z",
+  "version": "emergency_1.0.0",
+  "validation_engine": "amc-validation-engine",
+  "approved_by": "system_validation_critical_failure",
+  "deployment_notes": "EMERGENCY CALIBRATION: Deploy immediately to restore discovery functionality. Complete system failure detected with 349+ stuck jobs and zero processing capability.",
+  "contact_info": {
+    "emergency_contact": "system_administrator",
+    "escalation_path": "critical_system_failure",
+    "documentation": "/Users/michaelmote/Desktop/AMC-TRADER/validation_report.md"
+  }
+}

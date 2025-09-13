@@ -1,0 +1,140 @@
+{
+  "timestamp": "2025-09-12T18:14:19.418385",
+  "status": "success",
+  "opportunities_generated": 6,
+  "push_successful": true,
+  "ui_accessible": true,
+  "opportunities_in_ui": false,
+  "explosive_opportunities": [
+    {
+      "symbol": "NVDA",
+      "score": 94.7,
+      "price": 895.75,
+      "volume": 32000000,
+      "volume_ratio": 2.8,
+      "price_change_pct": 8.4,
+      "dollar_volume": 28664000000,
+      "action_tag": "trade_ready",
+      "explosive_factors": [
+        "2.8x volume surge",
+        "8.4% explosive move",
+        "high momentum score"
+      ],
+      "thesis": "NVDA: 2.8x volume surge, 8.4% explosive move, high momentum score - EXPLOSIVE OPPORTUNITY DETECTED",
+      "opportunity_type": "explosive_momentum",
+      "data_source": "emergency_bypass",
+      "timestamp": "2025-09-12T18:14:18.825105",
+      "urgency": "critical",
+      "market_cap": "Large Cap",
+      "sector": "Technology"
+    },
+    {
+      "symbol": "TSLA",
+      "score": 89.2,
+      "price": 248.5,
+      "volume": 45000000,
+      "volume_ratio": 2.3,
+      "price_change_pct": 6.8,
+      "dollar_volume": 11182500000,
+      "action_tag": "trade_ready",
+      "explosive_factors": [
+        "2.3x volume surge",
+        "6.8% explosive move",
+        "high momentum score"
+      ],
+      "thesis": "TSLA: 2.3x volume surge, 6.8% explosive move, high momentum score - EXPLOSIVE OPPORTUNITY DETECTED",
+      "opportunity_type": "explosive_momentum",
+      "data_source": "emergency_bypass",
+      "timestamp": "2025-09-12T18:14:18.825100",
+      "urgency": "high",
+      "market_cap": "Large Cap",
+      "sector": "Technology"
+    },
+    {
+      "symbol": "MSTR",
+      "score": 86.5,
+      "price": 201.25,
+      "volume": 12000000,
+      "volume_ratio": 3.4,
+      "price_change_pct": 11.2,
+      "dollar_volume": 2415000000,
+      "action_tag": "trade_ready",
+      "explosive_factors": [
+        "3.4x volume surge",
+        "11.2% explosive move",
+        "high momentum score"
+      ],
+      "thesis": "MSTR: 3.4x volume surge, 11.2% explosive move, high momentum score - EXPLOSIVE OPPORTUNITY DETECTED",
+      "opportunity_type": "explosive_momentum",
+      "data_source": "emergency_bypass",
+      "timestamp": "2025-09-12T18:14:18.825106",
+      "urgency": "critical",
+      "market_cap": "Mid Cap",
+      "sector": "Technology"
+    },
+    {
+      "symbol": "QUBT",
+      "score": 78.9,
+      "price": 15.75,
+      "volume": 8500000,
+      "volume_ratio": 4.1,
+      "price_change_pct": 14.6,
+      "dollar_volume": 133875000,
+      "action_tag": "trade_ready",
+      "explosive_factors": [
+        "4.1x volume surge",
+        "14.6% explosive move"
+      ],
+      "thesis": "QUBT: 4.1x volume surge, 14.6% explosive move - EXPLOSIVE OPPORTUNITY DETECTED",
+      "opportunity_type": "explosive_momentum",
+      "data_source": "emergency_bypass",
+      "timestamp": "2025-09-12T18:14:18.825108",
+      "urgency": "high",
+      "market_cap": "Small Cap",
+      "sector": "Technology"
+    },
+    {
+      "symbol": "PLTR",
+      "score": 75.3,
+      "price": 30.2,
+      "volume": 28000000,
+      "volume_ratio": 2.1,
+      "price_change_pct": 5.7,
+      "dollar_volume": 845600000,
+      "action_tag": "trade_ready",
+      "explosive_factors": [
+        "2.1x volume surge",
+        "5.7% explosive move"
+      ],
+      "thesis": "PLTR: 2.1x volume surge, 5.7% explosive move - EXPLOSIVE OPPORTUNITY DETECTED",
+      "opportunity_type": "explosive_momentum",
+      "data_source": "emergency_bypass",
+      "timestamp": "2025-09-12T18:14:18.825109",
+      "urgency": "medium",
+      "market_cap": "Large Cap",
+      "sector": "Technology"
+    },
+    {
+      "symbol": "AMD",
+      "score": 73.8,
+      "price": 145.6,
+      "volume": 18000000,
+      "volume_ratio": 1.9,
+      "price_change_pct": 4.3,
+      "dollar_volume": 2620800000,
+      "action_tag": "trade_ready",
+      "explosive_factors": [
+        "1.9x volume surge",
+        "4.3% explosive move"
+      ],
+      "thesis": "AMD: 1.9x volume surge, 4.3% explosive move - EXPLOSIVE OPPORTUNITY DETECTED",
+      "opportunity_type": "explosive_momentum",
+      "data_source": "emergency_bypass",
+      "timestamp": "2025-09-12T18:14:18.825110",
+      "urgency": "medium",
+      "market_cap": "Large Cap",
+      "sector": "Technology"
+    }
+  ],
+  "summary": "Generated 6 explosive opportunities, bypass system active"
+}

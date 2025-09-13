@@ -1,6 +1,7 @@
 # backend/src/services/rq_worker_main.py
 import os, time, signal, sys, logging, threading
-from rq import Connection, Worker, Queue
+from rq import Worker, Queue
+from rq.connections import push_connection, pop_connection
 from redis import Redis
 from backend.src.constants import DISCOVERY_QUEUE
 from backend.src.services.worker_health import worker_health
@@ -72,7 +73,8 @@ def main():
             # Start heartbeat thread
             threading.Thread(target=hb, daemon=True).start()
             
-            with Connection(r):
+            push_connection(r)
+            try:
                 q = Queue(DISCOVERY_QUEUE)
                 log.info(f"📋 STARTING RQ WORKER ON QUEUE='{q.name}' (exact match required)")
                 print(f"📋 STARTING RQ WORKER ON QUEUE='{q.name}' (exact match required)")
@@ -93,6 +95,8 @@ def main():
                 log.warning("⚠️  WORKER.WORK() RETURNED UNEXPECTEDLY - RETRYING IN 5s")
                 print("⚠️  WORKER.WORK() RETURNED UNEXPECTEDLY - RETRYING IN 5s")
                 time.sleep(5)
+            finally:
+                pop_connection()
                 
         except Exception as e:
             log.exception(f"💥 WORKER LOOP CRASHED: {e}")

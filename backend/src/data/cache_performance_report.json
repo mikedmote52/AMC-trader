@@ -1,0 +1,103 @@
+{
+  "test_timestamp": "2025-09-12T12:09:33.582320",
+  "redis_connectivity": true,
+  "discovery_data_available": true,
+  "cache_performance": {
+    "write_time_ms": 2.2351741790771484,
+    "read_time_ms": 0.17309188842773438,
+    "data_integrity": true
+  },
+  "squeeze_cache_performance": {
+    "VIGL": {
+      "ttl_assigned": 30,
+      "cache_success": true,
+      "cache_hit": true,
+      "volume_spike": 12.5,
+      "volatility": 0.15
+    },
+    "QUBT": {
+      "ttl_assigned": 120,
+      "cache_success": true,
+      "cache_hit": true,
+      "volume_spike": 4.2,
+      "volatility": 0.08
+    },
+    "ACHR": {
+      "ttl_assigned": 300,
+      "cache_success": true,
+      "cache_hit": true,
+      "volume_spike": 2.1,
+      "volatility": 0.05
+    },
+    "RGTI": {
+      "ttl_assigned": 60,
+      "cache_success": true,
+      "cache_hit": true,
+      "volume_spike": 8.7,
+      "volatility": 0.12
+    },
+    "IONQ": {
+      "ttl_assigned": 300,
+      "cache_success": true,
+      "cache_hit": true,
+      "volume_spike": 1.8,
+      "volatility": 0.03
+    }
+  },
+  "dynamic_ttl_analysis": {
+    "squeeze": 1,
+    "volatile": 1,
+    "active": 1,
+    "normal": 2,
+    "quiet": 0
+  },
+  "integration_tests": {
+    "squeeze_cache_stats": true,
+    "dynamic_ttl": true
+  },
+  "performance_bottlenecks": [
+    {
+      "type": "low_hit_ratio",
+      "description": "Cache hit ratio (33.33%) below 80% target",
+      "severity": "medium"
+    }
+  ],
+  "recommendations": [
+    "Continue using dynamic TTL for squeeze candidates - showing good performance",
+    "Consider implementing cache warming for frequently accessed discovery data",
+    "Integrate caching agent with existing squeeze detection workflow",
+    "Implement cache warming for hot stocks identified by discovery engine"
+  ],
+  "stress_test": {
+    "total_operations": 100,
+    "successful_operations": 100,
+    "success_rate": 1.0,
+    "avg_response_time_ms": 0.08623123168945312,
+    "operations_per_second": 11579.118239792397
+  },
+  "performance_monitoring": {
+    "cache_metrics": {
+      "hits": 34,
+      "misses": 33,
+      "total_requests": 102,
+      "avg_response_time_ms": 0.10472419215183636,
+      "cache_size_mb": 0.0,
+      "hit_ratio": 0.3333333333333333,
+      "last_updated": "2025-09-12 12:09:33.605645"
+    },
+    "redis_info": {
+      "used_memory_mb": 0.9910736083984375,
+      "connected_clients": 2,
+      "total_commands_processed": 163,
+      "keyspace_hits": 50,
+      "keyspace_misses": 39
+    },
+    "alerts": [
+      "PerformanceAlert(alert_type='cache_hit_ratio', message='Low cache hit ratio: 33.33%', severity='WARNING', timestamp=datetime.datetime(2025, 9, 12, 12, 9, 33, 606016), metric_value=0.3333333333333333, threshold=0.8)"
+    ],
+    "recommendations": [
+      "Consider increasing cache TTL for frequently accessed data",
+      "Review cache key generation strategy for better hit rates"
+    ]
+  }
+}

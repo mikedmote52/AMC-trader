@@ -1,0 +1,77 @@
+{
+  "request_timestamp": "2025-01-15T12:00:00Z",
+  "source": "polygon_api",
+  "market_date": "2025-01-15",
+  "tickers": [
+    {
+      "symbol": "VIGL",
+      "price": 12.45,
+      "volume": 2850000,
+      "timestamp": "2025-01-15T16:00:00Z",
+      "open": 11.80,
+      "high": 13.20,
+      "low": 11.65,
+      "close": 12.45,
+      "vwap": 12.15,
+      "market_cap": 450000000,
+      "float_shares": 28000000
+    },
+    {
+      "symbol": "QUBT", 
+      "price": 8.92,
+      "volume": 1560000,
+      "timestamp": "2025-01-15T16:00:00Z",
+      "open": 8.50,
+      "high": 9.25,
+      "low": 8.40,
+      "close": 8.92,
+      "vwap": 8.78,
+      "market_cap": 280000000,
+      "float_shares": 35000000
+    },
+    {
+      "symbol": "TSLA",
+      "price": 245.67,
+      "volume": 45000000,
+      "timestamp": "2025-01-15T16:00:00Z",
+      "open": 242.10,
+      "high": 248.90,
+      "low": 241.55,
+      "close": 245.67,
+      "vwap": 244.80,
+      "market_cap": 780000000000,
+      "float_shares": 3200000000
+    },
+    {
+      "symbol": "invalid_ticker",
+      "price": -5.0,
+      "volume": -1000,
+      "timestamp": "invalid_date"
+    },
+    {
+      "symbol": "",
+      "price": 0,
+      "volume": 0,
+      "timestamp": "2025-01-15T16:00:00Z"
+    },
+    {
+      "symbol": "AAPL",
+      "price": 150.25,
+      "volume": 28000000,
+      "timestamp": "2025-01-15T16:00:00Z",
+      "open": 149.80,
+      "high": 151.20,
+      "low": 149.50,
+      "close": 150.25,
+      "vwap": 150.10,
+      "market_cap": 2400000000000,
+      "float_shares": 16000000000
+    },
+    {
+      "symbol": "VIGL",
+      "price": 12.50,
+      "volume": 2900000,
+      "timestamp": "2025-01-15T16:00:00Z"
+    }
+  ]
+}

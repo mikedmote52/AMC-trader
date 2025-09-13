@@ -1,0 +1,22 @@
+{
+  "commands": [
+    {
+      "type": "INTEGRATE_REAL_DATA",
+      "timestamp": "2025-01-15T14:30:00Z",
+      "parameters": {
+        "data_sources": [
+          "polygon",
+          "alpha_vantage"
+        ],
+        "symbols": [
+          "VIGL",
+          "QUBT",
+          "TSLA"
+        ],
+        "update_interval": 5
+      },
+      "id": "cmd_001"
+    }
+  ],
+  "last_processed": 0
+}

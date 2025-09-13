@@ -1,0 +1,11 @@
+{
+  "message_type": "validation_failed",
+  "status": "validation_failed",
+  "request_id": "messagebus_demo_20250912_170802",
+  "data": {
+    "error_message": "Object of type bool is not JSON serializable",
+    "timestamp": "2025-09-12T17:08:03.213409"
+  },
+  "agent_name": "Backtesting Agent",
+  "timestamp": "2025-09-12T17:08:03.213421"
+}

@@ -1,0 +1,16 @@
+{
+  "timestamp": "2025-09-12T23:32:18.042933",
+  "universe_stats": {
+    "total_universe": 0,
+    "data_source": "polygon_api"
+  },
+  "filtering_stages": {
+    "initial_universe": 0,
+    "after_basic_filter": 0,
+    "with_market_data": 0,
+    "after_quality_filter": 0,
+    "scored_stocks": 0,
+    "final_candidates": 0
+  },
+  "final_candidates": []
+}

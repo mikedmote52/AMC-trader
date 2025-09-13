@@ -774,3 +774,150 @@ class RealBMSEngine:
             'api_calls_last_minute': len(self.api_calls),
             'timestamp': datetime.now().isoformat()
         }
+    
+    async def score_candidates(self, symbols: List[str]) -> List[Dict]:
+        """Score candidate stocks using real BMS algorithm"""
+        try:
+            start_time = time.time()
+            scored_candidates = []
+            
+            logger.info(f"🎯 Scoring {len(symbols)} candidate stocks...")
+            
+            # Process in batches to avoid rate limits
+            batch_size = 10
+            for i in range(0, len(symbols), batch_size):
+                batch = symbols[i:i + batch_size]
+                
+                for symbol in batch:
+                    try:
+                        market_data = await self.get_real_market_data(symbol)
+                        if not market_data:
+                            continue
+                        
+                        # Apply BMS scoring algorithm
+                        score_data = self._calculate_bms_score(market_data)
+                        if score_data:
+                            scored_candidates.append(score_data)
+                            
+                    except Exception as e:
+                        logger.error(f"Failed to score {symbol}: {e}")
+                        continue
+                
+                # Small delay between batches
+                if i + batch_size < len(symbols):
+                    await asyncio.sleep(0.2)
+            
+            # Update timing
+            self.stage_timings.scoring_ms = int((time.time() - start_time) * 1000)
+            
+            logger.info(f"✅ Scored {len(scored_candidates)} candidates in {self.stage_timings.scoring_ms}ms")
+            return scored_candidates
+            
+        except Exception as e:
+            logger.error(f"Scoring failed: {e}")
+            return []
+    
+    def _calculate_bms_score(self, market_data: Dict) -> Optional[Dict]:
+        """Calculate BMS score for a stock using real algorithm"""
+        try:
+            symbol = market_data['symbol']
+            price = market_data['price']
+            volume = market_data['volume']
+            dollar_volume = market_data['dollar_volume']
+            rel_vol = market_data.get('rel_volume_30d', 1.0)
+            atr_pct = market_data.get('atr_pct', 0.0)
+            momentum_1d = market_data.get('momentum_1d', 0.0)
+            
+            weights = self.config['weights']
+            thresholds = self.config['thresholds']
+            
+            # Volume surge component (40% weight)
+            volume_surge_score = 0
+            if rel_vol >= 5.0:
+                volume_surge_score = 100  # Explosive volume
+            elif rel_vol >= 3.0:
+                volume_surge_score = 85   # Strong volume
+            elif rel_vol >= 2.5:
+                volume_surge_score = 70   # Building volume
+            elif rel_vol >= 1.5:
+                volume_surge_score = 40   # Moderate increase
+            else:
+                volume_surge_score = 10   # Low volume
+            
+            # Price momentum component (30% weight)
+            momentum_score = 0
+            abs_momentum = abs(momentum_1d)
+            if 1 <= abs_momentum <= 5:
+                momentum_score = 100  # Perfect momentum range
+            elif 5 < abs_momentum <= 10:
+                momentum_score = 80   # Good momentum
+            elif abs_momentum <= 1:
+                momentum_score = 60   # Building
+            elif 10 < abs_momentum <= 20:
+                momentum_score = 40   # Strong move
+            else:
+                momentum_score = 10   # Already moved too much
+            
+            # Volatility expansion component (20% weight)
+            volatility_score = 0
+            if atr_pct >= 0.08:  # 8%+ ATR
+                volatility_score = 100
+            elif atr_pct >= 0.06:  # 6%+ ATR
+                volatility_score = 80
+            elif atr_pct >= 0.04:  # 4%+ ATR (threshold)
+                volatility_score = 60
+            else:
+                volatility_score = 20
+            
+            # Risk filter component (10% weight)
+            risk_score = 0
+            if dollar_volume >= 50_000_000:  # $50M+ very liquid
+                risk_score = 100
+            elif dollar_volume >= 20_000_000:  # $20M+ liquid
+                risk_score = 80
+            elif dollar_volume >= 10_000_000:  # $10M+ decent
+                risk_score = 60
+            elif dollar_volume >= 5_000_000:   # $5M+ minimum
+                risk_score = 40
+            else:
+                risk_score = 10
+            
+            # Calculate weighted final score
+            final_score = (
+                volume_surge_score * weights['volume_surge'] +
+                momentum_score * weights['price_momentum'] +
+                volatility_score * weights['volatility_expansion'] +
+                risk_score * weights['risk_filter']
+            )
+            
+            # Determine action tag
+            if final_score >= self.config['scoring']['trade_ready_min']:
+                action_tag = "trade_ready"
+            elif final_score >= self.config['scoring']['monitor_min']:
+                action_tag = "monitor"
+            else:
+                action_tag = "watchlist"
+            
+            return {
+                "symbol": symbol,
+                "score": round(final_score, 1),
+                "price": price,
+                "volume": volume,
+                "volume_ratio": rel_vol,
+                "price_change_pct": momentum_1d,
+                "dollar_volume": dollar_volume,
+                "atr_pct": atr_pct,
+                "action_tag": action_tag,
+                "thesis": f"{symbol}: {rel_vol:.1f}x vol, {momentum_1d:+.1f}% move, {atr_pct:.1f}% ATR, score: {final_score:.0f}",
+                "timestamp": datetime.now().isoformat(),
+                "components": {
+                    "volume_surge": volume_surge_score,
+                    "momentum": momentum_score,
+                    "volatility": volatility_score,
+                    "risk": risk_score
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"BMS scoring failed for {market_data.get('symbol', 'unknown')}: {e}")
+            return None

@@ -1,0 +1,241 @@
+{
+  "messages": [
+    {
+      "status": "agent_started",
+      "data": {
+        "mode": "batch_validation",
+        "input_file": "/Users/michaelmote/Desktop/AMC-TRADER/backend/src/data/polygon_data.json",
+        "output_file": "/Users/michaelmote/Desktop/AMC-TRADER/backend/src/data/validated_data.json"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:08:58.304464"
+    },
+    {
+      "status": "validation_completed",
+      "data": {
+        "input_count": 7,
+        "validated_count": 4,
+        "error_count": 2,
+        "validation_errors": [
+          "Invalid price for invalid_ticker: -5.0",
+          "Invalid symbol: "
+        ],
+        "output_file": "/Users/michaelmote/Desktop/AMC-TRADER/backend/src/data/validated_data.json"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:08:58.306023"
+    },
+    {
+      "status": "realtime_integration_started",
+      "command_type": "INTEGRATE_REAL_DATA",
+      "data": {
+        "data_sources": [
+          "polygon",
+          "alpha_vantage"
+        ],
+        "symbols": [
+          "VIGL",
+          "QUBT",
+          "TSLA"
+        ],
+        "update_interval": 5,
+        "integration_id": "integration_20250913_000916"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:09:16.422837"
+    },
+    {
+      "status": "realtime_data_validated",
+      "data": {
+        "source": "polygon",
+        "validated_count": 3,
+        "symbols": [
+          "VIGL",
+          "QUBT",
+          "TSLA"
+        ],
+        "timestamp": "2025-09-13T00:09:16.423038"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:09:16.423293"
+    },
+    {
+      "status": "realtime_data_validated",
+      "data": {
+        "source": "alpha_vantage",
+        "validated_count": 3,
+        "symbols": [
+          "VIGL",
+          "QUBT",
+          "TSLA"
+        ],
+        "timestamp": "2025-09-13T00:09:16.424092"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:09:16.424456"
+    },
+    {
+      "status": "realtime_integration_started",
+      "command_type": "INTEGRATE_REAL_DATA",
+      "data": {
+        "data_sources": [
+          "polygon",
+          "alpha_vantage"
+        ],
+        "symbols": [
+          "VIGL",
+          "QUBT",
+          "TSLA"
+        ],
+        "update_interval": 5,
+        "integration_id": "integration_20250913_000917"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:09:17.427640"
+    },
+    {
+      "status": "realtime_integration_started",
+      "command_type": "INTEGRATE_REAL_DATA",
+      "data": {
+        "data_sources": [
+          "polygon",
+          "alpha_vantage"
+        ],
+        "symbols": [
+          "VIGL",
+          "QUBT",
+          "TSLA"
+        ],
+        "update_interval": 5,
+        "integration_id": "integration_20250913_000918"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:09:18.431368"
+    },
+    {
+      "status": "realtime_integration_started",
+      "command_type": "INTEGRATE_REAL_DATA",
+      "data": {
+        "data_sources": [
+          "polygon",
+          "alpha_vantage"
+        ],
+        "symbols": [
+          "VIGL",
+          "QUBT",
+          "TSLA"
+        ],
+        "update_interval": 5,
+        "integration_id": "integration_20250913_000919"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:09:19.436853"
+    },
+    {
+      "status": "realtime_integration_started",
+      "command_type": "INTEGRATE_REAL_DATA",
+      "data": {
+        "data_sources": [
+          "polygon",
+          "alpha_vantage"
+        ],
+        "symbols": [
+          "VIGL",
+          "QUBT",
+          "TSLA"
+        ],
+        "update_interval": 5,
+        "integration_id": "integration_20250913_000920"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:09:20.441189"
+    },
+    {
+      "status": "realtime_data_validated",
+      "data": {
+        "source": "polygon",
+        "validated_count": 3,
+        "symbols": [
+          "VIGL",
+          "QUBT",
+          "TSLA"
+        ],
+        "timestamp": "2025-09-13T00:09:21.427038"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:09:21.427448"
+    },
+    {
+      "status": "realtime_data_validated",
+      "data": {
+        "source": "alpha_vantage",
+        "validated_count": 3,
+        "symbols": [
+          "VIGL",
+          "QUBT",
+          "TSLA"
+        ],
+        "timestamp": "2025-09-13T00:09:21.427820"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:09:21.427952"
+    },
+    {
+      "status": "realtime_integration_started",
+      "command_type": "INTEGRATE_REAL_DATA",
+      "data": {
+        "data_sources": [
+          "polygon",
+          "alpha_vantage"
+        ],
+        "symbols": [
+          "VIGL",
+          "QUBT",
+          "TSLA"
+        ],
+        "update_interval": 5,
+        "integration_id": "integration_20250913_000921"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:09:21.445144"
+    },
+    {
+      "status": "realtime_integration_started",
+      "command_type": "INTEGRATE_REAL_DATA",
+      "data": {
+        "data_sources": [
+          "polygon",
+          "alpha_vantage"
+        ],
+        "symbols": [
+          "VIGL",
+          "QUBT",
+          "TSLA"
+        ],
+        "update_interval": 5,
+        "integration_id": "integration_20250913_000922"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:09:22.451338"
+    },
+    {
+      "status": "realtime_integration_started",
+      "command_type": "INTEGRATE_REAL_DATA",
+      "data": {
+        "data_sources": [
+          "polygon",
+          "alpha_vantage"
+        ],
+        "symbols": [
+          "VIGL",
+          "QUBT",
+          "TSLA"
+        ],
+        "update_interval": 5,
+        "integration_id": "integration_20250913_000923"
+      },
+      "agent_name": "Data Validation Agent",
+      "timestamp": "2025-09-13T00:09:23.453459"
+    }
+  ]
+}

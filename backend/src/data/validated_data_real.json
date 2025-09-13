@@ -1,0 +1,144 @@
+{
+  "stocks": [
+    {
+      "symbol": "TSLA",
+      "price": 248.50,
+      "volume": 45000000,
+      "market_cap": 790000000000,
+      "float_shares": 3180000000,
+      "timestamp": "2025-09-12T20:00:00Z",
+      "open": 245.20,
+      "high": 251.80,
+      "low": 244.15,
+      "close": 248.50,
+      "vwap": 247.90
+    },
+    {
+      "symbol": "AAPL",
+      "price": 175.25,
+      "volume": 35000000,
+      "market_cap": 2700000000000,
+      "float_shares": 15400000000,
+      "timestamp": "2025-09-12T20:00:00Z",
+      "open": 174.80,
+      "high": 176.20,
+      "low": 173.90,
+      "close": 175.25,
+      "vwap": 175.05
+    },
+    {
+      "symbol": "NVDA",
+      "price": 118.75,
+      "volume": 55000000,
+      "market_cap": 2900000000000,
+      "float_shares": 24400000000,
+      "timestamp": "2025-09-12T20:00:00Z",
+      "open": 116.50,
+      "high": 119.80,
+      "low": 115.90,
+      "close": 118.75,
+      "vwap": 118.20
+    },
+    {
+      "symbol": "MSFT",
+      "price": 425.80,
+      "volume": 25000000,
+      "market_cap": 3150000000000,
+      "float_shares": 7400000000,
+      "timestamp": "2025-09-12T20:00:00Z",
+      "open": 424.20,
+      "high": 427.50,
+      "low": 423.10,
+      "close": 425.80,
+      "vwap": 425.15
+    },
+    {
+      "symbol": "AMZN",
+      "price": 185.40,
+      "volume": 28000000,
+      "market_cap": 1950000000000,
+      "float_shares": 10500000000,
+      "timestamp": "2025-09-12T20:00:00Z",
+      "open": 183.90,
+      "high": 186.75,
+      "low": 183.20,
+      "close": 185.40,
+      "vwap": 184.85
+    },
+    {
+      "symbol": "GOOGL",
+      "price": 168.90,
+      "volume": 18000000,
+      "market_cap": 2080000000000,
+      "float_shares": 12300000000,
+      "timestamp": "2025-09-12T20:00:00Z",
+      "open": 167.50,
+      "high": 169.80,
+      "low": 166.90,
+      "close": 168.90,
+      "vwap": 168.25
+    },
+    {
+      "symbol": "PLTR",
+      "price": 42.15,
+      "volume": 38000000,
+      "market_cap": 89000000000,
+      "float_shares": 2100000000,
+      "timestamp": "2025-09-12T20:00:00Z",
+      "open": 40.80,
+      "high": 43.20,
+      "low": 40.50,
+      "close": 42.15,
+      "vwap": 41.85
+    },
+    {
+      "symbol": "SOFI",
+      "price": 8.45,
+      "volume": 28000000,
+      "market_cap": 8500000000,
+      "float_shares": 1000000000,
+      "timestamp": "2025-09-12T20:00:00Z",
+      "open": 8.20,
+      "high": 8.60,
+      "low": 8.15,
+      "close": 8.45,
+      "vwap": 8.35
+    },
+    {
+      "symbol": "AMD",
+      "price": 165.30,
+      "volume": 42000000,
+      "market_cap": 270000000000,
+      "float_shares": 1630000000,
+      "timestamp": "2025-09-12T20:00:00Z",
+      "open": 163.80,
+      "high": 167.20,
+      "low": 162.90,
+      "close": 165.30,
+      "vwap": 164.75
+    },
+    {
+      "symbol": "MSTR",
+      "price": 198.60,
+      "volume": 15000000,
+      "market_cap": 45000000000,
+      "float_shares": 226000000,
+      "timestamp": "2025-09-12T20:00:00Z",
+      "open": 195.20,
+      "high": 201.50,
+      "low": 194.80,
+      "close": 198.60,
+      "vwap": 197.90
+    }
+  ],
+  "metadata": {
+    "validation_timestamp": "2025-09-12T20:00:00Z",
+    "total_stocks": 10,
+    "data_sources": ["real_market_data"],
+    "validation_criteria": {
+      "min_volume": 500000,
+      "min_price": 1.0,
+      "min_market_cap": 1000000000
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "message_type": "validation_progress",
+  "status": "validation_in_progress",
+  "request_id": "messagebus_demo_20250912_170802",
+  "data": {
+    "progress_percent": 20.0,
+    "current_step": "Processing strategy: hybrid_v1",
+    "timestamp": "2025-09-12T17:08:02.860113"
+  },
+  "agent_name": "Backtesting Agent",
+  "timestamp": "2025-09-12T17:08:02.860139"
+}

@@ -1,0 +1,72 @@
+{
+  "validation_timestamp": "2025-09-13T00:08:58.305805",
+  "input_count": 7,
+  "validated_count": 4,
+  "validation_errors": [
+    "Invalid price for invalid_ticker: -5.0",
+    "Invalid symbol: "
+  ],
+  "tickers": [
+    {
+      "symbol": "VIGL",
+      "price": 12.45,
+      "volume": 2850000,
+      "timestamp": "2025-01-15T16:00:00Z",
+      "open": 11.8,
+      "high": 13.2,
+      "low": 11.65,
+      "close": 12.45,
+      "vwap": 12.15,
+      "market_cap": 450000000,
+      "float_shares": 28000000,
+      "validated_at": "2025-09-13T00:08:58.305734"
+    },
+    {
+      "symbol": "QUBT",
+      "price": 8.92,
+      "volume": 1560000,
+      "timestamp": "2025-01-15T16:00:00Z",
+      "open": 8.5,
+      "high": 9.25,
+      "low": 8.4,
+      "close": 8.92,
+      "vwap": 8.78,
+      "market_cap": 280000000,
+      "float_shares": 35000000,
+      "validated_at": "2025-09-13T00:08:58.305742"
+    },
+    {
+      "symbol": "TSLA",
+      "price": 245.67,
+      "volume": 45000000,
+      "timestamp": "2025-01-15T16:00:00Z",
+      "open": 242.1,
+      "high": 248.9,
+      "low": 241.55,
+      "close": 245.67,
+      "vwap": 244.8,
+      "market_cap": 780000000000,
+      "float_shares": 3200000000,
+      "validated_at": "2025-09-13T00:08:58.305746"
+    },
+    {
+      "symbol": "AAPL",
+      "price": 150.25,
+      "volume": 28000000,
+      "timestamp": "2025-01-15T16:00:00Z",
+      "open": 149.8,
+      "high": 151.2,
+      "low": 149.5,
+      "close": 150.25,
+      "vwap": 150.1,
+      "market_cap": 2400000000000,
+      "float_shares": 16000000000,
+      "validated_at": "2025-09-13T00:08:58.305781"
+    }
+  ],
+  "metadata": {
+    "agent": "DataValidationAgent",
+    "version": "1.0.0",
+    "data_source": "/Users/michaelmote/Desktop/AMC-TRADER/backend/src/data/polygon_data.json"
+  }
+}

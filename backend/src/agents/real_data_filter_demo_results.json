@@ -1,0 +1,826 @@
+{
+  "timestamp": "2025-09-12T23:21:55.178883",
+  "data_source": "polygon_api_via_emergency_discovery",
+  "filter_stages": {
+    "market_data": {
+      "success": true,
+      "total_retrieved": 21,
+      "candidates": [
+        {
+          "symbol": "LGN",
+          "score": 100.0,
+          "price": 30.5,
+          "volume": 9811532.0,
+          "volume_ratio": 131.06,
+          "price_change_pct": 1124.9,
+          "dollar_volume": 299251726.0,
+          "thesis": "LGN: 131.1x volume, +1124.9% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:55.825033"
+        },
+        {
+          "symbol": "VIA",
+          "score": 100.0,
+          "price": 49.51,
+          "volume": 5050635.0,
+          "volume_ratio": 134.44,
+          "price_change_pct": 350.3,
+          "dollar_volume": 250056938.85,
+          "thesis": "VIA: 134.4x volume, +350.3% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:56.071180"
+        },
+        {
+          "symbol": "OPI",
+          "score": 100.0,
+          "price": 0.5513,
+          "volume": 329762861.0,
+          "volume_ratio": 23.49,
+          "price_change_pct": 24.26,
+          "dollar_volume": 181798265.2693,
+          "thesis": "OPI: 23.5x volume, +24.3% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:56.552942"
+        },
+        {
+          "symbol": "MAYAR",
+          "score": 100.0,
+          "price": 0.57,
+          "volume": 1946426.0,
+          "volume_ratio": 35.8,
+          "price_change_pct": 37.0,
+          "dollar_volume": 1109462.8199999998,
+          "thesis": "MAYAR: 35.8x volume, +37.0% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:56.793802"
+        },
+        {
+          "symbol": "GCTK",
+          "score": 100.0,
+          "price": 10.59,
+          "volume": 70668939.0,
+          "volume_ratio": 1710.33,
+          "price_change_pct": 117.45,
+          "dollar_volume": 748384064.01,
+          "thesis": "GCTK: 1710.3x volume, +117.5% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:57.036824"
+        },
+        {
+          "symbol": "HCWB",
+          "score": 100.0,
+          "price": 5.59,
+          "volume": 20113920.0,
+          "volume_ratio": 5.95,
+          "price_change_pct": 68.37,
+          "dollar_volume": 112436812.8,
+          "thesis": "HCWB: 6.0x volume, +68.4% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:57.290153"
+        },
+        {
+          "symbol": "AGAE",
+          "score": 100.0,
+          "price": 1.48,
+          "volume": 112501709.0,
+          "volume_ratio": 3114.84,
+          "price_change_pct": 56.89,
+          "dollar_volume": 166502529.32,
+          "thesis": "AGAE: 3114.8x volume, +56.9% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:57.532777"
+        },
+        {
+          "symbol": "ATCH",
+          "score": 100.0,
+          "price": 0.39,
+          "volume": 281071801.0,
+          "volume_ratio": 16.46,
+          "price_change_pct": 13.57,
+          "dollar_volume": 109618002.39,
+          "thesis": "ATCH: 16.5x volume, +13.6% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:58.013928"
+        },
+        {
+          "symbol": "EVTV",
+          "score": 100.0,
+          "price": 4.08,
+          "volume": 850337,
+          "volume_ratio": 19.7,
+          "price_change_pct": 48.36,
+          "dollar_volume": 3469374.96,
+          "thesis": "EVTV: 19.7x volume, +48.4% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:58.254126"
+        },
+        {
+          "symbol": "SONN",
+          "score": 100.0,
+          "price": 5.9,
+          "volume": 7621864.0,
+          "volume_ratio": 8.08,
+          "price_change_pct": 48.99,
+          "dollar_volume": 44968997.6,
+          "thesis": "SONN: 8.1x volume, +49.0% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:58.491062"
+        },
+        {
+          "symbol": "HUIZ",
+          "score": 100.0,
+          "price": 4.21,
+          "volume": 11459454.0,
+          "volume_ratio": 8.59,
+          "price_change_pct": 48.76,
+          "dollar_volume": 48244301.339999996,
+          "thesis": "HUIZ: 8.6x volume, +48.8% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:58.976276"
+        },
+        {
+          "symbol": "ISPC",
+          "score": 100.0,
+          "price": 1.95,
+          "volume": 69424425.0,
+          "volume_ratio": 8.67,
+          "price_change_pct": 47.73,
+          "dollar_volume": 135377628.75,
+          "thesis": "ISPC: 8.7x volume, +47.7% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:59.224102"
+        },
+        {
+          "symbol": "VSTD",
+          "score": 100.0,
+          "price": 2.13,
+          "volume": 74285345.0,
+          "volume_ratio": 600.42,
+          "price_change_pct": 65.12,
+          "dollar_volume": 158227784.85,
+          "thesis": "VSTD: 600.4x volume, +65.1% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:59.723081"
+        },
+        {
+          "symbol": "IBEX",
+          "score": 90.07,
+          "price": 41.58,
+          "volume": 1473499.0,
+          "volume_ratio": 3.76,
+          "price_change_pct": 36.51,
+          "dollar_volume": 61268088.419999994,
+          "thesis": "IBEX: 3.8x volume, +36.5% move, score: 90%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:22:00.468564"
+        },
+        {
+          "symbol": "CHEK",
+          "score": 87.97,
+          "price": 0.7459,
+          "volume": 20442945.0,
+          "volume_ratio": 296.94,
+          "price_change_pct": 5.99,
+          "dollar_volume": 15248392.6755,
+          "thesis": "CHEK: 296.9x volume, +6.0% move, score: 88%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:56.315315"
+        },
+        {
+          "symbol": "MFI",
+          "score": 87.25,
+          "price": 44.01,
+          "volume": 186900,
+          "volume_ratio": 3.41,
+          "price_change_pct": 23.28,
+          "dollar_volume": 8225469.0,
+          "thesis": "MFI: 3.4x volume, +23.3% move, score: 87%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:59.971437"
+        },
+        {
+          "symbol": "DMYY.WS",
+          "score": 71.56,
+          "price": 2.915,
+          "volume": 222523,
+          "volume_ratio": 2.7,
+          "price_change_pct": 61.05,
+          "dollar_volume": 648654.545,
+          "thesis": "DMYY.WS: 2.7x volume, +61.0% move, score: 72%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:57.772256"
+        },
+        {
+          "symbol": "SDSTW",
+          "score": 57.37,
+          "price": 0.1007,
+          "volume": 37898,
+          "volume_ratio": 3.86,
+          "price_change_pct": 2.17,
+          "dollar_volume": 3816.3286,
+          "thesis": "SDSTW: 3.9x volume, +2.2% move, score: 57%",
+          "action_tag": "watchlist",
+          "timestamp": "2025-09-13T06:22:00.223942"
+        },
+        {
+          "symbol": "AENTW",
+          "score": 56.78,
+          "price": 0.4975,
+          "volume": 12411,
+          "volume_ratio": 0.85,
+          "price_change_pct": 13.75,
+          "dollar_volume": 6174.4725,
+          "thesis": "AENTW: 0.8x volume, +13.8% move, score: 57%",
+          "action_tag": "watchlist",
+          "timestamp": "2025-09-13T06:22:00.714209"
+        },
+        {
+          "symbol": "YDESW",
+          "score": 54.28,
+          "price": 2.235,
+          "volume": 208477,
+          "volume_ratio": 0.54,
+          "price_change_pct": 48.01,
+          "dollar_volume": 465946.095,
+          "thesis": "YDESW: 0.5x volume, +48.0% move, score: 54%",
+          "action_tag": "watchlist",
+          "timestamp": "2025-09-13T06:21:58.728278"
+        },
+        {
+          "symbol": "COEPW",
+          "score": 51.67,
+          "price": 0.0298,
+          "volume": 61204,
+          "volume_ratio": 3.62,
+          "price_change_pct": 0.9,
+          "dollar_volume": 1823.8792,
+          "thesis": "COEPW: 3.6x volume, +0.9% move, score: 52%",
+          "action_tag": "watchlist",
+          "timestamp": "2025-09-13T06:21:59.475814"
+        }
+      ],
+      "data_source": "polygon_api",
+      "authentic_data": true
+    },
+    "universe_analysis": {
+      "success": true,
+      "total_analyzed": 21,
+      "price_distribution": {
+        "penny": 7,
+        "low": 9,
+        "mid": 5,
+        "high": 0
+      },
+      "volume_distribution": {
+        "low": 2,
+        "building": 9,
+        "high": 4,
+        "extreme": 6
+      },
+      "movement_distribution": {
+        "stable": 2,
+        "moderate": 3,
+        "large": 13,
+        "explosive": 3
+      }
+    },
+    "basic_filtering": {
+      "success": true,
+      "initial_count": 21,
+      "qualified_count": 20,
+      "qualified": [
+        {
+          "symbol": "LGN",
+          "score": 100.0,
+          "price": 30.5,
+          "volume": 9811532.0,
+          "volume_ratio": 131.06,
+          "price_change_pct": 1124.9,
+          "dollar_volume": 299251726.0,
+          "thesis": "LGN: 131.1x volume, +1124.9% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:55.825033"
+        },
+        {
+          "symbol": "VIA",
+          "score": 100.0,
+          "price": 49.51,
+          "volume": 5050635.0,
+          "volume_ratio": 134.44,
+          "price_change_pct": 350.3,
+          "dollar_volume": 250056938.85,
+          "thesis": "VIA: 134.4x volume, +350.3% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:56.071180"
+        },
+        {
+          "symbol": "OPI",
+          "score": 100.0,
+          "price": 0.5513,
+          "volume": 329762861.0,
+          "volume_ratio": 23.49,
+          "price_change_pct": 24.26,
+          "dollar_volume": 181798265.2693,
+          "thesis": "OPI: 23.5x volume, +24.3% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:56.552942"
+        },
+        {
+          "symbol": "MAYAR",
+          "score": 100.0,
+          "price": 0.57,
+          "volume": 1946426.0,
+          "volume_ratio": 35.8,
+          "price_change_pct": 37.0,
+          "dollar_volume": 1109462.8199999998,
+          "thesis": "MAYAR: 35.8x volume, +37.0% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:56.793802"
+        },
+        {
+          "symbol": "GCTK",
+          "score": 100.0,
+          "price": 10.59,
+          "volume": 70668939.0,
+          "volume_ratio": 1710.33,
+          "price_change_pct": 117.45,
+          "dollar_volume": 748384064.01,
+          "thesis": "GCTK: 1710.3x volume, +117.5% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:57.036824"
+        },
+        {
+          "symbol": "HCWB",
+          "score": 100.0,
+          "price": 5.59,
+          "volume": 20113920.0,
+          "volume_ratio": 5.95,
+          "price_change_pct": 68.37,
+          "dollar_volume": 112436812.8,
+          "thesis": "HCWB: 6.0x volume, +68.4% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:57.290153"
+        },
+        {
+          "symbol": "AGAE",
+          "score": 100.0,
+          "price": 1.48,
+          "volume": 112501709.0,
+          "volume_ratio": 3114.84,
+          "price_change_pct": 56.89,
+          "dollar_volume": 166502529.32,
+          "thesis": "AGAE: 3114.8x volume, +56.9% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:57.532777"
+        },
+        {
+          "symbol": "ATCH",
+          "score": 100.0,
+          "price": 0.39,
+          "volume": 281071801.0,
+          "volume_ratio": 16.46,
+          "price_change_pct": 13.57,
+          "dollar_volume": 109618002.39,
+          "thesis": "ATCH: 16.5x volume, +13.6% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:58.013928"
+        },
+        {
+          "symbol": "EVTV",
+          "score": 100.0,
+          "price": 4.08,
+          "volume": 850337,
+          "volume_ratio": 19.7,
+          "price_change_pct": 48.36,
+          "dollar_volume": 3469374.96,
+          "thesis": "EVTV: 19.7x volume, +48.4% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:58.254126"
+        },
+        {
+          "symbol": "SONN",
+          "score": 100.0,
+          "price": 5.9,
+          "volume": 7621864.0,
+          "volume_ratio": 8.08,
+          "price_change_pct": 48.99,
+          "dollar_volume": 44968997.6,
+          "thesis": "SONN: 8.1x volume, +49.0% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:58.491062"
+        },
+        {
+          "symbol": "HUIZ",
+          "score": 100.0,
+          "price": 4.21,
+          "volume": 11459454.0,
+          "volume_ratio": 8.59,
+          "price_change_pct": 48.76,
+          "dollar_volume": 48244301.339999996,
+          "thesis": "HUIZ: 8.6x volume, +48.8% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:58.976276"
+        },
+        {
+          "symbol": "ISPC",
+          "score": 100.0,
+          "price": 1.95,
+          "volume": 69424425.0,
+          "volume_ratio": 8.67,
+          "price_change_pct": 47.73,
+          "dollar_volume": 135377628.75,
+          "thesis": "ISPC: 8.7x volume, +47.7% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:59.224102"
+        },
+        {
+          "symbol": "VSTD",
+          "score": 100.0,
+          "price": 2.13,
+          "volume": 74285345.0,
+          "volume_ratio": 600.42,
+          "price_change_pct": 65.12,
+          "dollar_volume": 158227784.85,
+          "thesis": "VSTD: 600.4x volume, +65.1% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:59.723081"
+        },
+        {
+          "symbol": "IBEX",
+          "score": 90.07,
+          "price": 41.58,
+          "volume": 1473499.0,
+          "volume_ratio": 3.76,
+          "price_change_pct": 36.51,
+          "dollar_volume": 61268088.419999994,
+          "thesis": "IBEX: 3.8x volume, +36.5% move, score: 90%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:22:00.468564"
+        },
+        {
+          "symbol": "CHEK",
+          "score": 87.97,
+          "price": 0.7459,
+          "volume": 20442945.0,
+          "volume_ratio": 296.94,
+          "price_change_pct": 5.99,
+          "dollar_volume": 15248392.6755,
+          "thesis": "CHEK: 296.9x volume, +6.0% move, score: 88%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:56.315315"
+        },
+        {
+          "symbol": "MFI",
+          "score": 87.25,
+          "price": 44.01,
+          "volume": 186900,
+          "volume_ratio": 3.41,
+          "price_change_pct": 23.28,
+          "dollar_volume": 8225469.0,
+          "thesis": "MFI: 3.4x volume, +23.3% move, score: 87%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:59.971437"
+        },
+        {
+          "symbol": "SDSTW",
+          "score": 57.37,
+          "price": 0.1007,
+          "volume": 37898,
+          "volume_ratio": 3.86,
+          "price_change_pct": 2.17,
+          "dollar_volume": 3816.3286,
+          "thesis": "SDSTW: 3.9x volume, +2.2% move, score: 57%",
+          "action_tag": "watchlist",
+          "timestamp": "2025-09-13T06:22:00.223942"
+        },
+        {
+          "symbol": "AENTW",
+          "score": 56.78,
+          "price": 0.4975,
+          "volume": 12411,
+          "volume_ratio": 0.85,
+          "price_change_pct": 13.75,
+          "dollar_volume": 6174.4725,
+          "thesis": "AENTW: 0.8x volume, +13.8% move, score: 57%",
+          "action_tag": "watchlist",
+          "timestamp": "2025-09-13T06:22:00.714209"
+        },
+        {
+          "symbol": "YDESW",
+          "score": 54.28,
+          "price": 2.235,
+          "volume": 208477,
+          "volume_ratio": 0.54,
+          "price_change_pct": 48.01,
+          "dollar_volume": 465946.095,
+          "thesis": "YDESW: 0.5x volume, +48.0% move, score: 54%",
+          "action_tag": "watchlist",
+          "timestamp": "2025-09-13T06:21:58.728278"
+        },
+        {
+          "symbol": "COEPW",
+          "score": 51.67,
+          "price": 0.0298,
+          "volume": 61204,
+          "volume_ratio": 3.62,
+          "price_change_pct": 0.9,
+          "dollar_volume": 1823.8792,
+          "thesis": "COEPW: 3.6x volume, +0.9% move, score: 52%",
+          "action_tag": "watchlist",
+          "timestamp": "2025-09-13T06:21:59.475814"
+        }
+      ],
+      "eliminated": {
+        "invalid_symbol": 1,
+        "missing_data": 0,
+        "too_expensive": 0,
+        "no_volume": 0
+      },
+      "survival_rate": 95.23809523809523
+    },
+    "quality_filtering": {
+      "success": true,
+      "initial_count": 20,
+      "qualified_count": 13,
+      "qualified": [
+        {
+          "symbol": "OPI",
+          "score": 100.0,
+          "price": 0.5513,
+          "volume": 329762861.0,
+          "volume_ratio": 23.49,
+          "price_change_pct": 24.26,
+          "dollar_volume": 181798265.2693,
+          "thesis": "OPI: 23.5x volume, +24.3% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:56.552942"
+        },
+        {
+          "symbol": "MAYAR",
+          "score": 100.0,
+          "price": 0.57,
+          "volume": 1946426.0,
+          "volume_ratio": 35.8,
+          "price_change_pct": 37.0,
+          "dollar_volume": 1109462.8199999998,
+          "thesis": "MAYAR: 35.8x volume, +37.0% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:56.793802"
+        },
+        {
+          "symbol": "HCWB",
+          "score": 100.0,
+          "price": 5.59,
+          "volume": 20113920.0,
+          "volume_ratio": 5.95,
+          "price_change_pct": 68.37,
+          "dollar_volume": 112436812.8,
+          "thesis": "HCWB: 6.0x volume, +68.4% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:57.290153"
+        },
+        {
+          "symbol": "ATCH",
+          "score": 100.0,
+          "price": 0.39,
+          "volume": 281071801.0,
+          "volume_ratio": 16.46,
+          "price_change_pct": 13.57,
+          "dollar_volume": 109618002.39,
+          "thesis": "ATCH: 16.5x volume, +13.6% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:58.013928"
+        },
+        {
+          "symbol": "EVTV",
+          "score": 100.0,
+          "price": 4.08,
+          "volume": 850337,
+          "volume_ratio": 19.7,
+          "price_change_pct": 48.36,
+          "dollar_volume": 3469374.96,
+          "thesis": "EVTV: 19.7x volume, +48.4% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:58.254126"
+        },
+        {
+          "symbol": "SONN",
+          "score": 100.0,
+          "price": 5.9,
+          "volume": 7621864.0,
+          "volume_ratio": 8.08,
+          "price_change_pct": 48.99,
+          "dollar_volume": 44968997.6,
+          "thesis": "SONN: 8.1x volume, +49.0% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:58.491062"
+        },
+        {
+          "symbol": "HUIZ",
+          "score": 100.0,
+          "price": 4.21,
+          "volume": 11459454.0,
+          "volume_ratio": 8.59,
+          "price_change_pct": 48.76,
+          "dollar_volume": 48244301.339999996,
+          "thesis": "HUIZ: 8.6x volume, +48.8% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:58.976276"
+        },
+        {
+          "symbol": "ISPC",
+          "score": 100.0,
+          "price": 1.95,
+          "volume": 69424425.0,
+          "volume_ratio": 8.67,
+          "price_change_pct": 47.73,
+          "dollar_volume": 135377628.75,
+          "thesis": "ISPC: 8.7x volume, +47.7% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:59.224102"
+        },
+        {
+          "symbol": "VSTD",
+          "score": 100.0,
+          "price": 2.13,
+          "volume": 74285345.0,
+          "volume_ratio": 600.42,
+          "price_change_pct": 65.12,
+          "dollar_volume": 158227784.85,
+          "thesis": "VSTD: 600.4x volume, +65.1% move, score: 100%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:59.723081"
+        },
+        {
+          "symbol": "IBEX",
+          "score": 90.07,
+          "price": 41.58,
+          "volume": 1473499.0,
+          "volume_ratio": 3.76,
+          "price_change_pct": 36.51,
+          "dollar_volume": 61268088.419999994,
+          "thesis": "IBEX: 3.8x volume, +36.5% move, score: 90%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:22:00.468564"
+        },
+        {
+          "symbol": "CHEK",
+          "score": 87.97,
+          "price": 0.7459,
+          "volume": 20442945.0,
+          "volume_ratio": 296.94,
+          "price_change_pct": 5.99,
+          "dollar_volume": 15248392.6755,
+          "thesis": "CHEK: 296.9x volume, +6.0% move, score: 88%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:56.315315"
+        },
+        {
+          "symbol": "MFI",
+          "score": 87.25,
+          "price": 44.01,
+          "volume": 186900,
+          "volume_ratio": 3.41,
+          "price_change_pct": 23.28,
+          "dollar_volume": 8225469.0,
+          "thesis": "MFI: 3.4x volume, +23.3% move, score: 87%",
+          "action_tag": "trade_ready",
+          "timestamp": "2025-09-13T06:21:59.971437"
+        },
+        {
+          "symbol": "YDESW",
+          "score": 54.28,
+          "price": 2.235,
+          "volume": 208477,
+          "volume_ratio": 0.54,
+          "price_change_pct": 48.01,
+          "dollar_volume": 465946.095,
+          "thesis": "YDESW: 0.5x volume, +48.0% move, score: 54%",
+          "action_tag": "watchlist",
+          "timestamp": "2025-09-13T06:21:58.728278"
+        }
+      ],
+      "eliminated": {
+        "price_too_low": 1,
+        "insufficient_liquidity": 2,
+        "extreme_volatility": 2,
+        "already_exploded": 2
+      },
+      "survival_rate": 65.0
+    },
+    "final_scoring": {
+      "success": true,
+      "total_scored": 13,
+      "final_candidates": [
+        {
+          "symbol": "CHEK",
+          "score": 53,
+          "subscores": {
+            "volume_pressure": 0,
+            "price_coiling": 18,
+            "liquidity": 10,
+            "squeeze_setup": 15,
+            "momentum_building": 10
+          },
+          "price": 0.7459,
+          "volume": 20442945.0,
+          "volume_ratio": 296.94,
+          "price_change_pct": 5.99,
+          "dollar_volume": 15248392.6755,
+          "action_tag": "EARLY_ACCUMULATION",
+          "thesis": "CHEK: controlled 6.0% move, prime squeeze setup, momentum building",
+          "explosion_probability": 0.53,
+          "data_source": "unknown",
+          "timestamp": "2025-09-12T23:22:00.701398"
+        },
+        {
+          "symbol": "MFI",
+          "score": 51.836,
+          "subscores": {
+            "volume_pressure": 30,
+            "price_coiling": 3.836,
+            "liquidity": 15,
+            "squeeze_setup": 3,
+            "momentum_building": 0
+          },
+          "price": 44.01,
+          "volume": 186900,
+          "volume_ratio": 3.41,
+          "price_change_pct": 23.28,
+          "dollar_volume": 8225469.0,
+          "action_tag": "EARLY_ACCUMULATION",
+          "thesis": "MFI: 3.4x volume building",
+          "explosion_probability": 0.5183599999999999,
+          "data_source": "unknown",
+          "timestamp": "2025-09-12T23:22:00.701409"
+        },
+        {
+          "symbol": "HUIZ",
+          "score": 47.562,
+          "subscores": {
+            "volume_pressure": 20,
+            "price_coiling": 2.5620000000000003,
+            "liquidity": 10,
+            "squeeze_setup": 15,
+            "momentum_building": 0
+          },
+          "price": 4.21,
+          "volume": 11459454.0,
+          "volume_ratio": 8.59,
+          "price_change_pct": 48.76,
+          "dollar_volume": 48244301.339999996,
+          "action_tag": "EARLY_ACCUMULATION",
+          "thesis": "HUIZ: 8.6x volume accumulation, prime squeeze setup",
+          "explosion_probability": 0.47562,
+          "data_source": "unknown",
+          "timestamp": "2025-09-12T23:22:00.701354"
+        },
+        {
+          "symbol": "EVTV",
+          "score": 45.611999999999995,
+          "subscores": {
+            "volume_pressure": 13.03,
+            "price_coiling": 2.582,
+            "liquidity": 15,
+            "squeeze_setup": 15,
+            "momentum_building": 0
+          },
+          "price": 4.08,
+          "volume": 850337,
+          "volume_ratio": 19.7,
+          "price_change_pct": 48.36,
+          "dollar_volume": 3469374.96,
+          "action_tag": "EARLY_ACCUMULATION",
+          "thesis": "EVTV: prime squeeze setup",
+          "explosion_probability": 0.45611999999999997,
+          "data_source": "unknown",
+          "timestamp": "2025-09-12T23:22:00.701325"
+        }
+      ],
+      "pre_explosion_count": 0,
+      "building_pressure_count": 0,
+      "early_accumulation_count": 4,
+      "watchlist_count": 7
+    }
+  },
+  "success": true,
+  "summary": {
+    "funnel": {
+      "initial": 21,
+      "basic_qualified": 20,
+      "quality_qualified": 13,
+      "final_candidates": 4
+    },
+    "reductions": {
+      "basic_filter_elimination": 4.761904761904762,
+      "quality_filter_elimination": 35.0,
+      "scoring_elimination": 69.23076923076923,
+      "overall_survival_rate": 19.047619047619047
+    },
+    "data_authenticity": {
+      "source": "polygon_api",
+      "synthetic_data_used": false,
+      "fallback_data_used": false
+    }
+  }
+}

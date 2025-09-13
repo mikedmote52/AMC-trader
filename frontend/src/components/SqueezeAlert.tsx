@@ -3,10 +3,10 @@ import { API_BASE } from "../config";
 import { postJSON } from "../lib/api";
 import "./SqueezeAlert.css";
 
-// 3-Tier Alert System Configuration
+// 3-Tier Alert System Configuration - ALIGNED WITH SQUEEZE MONITOR THRESHOLDS
 const SQUEEZE_ALERT_TIERS = {
   CRITICAL: {
-    threshold: 0.70,
+    threshold: 0.70, // 70%+ STRONG BUY SIGNALS (unchanged - correct)
     icon: "🚨",
     color: "#dc2626",
     bgColor: "rgba(239, 68, 68, 0.15)",
@@ -16,7 +16,7 @@ const SQUEEZE_ALERT_TIERS = {
     priority: 1
   },
   DEVELOPING: {
-    threshold: 0.40,
+    threshold: 0.50, // FIXED: 50%+ BUY OPPORTUNITIES (was 40%, now matches SqueezeMonitor)
     icon: "⚡",
     color: "#f59e0b", 
     bgColor: "rgba(245, 158, 11, 0.15)",
@@ -26,7 +26,7 @@ const SQUEEZE_ALERT_TIERS = {
     priority: 2
   },
   EARLY: {
-    threshold: 0.25,
+    threshold: 0.30, // FIXED: 30%+ WATCH CANDIDATES (was 25%, now matches SqueezeMonitor)
     icon: "📊",
     color: "#eab308",
     bgColor: "rgba(234, 179, 8, 0.1)", 

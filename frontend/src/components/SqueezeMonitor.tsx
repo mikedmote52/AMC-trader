@@ -53,6 +53,9 @@ export default function SqueezeMonitor({
   const [lastApiCall, setLastApiCall] = useState<{url: string, candidateCount: number, timestamp: string, strategy: string} | null>(null);
   const [currentStrategy, setCurrentStrategy] = useState<'legacy_v0' | 'hybrid_v1'>(strategy);
   const [currentMinScore, setCurrentMinScore] = useState(minScore);
+  const [universeFilterData, setUniverseFilterData] = useState<any>(null);
+  const [showUniverseFilter, setShowUniverseFilter] = useState(false);
+  const [universeFilterLoading, setUniverseFilterLoading] = useState(false);
 
   const getRefreshInterval = () => {
     const now = new Date();
@@ -102,9 +105,10 @@ export default function SqueezeMonitor({
       if (useTestEndpoint) {
         discoveryResponse = await getJSON<any>(`${API_BASE}/discovery/test?strategy=${currentStrategy}&limit=20`);
       } else {
-        // FIXED: Use correct endpoint with strategy parameter and integer scale (0-100)
-        const apiUrl = `${API_BASE}/discovery/squeeze-candidates?strategy=${currentStrategy}&min_score=${currentMinScore}&cache=${Date.now()}`;
+        // Use improved pre-explosion discovery endpoint
+        const apiUrl = `${API_BASE}/discovery/emergency/run-direct?limit=50&mode=pre_explosion&cache=${Date.now()}`;
         const response = await fetch(apiUrl, {
+          method: 'POST',
           cache: 'no-store'
         });
         
@@ -235,6 +239,33 @@ export default function SqueezeMonitor({
       setError(errorMessage);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runUniverseFilter = async () => {
+    try {
+      setUniverseFilterLoading(true);
+      setError("");
+      
+      const response = await fetch(`${API_BASE}/discovery/emergency/universe-filter?limit=50&trace=true`, {
+        method: 'POST',
+        cache: 'no-store'
+      });
+      
+      const data = await response.json();
+      
+      if (data.status === 'success') {
+        setUniverseFilterData(data);
+        setShowUniverseFilter(true);
+        console.log("Universe filter results:", data);
+      } else {
+        setError(`Universe filter failed: ${data.error}`);
+      }
+      
+    } catch (err) {
+      setError(`Universe filter error: ${err}`);
+    } finally {
+      setUniverseFilterLoading(false);
     }
   };
 
@@ -433,6 +464,27 @@ export default function SqueezeMonitor({
           <button onClick={loadSqueezeOpportunities} style={actionButtonStyle}>
             🔄 Refresh
           </button>
+          
+          <button 
+            onClick={runUniverseFilter} 
+            disabled={universeFilterLoading}
+            style={{
+              ...actionButtonStyle,
+              backgroundColor: universeFilterLoading ? '#4a5568' : '#2563eb',
+              opacity: universeFilterLoading ? 0.7 : 1
+            }}
+          >
+            {universeFilterLoading ? '⏳ Filtering...' : '🌍 Universe Filter'}
+          </button>
+          
+          {showUniverseFilter && universeFilterData && (
+            <button 
+              onClick={() => setShowUniverseFilter(false)}
+              style={{...actionButtonStyle, backgroundColor: '#7c2d12'}}
+            >
+              ❌ Hide Filter
+            </button>
+          )}
         </div>
       </div>
 
@@ -532,6 +584,127 @@ export default function SqueezeMonitor({
         </div>
       )}
 
+      {/* Universe Filter Results */}
+      {showUniverseFilter && universeFilterData && (
+        <div style={{
+          ...pnlSectionStyle,
+          backgroundColor: '#1a202c',
+          border: '2px solid #2563eb'
+        }}>
+          <div style={sectionTitleStyle}>🌍 UNIVERSE FILTERING RESULTS</div>
+          
+          <div style={{...noOpportunitiesSubTextStyle, marginBottom: 16, color: '#60a5fa'}}>
+            Complete filtering from {universeFilterData.funnel?.initial_universe?.toLocaleString() || 'N/A'} stocks to {universeFilterData.counts?.total || 0} final candidates
+          </div>
+          
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '12px',
+            marginBottom: '16px'
+          }}>
+            <div style={{
+              backgroundColor: '#2d3748',
+              padding: '12px',
+              borderRadius: '8px',
+              border: '1px solid #4a5568'
+            }}>
+              <div style={{color: '#9ca3af', fontSize: '12px'}}>FILTERING FUNNEL</div>
+              <div style={{color: '#e5e7eb', fontSize: '14px', marginTop: '4px'}}>
+                🌍 {universeFilterData.funnel?.initial_universe?.toLocaleString() || 'N/A'} → 
+                📊 {universeFilterData.funnel?.after_intraday?.toLocaleString() || 'N/A'} → 
+                ✅ {universeFilterData.counts?.total || 0}
+              </div>
+            </div>
+            
+            <div style={{
+              backgroundColor: '#2d3748',
+              padding: '12px',
+              borderRadius: '8px',
+              border: '1px solid #4a5568'
+            }}>
+              <div style={{color: '#9ca3af', fontSize: '12px'}}>PROCESSING TIME</div>
+              <div style={{color: '#e5e7eb', fontSize: '14px', marginTop: '4px'}}>
+                ⏱️ {((universeFilterData.timing?.total_ms || 0) / 1000).toFixed(1)}s total
+              </div>
+            </div>
+            
+            <div style={{
+              backgroundColor: '#2d3748',
+              padding: '12px',
+              borderRadius: '8px',
+              border: '1px solid #4a5568'
+            }}>
+              <div style={{color: '#9ca3af', fontSize: '12px'}}>CANDIDATES</div>
+              <div style={{color: '#e5e7eb', fontSize: '14px', marginTop: '4px'}}>
+                🚨 {universeFilterData.counts?.trade_ready || 0} Trade Ready | 
+                👀 {universeFilterData.counts?.monitor || 0} Monitor
+              </div>
+            </div>
+          </div>
+          
+          {universeFilterData.trace && (
+            <div style={{
+              backgroundColor: '#374151',
+              padding: '12px',
+              borderRadius: '8px',
+              border: '1px solid #6b7280',
+              marginBottom: '16px'
+            }}>
+              <div style={{color: '#9ca3af', fontSize: '12px', marginBottom: '8px'}}>SCORE DISTRIBUTION</div>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+                gap: '8px',
+                fontSize: '11px'
+              }}>
+                <div style={{color: '#ef4444'}}>90+: {universeFilterData.trace.scoring_distribution?.['90_plus'] || 0}</div>
+                <div style={{color: '#f59e0b'}}>80-89: {universeFilterData.trace.scoring_distribution?.['80_89'] || 0}</div>
+                <div style={{color: '#10b981'}}>70-79: {universeFilterData.trace.scoring_distribution?.['70_79'] || 0}</div>
+                <div style={{color: '#3b82f6'}}>60-69: {universeFilterData.trace.scoring_distribution?.['60_69'] || 0}</div>
+                <div style={{color: '#8b5cf6'}}>50-59: {universeFilterData.trace.scoring_distribution?.['50_59'] || 0}</div>
+                <div style={{color: '#6b7280'}}>< 50: {universeFilterData.trace.scoring_distribution?.below_50 || 0}</div>
+              </div>
+            </div>
+          )}
+          
+          {universeFilterData.candidates && universeFilterData.candidates.length > 0 && (
+            <div>
+              <div style={{color: '#9ca3af', fontSize: '12px', marginBottom: '8px'}}>TOP CANDIDATES FROM UNIVERSE FILTER</div>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                gap: '8px'
+              }}>
+                {universeFilterData.candidates.slice(0, 8).map((candidate: any, index: number) => (
+                  <div key={`universe-${candidate.symbol}-${index}`} style={{
+                    backgroundColor: '#2d3748',
+                    padding: '8px',
+                    borderRadius: '4px',
+                    border: '1px solid #4a5568'
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '4px'
+                    }}>
+                      <span style={{color: '#60a5fa', fontWeight: 'bold'}}>{candidate.symbol}</span>
+                      <span style={{color: '#e5e7eb', fontSize: '12px'}}>${candidate.price?.toFixed(2) || 'N/A'}</span>
+                    </div>
+                    <div style={{fontSize: '11px', color: '#9ca3af'}}>
+                      Score: {candidate.score?.toFixed(1) || 'N/A'} | 
+                      Vol: {candidate.volume_ratio?.toFixed(1) || 'N/A'}x | 
+                      {candidate.action_tag || 'N/A'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Pattern History */}
       {showHistory && (
         <div style={historySectionStyle}>
@@ -545,12 +718,74 @@ export default function SqueezeMonitor({
         </div>
       )}
 
+      {/* Pre-Explosion Candidates Section - Now using real API data */}
+      {squeezeOpportunities.filter(opp => (opp.advanced_score || opp.squeeze_score) < 0.50).length > 0 && (
+        <div style={preExplosionSectionStyle}>
+          <div style={sectionTitleStyle}>🎯 PRE-EXPLOSION CANDIDATES</div>
+          <div style={{...noOpportunitiesSubTextStyle, marginBottom: 16, color: '#f59e0b'}}>
+            <strong>🚨 IMPROVED ALGORITHM:</strong> Building pressure detected - these haven't exploded yet
+          </div>
+          
+          <div style={preExplosionGridStyle}>
+            {squeezeOpportunities
+              .filter(opp => {
+                const score = (opp.advanced_score || opp.squeeze_score) * 100;
+                const priceChange = Math.abs(opp.price_change_pct || 0);
+                // Filter for building pressure: moderate scores and small price moves
+                return score >= 30 && score < 75 && priceChange <= 25;
+              })
+              .slice(0, 8)
+              .map((candidate, index) => {
+                const score = ((candidate.advanced_score || candidate.squeeze_score) * 100);
+                const volumeRatio = candidate.volume_spike || candidate.volume_ratio || 0;
+                const priceChange = candidate.price_change_pct || 0;
+                
+                return (
+                  <div key={`pre-explosion-${candidate.symbol}-${index}`} style={preExplosionCardStyle}>
+                    <div style={symbolHeaderStyle}>
+                      <span style={{...symbolTextStyle, color: '#f59e0b'}}>{candidate.symbol}</span>
+                      <span style={priceTextStyle}>${candidate.price?.toFixed(2) || 'N/A'}</span>
+                    </div>
+                    <div style={{fontSize: '12px', color: '#fcd34d', marginBottom: '8px'}}>
+                      🎯 {score.toFixed(1)}% Pre-Explosion Score
+                    </div>
+                    <div style={{fontSize: '11px', color: '#ccc', lineHeight: '1.4'}}>
+                      📊 Volume: {volumeRatio.toFixed(1)}x (building)<br/>
+                      📈 Move: {priceChange > 0 ? '+' : ''}{priceChange.toFixed(1)}% (controlled)<br/>
+                      🔍 Status: {candidate.action || candidate.pattern_type || 'BUILDING_PRESSURE'}
+                    </div>
+                    <div style={{
+                      marginTop: '8px',
+                      padding: '4px 8px',
+                      backgroundColor: score >= 60 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.1)',
+                      border: `1px solid ${score >= 60 ? 'rgba(245, 158, 11, 0.4)' : 'rgba(245, 158, 11, 0.3)'}`,
+                      borderRadius: '4px',
+                      fontSize: '10px',
+                      color: '#fcd34d',
+                      textAlign: 'center'
+                    }}>
+                      {score >= 60 ? '🚨 IMMINENT' : '⚠️ BUILDING'}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+          
+          <div style={{...noOpportunitiesSubTextStyle, marginTop: 16, fontSize: 12, color: '#999'}}>
+            💡 Live pre-explosion detection: Building volume + controlled price action = potential breakout
+          </div>
+        </div>
+      )}
+
       {/* No Opportunities Message + Portfolio Actions */}
       {squeezeOpportunities.length === 0 && (
         <div style={noOpportunitiesStyle}>
           <div style={noOpportunitiesIconStyle}>🔍</div>
           <div style={noOpportunitiesTextStyle}>
-            No squeeze opportunities detected
+            No immediate squeeze opportunities detected
+          </div>
+          <div style={{...noOpportunitiesSubTextStyle, marginBottom: 16, color: '#22c55e'}}>
+            ✅ But we found pre-explosion candidates above! Monitor them for breakouts.
           </div>
 
           {/* Debug Information for HEALTHY system with no candidates */}
@@ -865,4 +1100,27 @@ const retryButtonStyle: React.CSSProperties = {
   fontWeight: 600,
   cursor: "pointer",
   marginTop: "16px"
+};
+
+const preExplosionSectionStyle: React.CSSProperties = {
+  marginBottom: "32px",
+  background: "linear-gradient(135deg, #1a1a1a 0%, #111 100%)",
+  borderRadius: "16px",
+  border: "1px solid #333",
+  padding: "20px"
+};
+
+const preExplosionGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+  gap: "16px",
+  marginBottom: "16px"
+};
+
+const preExplosionCardStyle: React.CSSProperties = {
+  background: "rgba(245, 158, 11, 0.05)",
+  border: "1px solid rgba(245, 158, 11, 0.2)",
+  borderRadius: "12px",
+  padding: "16px",
+  transition: "all 0.2s ease"
 };

@@ -517,6 +517,153 @@ async def auto_recovery():
             "timestamp": datetime.now().isoformat()
         }
 
+@router.post("/emergency/universe-filter")
+async def run_universe_filtering(limit: int = Query(50, le=500), trace: bool = Query(False)):
+    """
+    Run complete universe filtering using the real BMS engine
+    Shows filtering from thousands of stocks down to final candidates
+    """
+    try:
+        logger.info(f"🌍 Universe filtering triggered with limit={limit}, trace={trace}")
+        
+        from backend.src.services.bms_engine_real import RealBMSEngine
+        
+        # Initialize BMS engine
+        polygon_key = os.getenv("POLYGON_API_KEY", "")
+        if not polygon_key:
+            return {"status": "error", "error": "POLYGON_API_KEY not configured"}
+        
+        bms_engine = RealBMSEngine(polygon_key)
+        
+        # Step 1: Fetch filtered universe 
+        start_time = time.time()
+        filtered_stocks = await bms_engine.fetch_filtered_stocks()
+        universe_fetch_time = time.time() - start_time
+        
+        if not filtered_stocks:
+            return {
+                "status": "error",
+                "error": "No stocks in filtered universe",
+                "universe_size": 0
+            }
+        
+        logger.info(f"✅ Universe loaded: {len(filtered_stocks)} stocks in {universe_fetch_time:.1f}s")
+        
+        # Step 2: Apply intraday snapshot filter (sample for performance)
+        sample_size = min(len(filtered_stocks), 1000)  # Limit for API rate limits
+        sample_stocks = filtered_stocks[:sample_size]
+        
+        start_time = time.time()
+        intraday_filtered = await bms_engine.intraday_snapshot_filter(sample_stocks)
+        intraday_time = time.time() - start_time
+        
+        logger.info(f"✅ Intraday filter: {len(intraday_filtered)} stocks in {intraday_time:.1f}s")
+        
+        # Step 3: BMS scoring (limited sample for demo)
+        scoring_sample = min(len(intraday_filtered), limit * 2)  # Score more than limit for better selection
+        stocks_to_score = intraday_filtered[:scoring_sample]
+        
+        start_time = time.time()
+        scored_candidates = await bms_engine.score_candidates(stocks_to_score)
+        scoring_time = time.time() - start_time
+        
+        # Sort by score and limit results
+        scored_candidates.sort(key=lambda x: x.get('score', 0), reverse=True)
+        final_candidates = scored_candidates[:limit]
+        
+        logger.info(f"✅ BMS scoring: {len(final_candidates)} final candidates in {scoring_time:.1f}s")
+        
+        # Categorize candidates
+        trade_ready = [c for c in final_candidates if c.get('score', 0) >= 65]
+        monitor = [c for c in final_candidates if 45 <= c.get('score', 0) < 65]
+        
+        # Build comprehensive response
+        response = {
+            "status": "success",
+            "method": "universe_filtering",
+            "timing": {
+                "universe_fetch_ms": int(universe_fetch_time * 1000),
+                "intraday_filter_ms": int(intraday_time * 1000),
+                "scoring_ms": int(scoring_time * 1000),
+                "total_ms": int((universe_fetch_time + intraday_time + scoring_time) * 1000)
+            },
+            "funnel": {
+                "initial_universe": len(filtered_stocks),
+                "after_sample": sample_size,
+                "after_intraday": len(intraday_filtered),
+                "after_scoring": len(scored_candidates),
+                "final_candidates": len(final_candidates)
+            },
+            "counts": {
+                "total": len(final_candidates),
+                "trade_ready": len(trade_ready),
+                "monitor": len(monitor)
+            },
+            "candidates": final_candidates,
+            "timestamp": datetime.now().isoformat(),
+            "cached": False
+        }
+        
+        # Add detailed trace if requested
+        if trace:
+            response["trace"] = {
+                "universe_details": {
+                    "total_stocks": len(filtered_stocks),
+                    "price_filter": "Applied at API level ($0.50-$100.00)",
+                    "volume_filter": "Applied at API level ($5M+ dollar volume)",
+                    "fund_filter": "Applied at API level (exclude ETFs/funds)"
+                },
+                "sampling_details": {
+                    "universe_sample_size": sample_size,
+                    "intraday_sample_size": len(intraday_filtered),
+                    "scoring_sample_size": scoring_sample,
+                    "final_limit": limit
+                },
+                "scoring_distribution": {
+                    "90_plus": len([c for c in scored_candidates if c.get('score', 0) >= 90]),
+                    "80_89": len([c for c in scored_candidates if 80 <= c.get('score', 0) < 90]),
+                    "70_79": len([c for c in scored_candidates if 70 <= c.get('score', 0) < 80]),
+                    "60_69": len([c for c in scored_candidates if 60 <= c.get('score', 0) < 70]),
+                    "50_59": len([c for c in scored_candidates if 50 <= c.get('score', 0) < 60]),
+                    "below_50": len([c for c in scored_candidates if c.get('score', 0) < 50])
+                }
+            }
+        
+        # Cache the results
+        try:
+            import redis as redis_sync
+            redis_client = redis_sync.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379/0'), decode_responses=False)
+            
+            cache_payload = {
+                "timestamp": int(datetime.now().timestamp()),
+                "iso_timestamp": datetime.now().isoformat(),
+                "count": len(final_candidates),
+                "candidates": final_candidates,
+                "engine": "BMS Universe Filter",
+                "strategy": "universe_filter",
+                "universe_size": len(filtered_stocks),
+                "filtered_size": len(final_candidates),
+                "trade_ready_count": len(trade_ready),
+                "monitor_count": len(monitor)
+            }
+            
+            cache_data = json.dumps(cache_payload, default=str).encode('utf-8')
+            redis_client.setex("amc:discovery:contenders", 600, cache_data)
+            response["cached"] = True
+            
+        except Exception as e:
+            logger.error(f"Failed to cache universe filter results: {e}")
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Universe filtering failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.post("/emergency/run-direct") 
 async def run_direct_discovery(limit: int = Query(50, le=200)):
     """

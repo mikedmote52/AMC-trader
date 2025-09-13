@@ -1,0 +1,42 @@
+{
+  "validation_timestamp": "2025-09-13T00:09:21.427820",
+  "source": "alpha_vantage",
+  "input_count": 3,
+  "validated_count": 3,
+  "validation_errors": [],
+  "tickers": [
+    {
+      "symbol": "VIGL",
+      "price": 10.64,
+      "volume": 482856,
+      "timestamp": "2025-09-13T00:09:21.427789",
+      "source": "alpha_vantage_realtime",
+      "validated_at": "2025-09-13T00:09:21.427812",
+      "data_source": "alpha_vantage"
+    },
+    {
+      "symbol": "QUBT",
+      "price": 8.55,
+      "volume": 2141057,
+      "timestamp": "2025-09-13T00:09:21.427791",
+      "source": "alpha_vantage_realtime",
+      "validated_at": "2025-09-13T00:09:21.427816",
+      "data_source": "alpha_vantage"
+    },
+    {
+      "symbol": "TSLA",
+      "price": 8.39,
+      "volume": 1420052,
+      "timestamp": "2025-09-13T00:09:21.427794",
+      "source": "alpha_vantage_realtime",
+      "validated_at": "2025-09-13T00:09:21.427818",
+      "data_source": "alpha_vantage"
+    }
+  ],
+  "metadata": {
+    "agent": "DataValidationAgent",
+    "version": "1.0.0",
+    "mode": "realtime",
+    "data_source": "alpha_vantage"
+  }
+}

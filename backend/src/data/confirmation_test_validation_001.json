@@ -1,0 +1,15 @@
+{
+  "request_id": "test_validation_001",
+  "agent": "BacktestingAgent",
+  "command": "VALIDATE_ALGORITHMS",
+  "status": "SUCCESS",
+  "timestamp": "2025-09-12T12:26:48.036710",
+  "report_id": "validation_test_validation_001_20250912_122648",
+  "summary": {
+    "total_backtests": 2,
+    "win_rate": 100.0,
+    "avg_return": 20.38,
+    "recommendations_count": 6
+  },
+  "error_message": null
+}

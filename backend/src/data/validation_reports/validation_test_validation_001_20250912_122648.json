@@ -1,0 +1,136 @@
+{
+  "report_id": "validation_test_validation_001_20250912_122648",
+  "timestamp": "2025-09-12T12:26:48.035051",
+  "algorithm_parameters": {
+    "strategy": "hybrid_v1",
+    "weights": {
+      "volume_momentum": 0.35,
+      "squeeze": 0.25,
+      "catalyst": 0.2,
+      "options": 0.1,
+      "technical": 0.1
+    },
+    "thresholds": {
+      "min_relvol_30": 2.5,
+      "min_atr_pct": 0.04,
+      "rsi_band": [
+        60,
+        70
+      ],
+      "require_vwap_reclaim": true
+    },
+    "entry_rules": {
+      "watchlist_min": 70,
+      "trade_ready_min": 75
+    },
+    "version": "1.0_default"
+  },
+  "performance_metrics": {
+    "total_trades": 2,
+    "winning_trades": 2,
+    "losing_trades": 0,
+    "win_rate": 100.0,
+    "avg_return": 20.38,
+    "median_return": 20.38,
+    "std_return": 0.0,
+    "sharpe_ratio": 0,
+    "sortino_ratio": 0,
+    "percentiles": {
+      "p25": 20.38,
+      "p50": 20.38,
+      "p75": 20.38,
+      "p90": 20.38
+    },
+    "best_trade_return": 20.38,
+    "worst_trade_return": 20.38,
+    "action_tag_performance": {
+      "watchlist": {
+        "count": 2,
+        "avg_return": 20.38,
+        "win_rate": 100.0,
+        "best_return": 20.38,
+        "worst_return": 20.38
+      }
+    }
+  },
+  "algorithm_analysis": {
+    "overall_score_correlation": NaN,
+    "subscore_effectiveness": {
+      "volume_momentum": {
+        "correlation_with_returns": NaN,
+        "avg_subscore": 0.837,
+        "effectiveness_rating": "Low"
+      },
+      "squeeze": {
+        "correlation_with_returns": NaN,
+        "avg_subscore": 0.82,
+        "effectiveness_rating": "Low"
+      },
+      "catalyst": {
+        "correlation_with_returns": NaN,
+        "avg_subscore": 0.363,
+        "effectiveness_rating": "Low"
+      },
+      "options": {
+        "correlation_with_returns": NaN,
+        "avg_subscore": 0.62,
+        "effectiveness_rating": "Low"
+      },
+      "technical": {
+        "correlation_with_returns": NaN,
+        "avg_subscore": 0.9,
+        "effectiveness_rating": "Low"
+      }
+    },
+    "action_tag_effectiveness": {
+      "watchlist": {
+        "count": 2,
+        "avg_return": 20.38,
+        "win_rate": 100.0,
+        "effectiveness": "Strong"
+      }
+    },
+    "score_threshold_analysis": {
+      "moderate_confidence_70-75": {
+        "count": 2,
+        "avg_return": 20.38,
+        "win_rate": 100.0
+      }
+    },
+    "algorithm_weaknesses": [
+      "Weak performing subscores need improvement: volume_momentum, squeeze, catalyst, options, technical"
+    ]
+  },
+  "recommendations": [
+    "Improve risk-adjusted returns - implement better risk management in scoring",
+    "Optimize volume analysis - consider intraday volume patterns",
+    "Refine squeeze scoring - evaluate short interest and float calculations",
+    "Enhance catalyst detection - consider real-time news sentiment analysis",
+    "Improve options flow analysis - integrate gamma exposure metrics",
+    "Review technical indicators - consider additional momentum signals"
+  ],
+  "statistical_significance": {
+    "sample_size": 2,
+    "mean_return": 20.38,
+    "std_error": 0.0,
+    "t_statistic": 0,
+    "statistically_significant": false,
+    "confidence_level": "Low"
+  },
+  "risk_metrics": {
+    "value_at_risk_95": 20.38,
+    "max_drawdown": 8.15,
+    "avg_drawdown": 8.15,
+    "volatility": 0.0,
+    "downside_deviation": 0,
+    "risk_rating": "Low"
+  },
+  "status": "COMPLETED",
+  "backtest_summary": {
+    "total_backtests": 2,
+    "symbols_tested": [
+      "VIGL"
+    ],
+    "avg_holding_period": 7.5
+  }
+}

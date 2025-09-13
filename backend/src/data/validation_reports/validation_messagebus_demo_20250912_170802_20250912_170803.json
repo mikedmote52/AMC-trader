@@ -1,0 +1,114 @@
+{
+  "report_id": "validation_messagebus_demo_20250912_170802_20250912_170803",
+  "timestamp": "2025-09-12T17:08:03.211956",
+  "algorithm_parameters": {
+    "strategy": "hybrid_v1",
+    "weights": {
+      "volume_momentum": 0.35,
+      "squeeze": 0.25,
+      "catalyst": 0.2,
+      "options": 0.1,
+      "technical": 0.1
+    },
+    "thresholds": {
+      "min_relvol_30": 2.5,
+      "min_atr_pct": 0.04,
+      "rsi_band": [
+        60,
+        70
+      ],
+      "require_vwap_reclaim": true
+    },
+    "entry_rules": {
+      "watchlist_min": 70,
+      "trade_ready_min": 75
+    },
+    "version": "1.0_default"
+  },
+  "performance_metrics": {
+    "total_trades": 4,
+    "winning_trades": 4,
+    "losing_trades": 0,
+    "win_rate": 100.0,
+    "avg_return": 16.0,
+    "median_return": 16.0,
+    "std_return": 0.11,
+    "sharpe_ratio": 145.455,
+    "sortino_ratio": 0,
+    "percentiles": {
+      "p25": 15.89,
+      "p50": 16.0,
+      "p75": 16.11,
+      "p90": 16.11
+    },
+    "best_trade_return": 16.11,
+    "worst_trade_return": 15.89,
+    "action_tag_performance": {
+      "watchlist": {
+        "count": 4,
+        "avg_return": 16.0,
+        "win_rate": 100.0,
+        "best_return": 16.11,
+        "worst_return": 15.89
+      }
+    }
+  },
+  "algorithm_analysis": {
+    "overall_score_correlation": 1.0,
+    "subscore_effectiveness": {
+      "volume_momentum": {
+        "correlation_with_returns": 1.0,
+        "avg_subscore": 0.738,
+        "effectiveness_rating": "High"
+      },
+      "squeeze": {
+        "correlation_with_returns": NaN,
+        "avg_subscore": 0.5,
+        "effectiveness_rating": "Low"
+      },
+      "catalyst": {
+        "correlation_with_returns": NaN,
+        "avg_subscore": 0.747,
+        "effectiveness_rating": "Low"
+      },
+      "options": {
+        "correlation_with_returns": 1.0,
+        "avg_subscore": 0.968,
+        "effectiveness_rating": "High"
+      },
+      "technical": {
+        "correlation_with_returns": NaN,
+        "avg_subscore": 0.9,
+        "effectiveness_rating": "Low"
+      }
+    },
+    "action_tag_effectiveness": {
+      "watchlist": {
+        "count": 4,
+        "avg_return": 16.0,
+        "win_rate": 100.0,
+        "effectiveness": "Strong"
+      }
+    },
+    "score_threshold_analysis": {
+      "moderate_confidence_70-75": {
+        "count": 4,
+        "avg_return": 16.0,
+        "win_rate": 100.0
+      }
+    },
+    "algorithm_weaknesses": [
+      "Weak performing subscores need improvement: squeeze, catalyst, technical"
+    ]
+  },
+  "recommendations": [
+    "Refine squeeze scoring - evaluate short interest and float calculations",
+    "Enhance catalyst detection - consider real-time news sentiment analysis",
+    "Review technical indicators - consider additional momentum signals"
+  ],
+  "statistical_significance": {
+    "sample_size": 4,
+    "mean_return": 16.0,
+    "std_error": 0.064,
+    "t_statistic": 251.935,
+    "statistically_significant": 
