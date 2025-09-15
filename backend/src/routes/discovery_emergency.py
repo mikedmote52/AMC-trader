@@ -539,21 +539,21 @@ async def get_contenders(limit: int = Query(50, le=500), trace: bool = Query(Fal
 @router.post("/emergency/enhanced-discovery")
 async def run_enhanced_discovery(limit: int = Query(50, le=500), trace: bool = Query(False)):
     """
-    Enhanced BMS discovery with $100 cap, sustained RVOL, microstructure gates
-    Implements advanced momentum scanning with directional gating
+    Unified AlphaStack 4.0 Discovery System - THE ONLY DISCOVERY SYSTEM
+    Complete explosive stock discovery with confidence-aware scoring
     """
     try:
-        logger.info(f"🚀 Enhanced discovery triggered with limit={limit}, trace={trace}")
+        logger.info(f"🚀 Unified AlphaStack 4.0 discovery triggered with limit={limit}, trace={trace}")
         
-        # Import enhanced engine
+        # Import unified discovery job
         try:
-            from backend.src.services.bms_engine_enhanced import EnhancedBMSEngine, CONFIG
+            from backend.src.jobs.discovery_job import run_discovery_job
         except ImportError as e:
-            logger.error(f"Failed to import enhanced engine: {e}")
+            logger.error(f"Failed to import unified discovery: {e}")
             return {
                 "status": "error",
-                "error": f"Enhanced engine not available: {e}",
-                "fallback": "Use /emergency/universe-filter for basic filtering"
+                "error": f"Unified discovery system not available: {e}",
+                "fallback": "Check AlphaStack 4.0 system deployment"
             }
         
         polygon_key = os.getenv("POLYGON_API_KEY")

@@ -1,5 +1,5 @@
 """
-Discovery Routes - Unified AlphaStack 4.0 Integration
+Discovery Routes - AlphaStack 4.1 Enhanced Integration
 Provides backward-compatible discovery functions for existing routes
 """
 import json
@@ -9,7 +9,7 @@ from datetime import datetime
 import redis.asyncio as redis
 import os
 
-from backend.src.constants import CACHE_KEY_CONTENDERS
+from constants import CACHE_KEY_CONTENDERS
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +45,10 @@ async def get_contenders(limit: int = 50) -> Dict[str, Any]:
                 logger.warning("Corrupted cache data, running fresh discovery")
         
         # Cache miss or corrupted - run fresh discovery
-        logger.info("Cache miss, running fresh AlphaStack 4.0 discovery")
+        logger.info("Cache miss, running fresh AlphaStack 4.1 discovery")
         
         try:
-            from backend.src.jobs.discovery_job import run_discovery_job
+            from jobs.discovery_job import run_discovery_job
             result = await run_discovery_job(limit)
             
             if result['status'] == 'success':

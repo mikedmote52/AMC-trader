@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Unified Discovery Job - Uses AlphaStack 4.0 System
-Integrates with existing API structure while using the new unified system
+Unified Discovery Job - Uses AlphaStack 4.1 Enhanced System
+Integrates with existing API structure while using the enhanced discovery engine
 """
 import asyncio
 import logging
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
     """
-    Run discovery job using unified AlphaStack 4.0 system
+    Run discovery job using unified AlphaStack 4.1 enhanced system
     Returns API-compatible results for existing endpoints
     """
     try:
@@ -44,16 +44,17 @@ async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
             elif action_tag == 'monitor':
                 monitor_count += 1
             
-            # Format candidate for API
+            # Format candidate for API (snapshot is dict from CandidateScore.dict())
+            snapshot = candidate['snapshot']
             api_candidate = {
                 'symbol': candidate['symbol'],
                 'score': candidate['total_score'],
                 'action_tag': action_tag,
                 'confidence': candidate['confidence'],
-                'rel_vol': candidate['snapshot'].get('rel_vol_30d', 1.0),
-                'price': float(candidate['snapshot'].price),
-                'volume': candidate['snapshot'].get('volume', 0),
-                'market_cap_m': candidate['snapshot'].get('market_cap_m', 0),
+                'rel_vol': snapshot.get('rel_vol_30d', 1.0),
+                'price': float(snapshot.get('price', 0)),
+                'volume': snapshot.get('volume', 0),
+                'market_cap_m': snapshot.get('market_cap_m', 0),
                 'subscores': {
                     'volume_momentum': candidate['volume_momentum_score'],
                     'squeeze': candidate['squeeze_score'], 
@@ -77,7 +78,9 @@ async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
             'monitor_count': monitor_count,
             'candidates': candidates,
             'execution_time_sec': results['execution_time_sec'],
-            'engine': 'AlphaStack 4.0 Unified Discovery',
+            'engine': 'AlphaStack 4.1 Enhanced Discovery',
+            'schema_version': results.get('schema_version', '4.1'),
+            'algorithm_version': results.get('algorithm_version', 'alphastack_4.1_enhanced'),
             'pipeline_stats': results['pipeline_stats']
         }
         
