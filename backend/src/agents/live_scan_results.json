@@ -1,0 +1,21 @@
+{
+  "scan_type": "live_soft_egs_test",
+  "timestamp": "2025-09-15T18:25:01.949426",
+  "market_open": true,
+  "execution_time_sec": 0.788645,
+  "pipeline_stats": {
+    "universe_size": 3033,
+    "enriched": 3033,
+    "filtered": 2854,
+    "scored": 2854
+  },
+  "general_candidates": 50,
+  "explosive_candidates": 0,
+  "explosive_details": [],
+  "system_metadata": {
+    "schema_version": null,
+    "algorithm_version": null,
+    "market_regime": "normal",
+    "market_status": "closed"
+  }
+}

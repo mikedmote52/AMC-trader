@@ -198,32 +198,22 @@ async def get_telemetry():
             await redis_client.ping()
             redis_connected = True
 
-            # Check cache freshness
-            cache_data = await redis_client.get(CACHE_KEY_CONTENDERS)
-            if cache_data:
-                try:
-                    payload = json.loads(cache_data)
-                    cache_timestamp = payload.get('timestamp', 0)
-                    if cache_timestamp:
-                        cache_age_seconds = int(datetime.now().timestamp() - cache_timestamp)
-                except json.JSONDecodeError:
-                    pass
+            # Check cache freshness using TTL
+            cache_exists = await redis_client.exists(CACHE_KEY_CONTENDERS)
+            cache_ttl = await redis_client.ttl(CACHE_KEY_CONTENDERS) if cache_exists else -1
 
             await redis_client.close()
 
         except Exception as e:
             logger.warning(f"Redis connectivity check failed: {e}")
+            cache_exists = False
+            cache_ttl = -1
 
-        # Determine system status
-        system_ready = redis_connected
-        stale_data_detected = False
-
-        if cache_age_seconds is not None:
-            # Consider data stale if older than 30 minutes (1800 seconds)
-            stale_data_detected = cache_age_seconds > 1800
-        else:
-            # If we can't determine cache age, assume stale
-            stale_data_detected = True
+        # Determine system status based on Redis TTL
+        # If key exists and TTL > 0, data is fresh
+        # Target TTL is 600s (10 minutes), job runs every 5 minutes
+        system_ready = redis_connected and cache_exists and cache_ttl > 0
+        stale_data_detected = not (cache_exists and cache_ttl > 0)
 
         pipeline_stats = PipelineStats(
             universe_size=None,  # Could extract from cache payload if available

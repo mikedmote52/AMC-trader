@@ -177,6 +177,117 @@ def relvol_series(cum_today: List[float], cum_ref: List[float]) -> List[float]:
     
     return relvol_ratios
 
+def vwap_adherence_30m(minute_bars: List[Dict[str, float]], vwap_val: float) -> float:
+    """
+    Calculate percentage of last 30 minutes with price >= VWAP
+    
+    Args:
+        minute_bars: List of minute bars with 'c' (close) prices
+        vwap_val: Current VWAP value
+    
+    Returns:
+        Percentage (0-100) of minutes with price >= VWAP
+    """
+    if not minute_bars or vwap_val <= 0:
+        return 50.0  # Default neutral
+    
+    # Use last 30 minutes
+    recent_bars = minute_bars[-30:] if len(minute_bars) >= 30 else minute_bars
+    
+    if not recent_bars:
+        return 50.0
+    
+    above_vwap_count = sum(1 for bar in recent_bars if bar.get('c', 0) >= vwap_val)
+    return (above_vwap_count / len(recent_bars)) * 100.0
+
+def relvol_tod_sustain_min(relvol_series: List[float], threshold: float = 2.0) -> int:
+    """
+    Calculate rolling minutes meeting relvol_tod >= threshold
+    
+    Args:
+        relvol_series: List of relative volume ratios
+        threshold: Minimum RelVol threshold
+    
+    Returns:
+        Number of recent consecutive minutes meeting threshold
+    """
+    if not relvol_series:
+        return 0
+    
+    # Count recent consecutive minutes meeting threshold
+    count = 0
+    for relvol in reversed(relvol_series):
+        if relvol >= threshold:
+            count += 1
+        else:
+            break
+    
+    return count
+
+def value_traded_usd(price: float, volume: float) -> float:
+    """Calculate value traded in USD"""
+    return price * volume
+
+def delta_oi_calls_frac(atm_call_oi: float, atm_call_oi_1d: float) -> float:
+    """
+    Calculate fractional change in ATM call open interest
+    
+    Returns:
+        Fractional change (0.1 = 10% increase)
+    """
+    if atm_call_oi_1d <= 0:
+        return 0.0
+    
+    return (atm_call_oi - atm_call_oi_1d) / atm_call_oi_1d
+
+def float_rotation(volume: float, float_shares: float) -> float:
+    """
+    Calculate float rotation percentage
+    
+    Returns:
+        Percentage of float traded (0.3 = 30% of float)
+    """
+    if float_shares <= 0:
+        return 0.0
+    
+    return volume / float_shares
+
+def squeeze_friction(short_interest_pct: float, borrow_fee: float, utilization: float) -> float:
+    """
+    Calculate squeeze friction index
+    
+    Returns:
+        Composite friction score (0-100)
+    """
+    # Weight components
+    short_weight = min(100, short_interest_pct * 2)  # Double weight short interest
+    borrow_weight = min(100, borrow_fee * 10)  # Scale borrow fee
+    util_weight = utilization  # Already 0-100
+    
+    # Weighted average
+    return (short_weight * 0.4 + borrow_weight * 0.3 + util_weight * 0.3)
+
+def gamma_pressure(call_volume: float, put_volume: float, spot_price: float, strike: float) -> float:
+    """
+    Calculate gamma pressure from options activity
+    
+    Returns:
+        Gamma pressure score (0-100)
+    """
+    if put_volume <= 0:
+        return 0.0
+    
+    call_put_ratio = call_volume / put_volume
+    
+    # Distance from strike (ATM = highest gamma)
+    moneyness = abs(spot_price - strike) / spot_price
+    atm_factor = max(0, 1 - moneyness * 10)  # Decay quickly away from ATM
+    
+    # Scale by call/put ratio and ATM factor
+    pressure = min(100, call_put_ratio * atm_factor * 50)
+    
+    return pressure
+
 def bollinger_bands(prices: List[float], period: int = 20, std_dev: float = 2.0) -> Dict[str, Optional[float]]:
     """
     Calculate Bollinger Bands

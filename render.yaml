@@ -43,6 +43,8 @@ services:
         value: INFO
       - key: DISCOVERY_CACHE_TTL
         value: "60"
+      - key: ADMIN_TOKEN
+        sync: false
     
     healthCheckPath: /health
     autoDeploy: true
@@ -110,6 +112,26 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+
+  # Discovery Cron Job
+  - type: cron
+    name: amc-discovery
+    env: docker
+    dockerfilePath: ./Dockerfile
+    schedule: "*/5 * * * 1-5"
+    dockerCommand: sh ./backend/run_discovery.sh
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: amc-redis
+          property: connectionString
+      - key: POLYGON_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
 
   # Redis service (moved from databases section)
   - type: redis

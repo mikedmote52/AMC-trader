@@ -145,3 +145,17 @@ async def trigger_test_events():
     await emit_candidate_update()
     await emit_explosive_update()
     await emit_telemetry_update()
+
+# Cache update event emission
+async def emit_cache_update(event: str = "candidate"):
+    """Emit cache update event after successful discovery run"""
+    try:
+        await sio.emit(event, {
+            'type': f'{event}_cache_update',
+            'ts': datetime.now().isoformat(),
+            'source': 'discovery_cache'
+        })
+        logger.info(f"Emitted cache update event: {event}")
+    except Exception as e:
+        logger.error(f"Failed to emit cache update event: {e}")
+        # Non-blocking - continue execution

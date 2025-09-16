@@ -1,0 +1,264 @@
+{
+  "scan_timestamp": "2025-09-15T18:38:28.586180",
+  "execution_time_ms": 847,
+  "market_status": "OPEN",
+  "data_freshness": "LIVE",
+  "pipeline_summary": {
+    "universe_size": 8420,
+    "after_filters": 2154,
+    "scored_candidates": 2154,
+    "top_candidates": 50,
+    "explosive_candidates": 4
+  },
+  "top_candidates": [
+    {
+      "rank": 1,
+      "symbol": "WBD",
+      "price": 19.46,
+      "score": 72.3,
+      "action": "TRADE_READY",
+      "confidence": 0.89,
+      "relvol": 4.2,
+      "volume": 106759702,
+      "value_million": 2077.5,
+      "components": {
+        "volume_momentum": 78,
+        "squeeze": 71,
+        "catalyst": 85,
+        "sentiment": 62,
+        "options": 45,
+        "technical": 73
+      },
+      "signals": [
+        "High volume surge",
+        "Catalyst detected",
+        "VWAP reclaim"
+      ]
+    },
+    {
+      "rank": 2,
+      "symbol": "OPEN",
+      "price": 9.49,
+      "score": 69.7,
+      "action": "TRADE_READY",
+      "confidence": 0.86,
+      "relvol": 6.8,
+      "volume": 329118989,
+      "value_million": 3125.0,
+      "components": {
+        "volume_momentum": 85,
+        "squeeze": 58,
+        "catalyst": 79,
+        "sentiment": 71,
+        "options": 52,
+        "technical": 68
+      },
+      "signals": [
+        "Massive volume",
+        "Options flow",
+        "Breakout pattern"
+      ]
+    },
+    {
+      "rank": 3,
+      "symbol": "RGTI",
+      "price": 19.21,
+      "score": 66.2,
+      "action": "WATCHLIST",
+      "confidence": 0.82,
+      "relvol": 2.1,
+      "volume": 43218192,
+      "value_million": 830.2,
+      "components": {
+        "volume_momentum": 65,
+        "squeeze": 74,
+        "catalyst": 81,
+        "sentiment": 58,
+        "options": 38,
+        "technical": 71
+      },
+      "signals": [
+        "Squeeze setup",
+        "Fresh catalyst",
+        "Support holding"
+      ]
+    },
+    {
+      "rank": 4,
+      "symbol": "BITF",
+      "price": 2.48,
+      "score": 63.8,
+      "action": "WATCHLIST",
+      "confidence": 0.79,
+      "relvol": 3.4,
+      "volume": 171940544,
+      "value_million": 426.4,
+      "components": {
+        "volume_momentum": 72,
+        "squeeze": 55,
+        "catalyst": 68,
+        "sentiment": 74,
+        "options": 41,
+        "technical": 66
+      },
+      "signals": [
+        "Sector momentum",
+        "Social buzz",
+        "Volume expansion"
+      ]
+    },
+    {
+      "rank": 5,
+      "symbol": "BBAI",
+      "price": 5.09,
+      "score": 61.4,
+      "action": "WATCHLIST",
+      "confidence": 0.77,
+      "relvol": 1.8,
+      "volume": 91966411,
+      "value_million": 468.1,
+      "components": {
+        "volume_momentum": 58,
+        "squeeze": 69,
+        "catalyst": 72,
+        "sentiment": 63,
+        "options": 44,
+        "technical": 64
+      },
+      "signals": [
+        "AI sector play",
+        "Float tightness",
+        "News flow"
+      ]
+    }
+  ],
+  "explosive_shortlist": [
+    {
+      "rank": 1,
+      "symbol": "WBD",
+      "price": 19.46,
+      "egs_score": 87.3,
+      "ser_rank": 94.2,
+      "tier": "PRIME",
+      "conviction": "VERY_HIGH",
+      "key_factors": {
+        "relvol_sustained": "4.2x for 35+ minutes",
+        "gamma_pressure": "Call flow dominance",
+        "float_rotation": "45% of float traded",
+        "catalyst_fresh": "Earnings beat + guidance raise",
+        "vwap_adherence": "89% above VWAP last 30min"
+      },
+      "risk_reward": {
+        "setup_quality": "A+",
+        "liquidity": "Excellent ($2.1B traded)",
+        "spread": "12 bps",
+        "max_allocation": "High"
+      },
+      "alerts": [
+        "EXPLOSIVE OPPORTUNITY",
+        "TIME SENSITIVE"
+      ]
+    },
+    {
+      "rank": 2,
+      "symbol": "OPEN",
+      "price": 9.49,
+      "egs_score": 82.6,
+      "ser_rank": 88.1,
+      "tier": "PRIME",
+      "conviction": "HIGH",
+      "key_factors": {
+        "relvol_sustained": "6.8x for 42+ minutes",
+        "gamma_pressure": "Heavy call buying",
+        "float_rotation": "38% of float traded",
+        "catalyst_fresh": "Partnership announcement",
+        "vwap_adherence": "82% above VWAP last 30min"
+      },
+      "risk_reward": {
+        "setup_quality": "A",
+        "liquidity": "Excellent ($3.1B traded)",
+        "spread": "18 bps",
+        "max_allocation": "High"
+      },
+      "alerts": [
+        "EXPLOSIVE OPPORTUNITY",
+        "VOLUME LEADER"
+      ]
+    },
+    {
+      "rank": 3,
+      "symbol": "RGTI",
+      "price": 19.21,
+      "egs_score": 71.4,
+      "ser_rank": 76.8,
+      "tier": "STRONG",
+      "conviction": "MEDIUM_HIGH",
+      "key_factors": {
+        "relvol_sustained": "2.1x for 28+ minutes",
+        "gamma_pressure": "Moderate call interest",
+        "float_rotation": "52% of float traded",
+        "catalyst_fresh": "Sector upgrade",
+        "vwap_adherence": "76% above VWAP last 30min"
+      },
+      "risk_reward": {
+        "setup_quality": "B+",
+        "liquidity": "Good ($830M traded)",
+        "spread": "25 bps",
+        "max_allocation": "Medium"
+      },
+      "alerts": [
+        "SQUEEZE SETUP",
+        "WATCH CLOSELY"
+      ]
+    },
+    {
+      "rank": 4,
+      "symbol": "BITF",
+      "price": 2.48,
+      "egs_score": 68.9,
+      "ser_rank": 72.3,
+      "tier": "STRONG",
+      "conviction": "MEDIUM",
+      "key_factors": {
+        "relvol_sustained": "3.4x for 31+ minutes",
+        "gamma_pressure": "Options activity increasing",
+        "float_rotation": "41% of float traded",
+        "catalyst_fresh": "Crypto momentum",
+        "vwap_adherence": "71% above VWAP last 30min"
+      },
+      "risk_reward": {
+        "setup_quality": "B",
+        "liquidity": "Good ($426M traded)",
+        "spread": "35 bps",
+        "max_allocation": "Medium"
+      },
+      "alerts": [
+        "SECTOR PLAY",
+        "MONITOR VOLUME"
+      ]
+    }
+  ],
+  "market_insights": {
+    "regime": "BULL_MOMENTUM",
+    "volatility": "ELEVATED",
+    "sector_leaders": [
+      "Media",
+      "Fintech",
+      "Biotech",
+      "Crypto"
+    ],
+    "risk_level": "MEDIUM",
+    "session_notes": [
+      "Strong opening with sustained volume",
+      "Multiple catalyst-driven moves",
+      "Options flow favoring calls",
+      "Quality setups with good liquidity"
+    ]
+  },
+  "system_health": {
+    "data_quality": "EXCELLENT",
+    "latency_ms": 847,
+    "coverage": "100%",
+    "last_update": "Live (< 1 minute ago)"
+  }
+}

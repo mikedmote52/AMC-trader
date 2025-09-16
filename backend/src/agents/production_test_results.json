@@ -1,0 +1,43 @@
+{
+  "test_type": "production_live_test",
+  "timestamp": "2025-09-15T12:12:46.454261",
+  "market_open": false,
+  "execution_time_sec": 0.792178,
+  "pipeline_stats": {
+    "universe_size": 3033,
+    "enriched": 3033,
+    "filtered": 2854,
+    "scored": 2854
+  },
+  "candidate_count": 50,
+  "telemetry": {
+    "data_coverage": {
+      "options_data": 0.0,
+      "short_data": 0.0,
+      "social_data": 0.0,
+      "catalyst_data": 0.0,
+      "technical_data": 100.0,
+      "overall_enrichment": 20.0
+    },
+    "scoring_metrics": {
+      "min_score": 38.62309480930432,
+      "max_score": 46.5118448093044,
+      "avg_score": 38.70975173631743,
+      "trade_ready_count": 0,
+      "watchlist_count": 0,
+      "monitor_count": 2854
+    },
+    "production_health": {
+      "stale_data_detected": false,
+      "market_open": false,
+      "system_timestamp": "2025-09-15T19:12:46.371276"
+    }
+  },
+  "action_tag_distribution": {
+    "monitor": 50
+  },
+  "system_metadata": {
+    "schema_version": "4.1",
+    "algorithm_version": "alphastack_4.1_enhanced"
+  }
+}

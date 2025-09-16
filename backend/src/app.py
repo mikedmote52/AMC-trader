@@ -15,6 +15,7 @@ from fastapi.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from backend.src.routes.trades import router as trades_router
 from backend.src.routes.debug_polygon import router as polygon_debug
+from backend.src.routes.discovery_admin import router as discovery_admin_router
 
 # Trace v3 constants
 APP_TAG    = "trace_v3"
@@ -237,6 +238,7 @@ from backend.src.routes import thesis_monitor as thesis_monitor_routes
 # Enhanced discovery system - single unified system
 app.include_router(discovery_routes.router, prefix="/api/discovery", tags=["discovery"])
 app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery"])
+app.include_router(discovery_admin_router, prefix="", tags=["discovery-admin"])
 # Calibration routes removed - unified BMS system
 app.include_router(advanced_ranking_routes.router, prefix="/advanced-ranking", tags=["advanced-ranking"])
 app.include_router(portfolio_routes.router, prefix="/portfolio", tags=["portfolio"])
