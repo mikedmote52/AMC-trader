@@ -20,12 +20,11 @@ router = APIRouter()
 async def run_discovery_inline() -> Dict[str, Any]:
     """Run discovery job inline and return summary"""
     try:
-        # Import the discovery module
-        from backend.src.jobs.discover_no_fallback import NoFallbackDiscovery
+        # Import the discovery function
+        from backend.src.jobs.discover_no_fallback import select_candidates
 
-        # Create and run discovery system
-        discovery = NoFallbackDiscovery()
-        candidates, trace = await discovery.run_discovery(limit=50)
+        # Run discovery and get candidates
+        candidates, trace = await select_candidates(limit=50, with_trace=True)
 
         # Check what was written to cache
         redis_client = redis.from_url(os.getenv('REDIS_URL'))
