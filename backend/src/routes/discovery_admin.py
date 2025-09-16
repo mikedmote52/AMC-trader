@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import asyncio
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -26,17 +27,30 @@ async def run_discovery_inline() -> Dict[str, Any]:
         # Run discovery and get candidates
         candidates, trace = await select_candidates(limit=50, with_trace=True)
 
-        # Check what was written to cache
+        # Manually write candidates to Redis cache
         redis_client = redis.from_url(os.getenv('REDIS_URL'))
-        cache_data = await redis_client.get(CACHE_KEY_CONTENDERS)
+
+        if candidates:
+            # Create cache payload matching expected format
+            cache_payload = {
+                'timestamp': int(datetime.now().timestamp()),
+                'iso_timestamp': datetime.now().isoformat(),
+                'count': len(candidates),
+                'candidates': candidates,
+                'engine': 'NoFallbackDiscovery',
+                'trace': trace
+            }
+
+            # Store in cache with 600s TTL (10 minutes)
+            await redis_client.setex(CACHE_KEY_CONTENDERS, 600, json.dumps(cache_payload))
+            logger.info(f"✅ Stored {len(candidates)} candidates in Redis cache")
+            written = len(candidates)
+        else:
+            written = 0
+
+        # Check TTL
         ttl = await redis_client.ttl(CACHE_KEY_CONTENDERS)
         await redis_client.close()
-
-        if cache_data:
-            payload = json.loads(cache_data)
-            written = payload.get('count', 0)
-        else:
-            written = len(candidates) if candidates else 0
 
         # Emit socket event on successful cache update
         if written > 0:
