@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import TradeModal from "./TradeModal";
-import { API_BASE } from '../config';
+import { fetchContenders } from '../lib/api';
 
 type Rec = { 
   symbol?: string; 
@@ -61,16 +61,14 @@ export default function BuyNow() {
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
 
-  async function load() { 
-    try { 
-      const r = await fetch(`${API_BASE}/discovery/contenders`); 
-      if (!r.ok) throw new Error(`HTTP ${r.status}`); 
-      const data = await r.json(); 
+  async function load() {
+    try {
+      const contenders = await fetchContenders();
       // Handle both direct array and object with items
-      const items = Array.isArray(data) ? data : (data?.items || []);
-      setRecs(items); 
+      const items = Array.isArray(contenders) ? contenders : (contenders?.items || []);
+      setRecs(items);
       setError(null);
-    } catch (e: any) { 
+    } catch (e: any) {
       setError(e?.message || "Failed to load");
     }
   }

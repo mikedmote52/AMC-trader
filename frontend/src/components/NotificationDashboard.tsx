@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { API_BASE } from "../config";
 import { getJSON } from "../lib/api";
+import { fetchContenders } from "../lib/api";
 import DailyBriefCard from "./DailyBriefCard";
 import LiveRecommendationsPanel from "./LiveRecommendationsPanel";
 import MarketPulseSection from "./MarketPulseSection";
@@ -67,7 +68,7 @@ export default function NotificationDashboard() {
       // Fetch real data from actual API endpoints
       const [portfolioData, recommendationsData] = await Promise.all([
         getJSON(`${API_BASE}/portfolio/holdings`).catch(() => ({ data: { summary: {} } })),
-        getJSON(`${API_BASE}/discovery/contenders`).catch(() => [])
+        fetchContenders().catch(() => [])
       ]);
 
       // Use real portfolio data for daily brief

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { API_BASE } from "../config";
 import { getJSON } from "../lib/api";
+import { fetchContenders } from "../lib/api";
 import TradeModal from "./TradeModal";
 import PortfolioSummary from "./PortfolioSummary";
 
@@ -47,7 +48,7 @@ export default function Holdings() {
       
       // Fetch contenders separately with timeout handling (non-critical)
       try {
-        const contendersData = await getJSON<any>(`${API_BASE}/discovery/contenders`);
+        const contendersData = await fetchContenders();
         setContenders(Array.isArray(contendersData) ? contendersData : []);
       } catch (contenderError) {
         console.warn('Failed to load contenders (non-critical):', contenderError);

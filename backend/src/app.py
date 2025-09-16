@@ -101,6 +101,7 @@ async def add_trace_headers(request: Request, call_next):
 origins = [
     "http://localhost:5173",  # Vite dev server
     "https://amc-frontend.onrender.com",  # Production frontend
+    "https://www.amc-frontend.onrender.com",  # Production frontend with www
 ]
 
 app.add_middleware(

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { API_BASE } from "../config";
-import { getJSON } from "../lib/api";
+import { fetchContenders, type Candidate } from "../lib/api";
 import TradeModal from "./TradeModal";
 
 type Recommendation = {
@@ -22,7 +21,7 @@ export default function TopRecommendations() {
   useEffect(() => {
     const loadRecommendations = async () => {
       try {
-        const data = await getJSON(`${API_BASE}/discovery/contenders`);
+        const data = await fetchContenders();
         if (Array.isArray(data)) {
           const mapped = data.map((rec: any) => {
             const currentPrice = rec.price || rec.current_price || 0;
