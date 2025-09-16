@@ -28,7 +28,7 @@ async def run_enhanced_discovery(limit: int = Query(50, le=500), trace: bool = Q
         
         # Import unified discovery job
         try:
-            from jobs.discovery_job import run_discovery_job
+            from backend.src.jobs.discovery_job import run_discovery_job
         except ImportError as e:
             logger.error(f"Failed to import unified discovery: {e}")
             return {
@@ -117,7 +117,7 @@ async def emergency_populate_cache(limit: int = Query(DEFAULT_LIMIT, le=100)):
         
         try:
             # Import unified discovery job
-            from jobs.discovery_job import run_discovery_job
+            from backend.src.jobs.discovery_job import run_discovery_job
             result = await run_discovery_job(limit)
             
             if result.get('status') == 'success':

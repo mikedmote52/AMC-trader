@@ -48,7 +48,7 @@ async def get_contenders(limit: int = 50) -> Dict[str, Any]:
         logger.info("Cache miss, running fresh AlphaStack 4.1 discovery")
         
         try:
-            from jobs.discovery_job import run_discovery_job
+            from backend.src.jobs.discovery_job import run_discovery_job
             result = await run_discovery_job(limit)
             
             if result['status'] == 'success':
