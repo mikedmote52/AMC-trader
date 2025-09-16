@@ -23,9 +23,49 @@ export type Candidate = {
 };
 
 export async function fetchContenders(signal?: AbortSignal): Promise<Candidate[]> {
-  const res = await fetch(api("/discovery/contenders"), { signal });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  // Try new endpoint first, fallback to emergency populate if not available
+  try {
+    const res = await fetch(api("/discovery/contenders"), { signal });
+    if (res.ok) {
+      const data = await res.json();
+      // Handle both response formats
+      if (data.success && Array.isArray(data.data)) {
+        return data.data;
+      }
+      return Array.isArray(data) ? data : [];
+    }
+  } catch (e) {
+    console.warn("Primary endpoint failed, trying emergency populate:", e);
+  }
+
+  // Fallback: try to populate cache and get results
+  try {
+    await fetch(api("/discovery/emergency/populate-cache"), {
+      method: "POST",
+      signal
+    });
+
+    // Wait a moment for cache to populate
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Try emergency enhanced discovery
+    const res = await fetch(api("/discovery/emergency/enhanced-discovery"), {
+      method: "POST",
+      signal
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.candidates && Array.isArray(data.candidates)) {
+        return data.candidates;
+      }
+    }
+  } catch (e) {
+    console.warn("Emergency endpoints failed:", e);
+  }
+
+  // Last resort: return empty array to prevent UI crash
+  return [];
 }
 
 export async function ping(): Promise<boolean> {
