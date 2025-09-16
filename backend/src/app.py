@@ -209,6 +209,14 @@ async def health():
 app.include_router(trades_router)
 app.include_router(polygon_debug, prefix="/debug")
 
+# Include AlphaStack 4.1 API
+from backend.src.routes.alphastack import router as alphastack_router
+app.include_router(alphastack_router, prefix="/v1", tags=["alphastack"])
+
+# Mount Socket.IO for real-time WebSocket streaming
+from backend.src.sockets import sockets_app
+app.mount("/v1/stream", sockets_app)
+
 # Include discovery (enhanced only), portfolio, learning, daily updates, thesis, analytics, and pattern memory routers  
 from backend.src.routes import discovery_unified as discovery_routes
 from backend.src.routes import portfolio as portfolio_routes

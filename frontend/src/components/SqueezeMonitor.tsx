@@ -1,36 +1,47 @@
-import React, { useState } from "react";
-// AlphaStack 4.1 Integration
+import React, { useState, useEffect, useRef } from "react";
+import { io, Socket } from "socket.io-client";
 import SqueezeAlert from "./SqueezeAlert";
 import PatternHistory from "./PatternHistory";
-import { useAlphaStackLive } from "../hooks/useAlphaStackLive";
-import { mapList, filterByAction, sortByScore, SqueezeOpportunity } from "../lib/alphastack-adapter";
+import { API_BASE, WS_URL } from "../config";
 
-interface SqueezeMonitorProps {
-  watchedSymbols?: string[];
-  showPatternHistory?: boolean;
+// AlphaStack 4.1 Candidate Interface
+interface Candidate {
+  symbol: string;
+  ticker?: string;
+  total_score?: number;
+  score?: number;
+  action_tag?: string;
+  price?: number;
+  snapshot?: {
+    price?: number;
+    intraday_relvol?: number;
+  };
+  entry?: number;
+  stop?: number;
+  tp1?: number;
+  tp2?: number;
 }
 
-interface PortfolioAction {
-  type: 'immediate' | 'trim' | 'add' | 'stop_loss';
-  symbol?: string;
-  action: string;
-  priority?: number;
-  urgency?: string;
+interface Telemetry {
+  schema_version?: string;
+  system_health?: {
+    system_ready: boolean;
+  };
+  production_health?: {
+    stale_data_detected: boolean;
+  };
 }
 
-// System Status Pill Component
-function SystemStatusPill({ telemetry, safeToTrade }: { telemetry: any; safeToTrade: boolean }) {
-  const getStatusColor = () => {
-    if (!telemetry?.system_health?.system_ready) return '#ef4444'; // Red
-    if (telemetry?.production_health?.stale_data_detected) return '#f59e0b'; // Yellow
-    return '#22c55e'; // Green
+// Status Pill Component
+function StatusPill({ telemetry, loading }: { telemetry: Telemetry | null; loading: boolean }) {
+  const getStatus = () => {
+    if (loading) return { color: '#6b7280', text: 'Loading...' }; // Gray
+    if (!telemetry?.system_health?.system_ready) return { color: '#ef4444', text: 'System Offline' }; // Red
+    if (telemetry?.production_health?.stale_data_detected) return { color: '#f59e0b', text: 'Stale Data' }; // Yellow
+    return { color: '#22c55e', text: 'Live' }; // Green
   };
 
-  const getStatusText = () => {
-    if (!telemetry?.system_health?.system_ready) return 'System Offline';
-    if (telemetry?.production_health?.stale_data_detected) return 'Stale Data';
-    return 'System Ready';
-  };
+  const status = getStatus();
 
   return (
     <div style={{
@@ -39,294 +50,264 @@ function SystemStatusPill({ telemetry, safeToTrade }: { telemetry: any; safeToTr
       gap: '6px',
       padding: '4px 12px',
       borderRadius: '16px',
-      background: getStatusColor(),
+      background: status.color,
       color: '#000',
       fontSize: '12px',
-      fontWeight: 600,
-      textTransform: 'uppercase',
-      letterSpacing: '0.5px'
+      fontWeight: 600
     }}>
-      <div style={{
-        width: '6px',
-        height: '6px',
-        borderRadius: '50%',
-        background: '#000'
-      }} />
-      {getStatusText()}
+      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#000' }} />
+      {status.text}
     </div>
   );
 }
 
-export default function SqueezeMonitor({
-  watchedSymbols = [],
-  showPatternHistory = true
-}: SqueezeMonitorProps) {
-  const { top, explosive, telemetry, safeToTrade, loading, error } = useAlphaStackLive();
-
-  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+export default function SqueezeMonitor() {
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [explosive, setExplosive] = useState<Candidate[]>([]);
+  const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
-  const [portfolioActions] = useState<PortfolioAction[]>([]);
+  const socketRef = useRef<Socket | null>(null);
 
-  // Convert AlphaStack data to UI format
-  const uiTop = sortByScore(mapList(top?.items ?? []));
-  const uiExplosive = sortByScore(mapList(explosive?.explosive_top ?? []));
+  // Check if safe to trade
+  const safeToTrade = telemetry?.system_health?.system_ready === true &&
+                      telemetry?.production_health?.stale_data_detected === false;
 
-  // Filter by watched symbols if specified
-  const filteredTop = watchedSymbols.length > 0
-    ? uiTop.filter(opp => watchedSymbols.includes(opp.symbol))
-    : uiTop;
+  // Fetch all data
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      setError("");
 
-  const filteredExplosive = watchedSymbols.length > 0
-    ? uiExplosive.filter(opp => watchedSymbols.includes(opp.symbol))
-    : uiExplosive;
+      // Fetch all endpoints in parallel
+      const [candidatesRes, explosiveRes, telemetryRes] = await Promise.all([
+        fetch(`${API_BASE}/v1/candidates/top?limit=50`, { cache: 'no-store' }),
+        fetch(`${API_BASE}/v1/explosive`, { cache: 'no-store' }),
+        fetch(`${API_BASE}/v1/telemetry`, { cache: 'no-store' })
+      ]);
 
-  // Categorize opportunities by action
-  const allOpportunities = [...filteredTop, ...filteredExplosive];
-  const critical = filterByAction(allOpportunities, 'trade_ready');
-  const developing = filterByAction(allOpportunities, 'watchlist');
-  const early = allOpportunities.filter(opp =>
-    opp.action !== 'trade_ready' && opp.action !== 'watchlist'
-  );
+      const candidatesData = candidatesRes.ok ? await candidatesRes.json() : { items: [] };
+      const explosiveData = explosiveRes.ok ? await explosiveRes.json() : { explosive_top: [] };
+      const telemetryData = telemetryRes.ok ? await telemetryRes.json() : null;
 
-  const handleSignificantMove = (symbol: string, changePercent: number) => {
-    console.log(`Significant move detected: ${symbol} ${changePercent.toFixed(2)}%`);
-
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      new Notification(`${symbol} Alert`, {
-        body: `Significant move: ${changePercent.toFixed(2)}%`,
-        icon: '/favicon.ico'
-      });
+      setCandidates(candidatesData.items || []);
+      setExplosive(explosiveData.explosive_top || []);
+      setTelemetry(telemetryData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load data");
+      console.error("AlphaStack fetch error:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (error) {
-    return (
-      <div style={containerStyle}>
-        <div style={{
-          padding: '24px',
-          background: '#2d1b1b',
-          border: '1px solid #ef4444',
-          borderRadius: '12px',
-          color: '#ef4444',
-          textAlign: 'center'
-        }}>
-          <div style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>
-            ⚠️ AlphaStack Connection Error
-          </div>
-          <div style={{ fontSize: '14px', color: '#ccc' }}>
-            {error}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Place order
+  const placeOrder = async (ticker: string) => {
+    try {
+      const payload = {
+        ticker,
+        side: "buy",
+        type: "market",
+        qty: 1,
+        timeInForce: "day",
+        accountMode: "paper",
+        clientId: crypto.randomUUID()
+      };
+
+      const response = await fetch(`${API_BASE}/v1/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Order failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log("Order placed:", result);
+      alert(`Paper order placed for ${ticker}`);
+    } catch (err) {
+      console.error("Order error:", err);
+      alert(`Failed to place order: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  // Initialize WebSocket
+  useEffect(() => {
+    // Initial fetch
+    fetchData();
+
+    // Setup WebSocket
+    const socket = io(WS_URL, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 2000
+    });
+
+    socket.on('connect', () => console.log('AlphaStack WebSocket connected'));
+    socket.on('candidate', () => fetchData());
+    socket.on('explosive', () => fetchData());
+    socket.on('telemetry', () => fetchData());
+
+    socketRef.current = socket;
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  // Normalize candidate data with safety guards
+  const normalizeCandidate = (c: Candidate) => {
+    const raw = (c.total_score ?? c.score ?? 0);
+    const scorePct = raw <= 1 ? raw * 100 : raw;
+    return {
+      symbol: c.symbol || c.ticker || 'UNKNOWN',
+      score: scorePct,
+      action_tag: c.action_tag || 'MONITOR',
+      price: c.price || c.snapshot?.price || 0,
+      relvol: c.snapshot?.intraday_relvol || 0,
+      entry: c.entry,
+      stop: c.stop,
+      tp1: c.tp1,
+      tp2: c.tp2
+    };
+  };
+
+  // Combine and de-duplicate candidates
+  const allCandidates = Array.from(
+    new Map([...candidates, ...explosive].map(c => {
+      const n = normalizeCandidate(c);
+      return [n.symbol, n]; // last write wins
+    })).values()
+  );
+
+  const tradeReady = allCandidates.filter(c => c.action_tag === 'trade_ready');
+  const watchlist = allCandidates.filter(c => c.action_tag === 'watchlist');
+  const others = allCandidates.filter(c => c.action_tag !== 'trade_ready' && c.action_tag !== 'watchlist');
 
   return (
     <div style={containerStyle}>
-      {/* Header with Status */}
+      {/* Header */}
       <div style={headerStyle}>
-        <div style={titleContainerStyle}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <h1 style={titleStyle}>🔍 Squeeze Monitor</h1>
-            <SystemStatusPill telemetry={telemetry} safeToTrade={safeToTrade} />
-          </div>
-          <p style={subtitleStyle}>
-            AlphaStack 4.1 Discovery • Schema: {telemetry?.schema_version || 'Unknown'}
-          </p>
-        </div>
-
-        {loading && (
-          <div style={{
-            padding: '8px 16px',
-            background: '#1a1a1a',
-            border: '1px solid #333',
-            borderRadius: '8px',
-            color: '#ccc',
-            fontSize: '14px'
-          }}>
-            Loading...
-          </div>
-        )}
-      </div>
-
-      {/* Critical Opportunities (Trade Ready) */}
-      {critical.length > 0 && (
-        <div style={sectionStyle}>
-          <div style={sectionTitleStyle}>🚀 Critical Opportunities ({critical.length})</div>
-          <div style={alertsContainerStyle}>
-            {critical.slice(0, 6).map((opportunity, index) => (
-              <SqueezeAlert
-                key={`critical-${opportunity.symbol}-${index}`}
-                symbol={opportunity.symbol}
-                score={opportunity.squeeze_score * 100} // Convert to percentage
-                pattern={opportunity.pattern_type || 'STRONG_BUY'}
-                price={opportunity.price || 0}
-                volume={opportunity.volume_spike || 0}
-                onTrade={() => handleSignificantMove(opportunity.symbol, 5.0)}
-                disabled={!safeToTrade || opportunity.action !== 'trade_ready'}
-              />
-            ))}
+        <div>
+          <h1 style={titleStyle}>🔍 Squeeze Monitor</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
+            <StatusPill telemetry={telemetry} loading={loading} />
+            <span style={{ fontSize: '14px', color: '#999' }}>
+              AlphaStack {telemetry?.schema_version || 'Unknown'}
+            </span>
           </div>
         </div>
-      )}
-
-      {/* Developing Opportunities (Watchlist) */}
-      {developing.length > 0 && (
-        <div style={sectionStyle}>
-          <div style={sectionTitleStyle}>📈 Developing Opportunities ({developing.length})</div>
-          <div style={alertsContainerStyle}>
-            {developing.slice(0, 6).map((opportunity, index) => (
-              <SqueezeAlert
-                key={`developing-${opportunity.symbol}-${index}`}
-                symbol={opportunity.symbol}
-                score={opportunity.squeeze_score * 100}
-                pattern={opportunity.pattern_type || 'WATCH'}
-                price={opportunity.price || 0}
-                volume={opportunity.volume_spike || 0}
-                onTrade={() => handleSignificantMove(opportunity.symbol, 3.0)}
-                disabled={!safeToTrade || opportunity.action !== 'trade_ready'}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Early Stage Opportunities */}
-      {early.length > 0 && (
-        <div style={sectionStyle}>
-          <div style={sectionTitleStyle}>🔍 Early Stage ({early.length})</div>
-          <div style={alertsContainerStyle}>
-            {early.slice(0, 6).map((opportunity, index) => (
-              <SqueezeAlert
-                key={`early-${opportunity.symbol}-${index}`}
-                symbol={opportunity.symbol}
-                score={opportunity.squeeze_score * 100}
-                pattern={opportunity.pattern_type || 'MONITOR'}
-                price={opportunity.price || 0}
-                volume={opportunity.volume_spike || 0}
-                onTrade={() => handleSignificantMove(opportunity.symbol, 2.0)}
-                disabled={true} // Early stage always disabled
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Active Monitoring Summary */}
-      <div style={sectionStyle}>
-        <div style={sectionTitleStyle}>📊 Active Monitoring ({allOpportunities.length} symbols)</div>
-        <div style={summaryContainerStyle}>
-          {allOpportunities.slice(0, 6).map((opportunity, index) => (
-            <div key={`summary-${opportunity.symbol}-${index}`} style={summaryCardStyle}>
-              <div style={symbolHeaderStyle}>
-                <span style={symbolTextStyle}>{opportunity.symbol}</span>
-                <span style={{
-                  fontSize: '12px',
-                  color: opportunity.action === 'trade_ready' ? '#22c55e' : '#f59e0b',
-                  fontWeight: 600
-                }}>
-                  {opportunity.action?.toUpperCase() || 'MONITOR'}
-                </span>
-              </div>
-              <span style={scoreTextStyle}>
-                Score: {(opportunity.squeeze_score * 100).toFixed(0)}% | {opportunity.action || 'EVAL'}
-              </span>
-            </div>
-          ))}
-          {allOpportunities.length > 6 && (
-            <div style={{
-              ...summaryCardStyle,
-              justifyContent: 'center',
-              alignItems: 'center',
-              color: '#999',
-              fontStyle: 'italic'
-            }}>
-              +{allOpportunities.length - 6} more symbols being monitored
-            </div>
-          )}
+        <div>
+          <button onClick={fetchData} style={buttonStyle} disabled={loading}>
+            {loading ? 'Loading...' : '🔄 Refresh'}
+          </button>
         </div>
       </div>
 
-      {/* Portfolio Actions */}
-      {portfolioActions.length > 0 && (
-        <div style={sectionStyle}>
-          <div style={sectionTitleStyle}>⚡ Portfolio Actions Required</div>
-          <div style={alertsContainerStyle}>
-            {portfolioActions.map((action, index) => (
-              <div key={`action-${index}`} style={{
-                padding: '16px',
-                background: action.type === 'immediate' ? '#2d1b1b' : '#1a1a1a',
-                border: `1px solid ${action.type === 'immediate' ? '#ef4444' : '#333'}`,
-                borderRadius: '8px',
-                color: '#e7e7e7'
-              }}>
-                <div style={{ fontWeight: 600, marginBottom: '8px' }}>
-                  {action.symbol || 'Portfolio'}: {action.action}
-                </div>
-                {action.urgency && (
-                  <div style={{ fontSize: '12px', color: '#ccc' }}>
-                    Urgency: {action.urgency}
-                  </div>
-                )}
-              </div>
+      {error && (
+        <div style={{ padding: '16px', background: '#2d1b1b', border: '1px solid #ef4444', borderRadius: '8px', color: '#ef4444', marginBottom: '24px' }}>
+          ⚠️ {error}
+        </div>
+      )}
+
+      {/* Trade Ready Candidates */}
+      {tradeReady.length > 0 && (
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>🚀 Trade Ready ({tradeReady.length})</h2>
+          <div style={gridStyle}>
+            {tradeReady.map((c, i) => (
+              <CandidateCard
+                key={`${c.symbol}-${i}`}
+                candidate={c}
+                onBuy={() => placeOrder(c.symbol)}
+                disabled={!safeToTrade}
+              />
             ))}
           </div>
-        </div>
+        </section>
+      )}
+
+      {/* Watchlist */}
+      {watchlist.length > 0 && (
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>📊 Watchlist ({watchlist.length})</h2>
+          <div style={gridStyle}>
+            {watchlist.map((c, i) => (
+              <CandidateCard
+                key={`${c.symbol}-${i}`}
+                candidate={c}
+                onBuy={() => placeOrder(c.symbol)}
+                disabled={true}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Others */}
+      {others.length > 0 && (
+        <section style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>🔍 Monitoring ({others.length})</h2>
+          <div style={gridStyle}>
+            {others.map((c, i) => (
+              <CandidateCard
+                key={`${c.symbol}-${i}`}
+                candidate={c}
+                onBuy={() => placeOrder(c.symbol)}
+                disabled={true}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Pattern History */}
-      {showPatternHistory && (
-        <div style={sectionStyle}>
-          <div style={sectionTitleStyle}>
-            📚 Pattern History
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              style={{
-                marginLeft: '16px',
-                padding: '4px 12px',
-                background: '#333',
-                border: 'none',
-                borderRadius: '6px',
-                color: '#ccc',
-                fontSize: '12px',
-                cursor: 'pointer'
-              }}
-            >
-              {showHistory ? 'Hide' : 'Show'}
-            </button>
-          </div>
-          {showHistory && (
-            <PatternHistory
-              currentSymbol={selectedSymbol || undefined}
-              onSymbolSelect={(pattern: any) => {
-                setSelectedSymbol(pattern.symbol);
-              }}
-            />
-          )}
+      <section style={{ marginTop: '32px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <h2 style={sectionTitleStyle}>📚 Pattern History</h2>
+          <button onClick={() => setShowHistory(!showHistory)} style={{ ...buttonStyle, padding: '4px 12px', fontSize: '12px' }}>
+            {showHistory ? 'Hide' : 'Show'}
+          </button>
         </div>
-      )}
+        {showHistory && <PatternHistory />}
+      </section>
+    </div>
+  );
+}
 
-      {/* System Info Footer */}
-      <div style={footerStyle}>
-        <div style={footerItemStyle}>
-          <div>AlphaStack 4.1 Integration</div>
-          <div style={{ fontSize: '12px', color: '#666' }}>
-            {safeToTrade ? '✅ Safe to Trade' : '⚠️ Trading Restricted'}
-          </div>
-        </div>
-        <div style={footerItemStyle}>
-          <div>Total Candidates: {allOpportunities.length}</div>
-          <div style={{ fontSize: '12px', color: '#666' }}>
-            Trade Ready: {critical.length} • Watchlist: {developing.length}
-          </div>
-        </div>
-        <div style={footerItemStyle}>
-          <div>Monitoring Scope</div>
-          <div style={{ fontSize: '12px', color: '#666' }}>
-            {watchedSymbols.length > 0 ? `${watchedSymbols.length} symbols` : "All symbols"}
-          </div>
-        </div>
+// Candidate Card Component with safety guards
+function CandidateCard({ candidate, onBuy, disabled }: { candidate: any; onBuy: () => void; disabled: boolean }) {
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <span style={{ fontSize: '18px', fontWeight: 700, color: '#fff' }}>{candidate.symbol}</span>
+        <span style={{ fontSize: '14px', color: '#22c55e' }}>
+          {typeof candidate.price === 'number' ? `$${candidate.price.toFixed(2)}` : '—'}
+        </span>
       </div>
+      <div style={{ fontSize: '12px', color: '#999', marginBottom: '12px' }}>
+        <div>Score: {typeof candidate.score === 'number' ? `${candidate.score.toFixed(1)}%` : 'N/A'}</div>
+        <div>RelVol: {typeof candidate.relvol === 'number' ? `${candidate.relvol.toFixed(1)}x` : 'N/A'}</div>
+        {typeof candidate.entry === 'number' && <div>Entry: ${candidate.entry.toFixed(2)}</div>}
+        {typeof candidate.stop === 'number' && <div>Stop: ${candidate.stop.toFixed(2)}</div>}
+        {typeof candidate.tp1 === 'number' && <div>TP1: ${candidate.tp1.toFixed(2)}</div>}
+      </div>
+      <button
+        onClick={onBuy}
+        disabled={disabled}
+        style={{
+          ...buttonStyle,
+          width: '100%',
+          background: disabled ? '#333' : '#22c55e',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          opacity: disabled ? 0.5 : 1
+        }}
+      >
+        {disabled ? 'Not Available' : 'Buy Paper'}
+      </button>
     </div>
   );
 }
@@ -336,8 +317,8 @@ const containerStyle: React.CSSProperties = {
   fontFamily: "ui-sans-serif, system-ui",
   color: "#e7e7e7",
   background: "#000",
-  minHeight: "calc(100vh - 60px)",
-  padding: "20px 16px",
+  minHeight: "100vh",
+  padding: "20px",
   maxWidth: "1400px",
   margin: "0 auto"
 };
@@ -345,27 +326,25 @@ const containerStyle: React.CSSProperties = {
 const headerStyle: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
-  alignItems: "flex-start",
-  marginBottom: "32px",
-  flexWrap: "wrap",
-  gap: "16px"
-};
-
-const titleContainerStyle: React.CSSProperties = {
-  flex: 1
+  alignItems: "center",
+  marginBottom: "32px"
 };
 
 const titleStyle: React.CSSProperties = {
   fontSize: "32px",
   fontWeight: 700,
-  color: "#fff",
-  marginBottom: "8px"
+  color: "#fff"
 };
 
-const subtitleStyle: React.CSSProperties = {
-  fontSize: "16px",
-  color: "#ccc",
-  fontWeight: 500
+const buttonStyle: React.CSSProperties = {
+  padding: "8px 16px",
+  borderRadius: "8px",
+  border: "none",
+  background: "#333",
+  color: "#fff",
+  fontSize: "14px",
+  fontWeight: 600,
+  cursor: "pointer"
 };
 
 const sectionStyle: React.CSSProperties = {
@@ -373,63 +352,21 @@ const sectionStyle: React.CSSProperties = {
 };
 
 const sectionTitleStyle: React.CSSProperties = {
-  fontSize: "18px",
+  fontSize: "20px",
   fontWeight: 600,
   color: "#fff",
-  marginBottom: "16px",
-  display: "flex",
-  alignItems: "center"
+  marginBottom: "16px"
 };
 
-const alertsContainerStyle: React.CSSProperties = {
+const gridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
   gap: "16px"
 };
 
-const summaryContainerStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-  gap: "12px"
-};
-
-const summaryCardStyle: React.CSSProperties = {
-  padding: "12px",
+const cardStyle: React.CSSProperties = {
+  padding: "16px",
   background: "#111",
   border: "1px solid #333",
-  borderRadius: "8px",
-  display: "flex",
-  flexDirection: "column",
-  gap: "8px"
-};
-
-const symbolHeaderStyle: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center"
-};
-
-const symbolTextStyle: React.CSSProperties = {
-  fontWeight: 600,
-  color: "#fff"
-};
-
-const scoreTextStyle: React.CSSProperties = {
-  fontSize: "12px",
-  color: "#ccc"
-};
-
-const footerStyle: React.CSSProperties = {
-  marginTop: "40px",
-  padding: "24px",
-  background: "#111",
-  border: "1px solid #333",
-  borderRadius: "12px",
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-  gap: "24px"
-};
-
-const footerItemStyle: React.CSSProperties = {
-  textAlign: "center"
+  borderRadius: "12px"
 };
