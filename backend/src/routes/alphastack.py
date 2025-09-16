@@ -1,23 +1,29 @@
 """
 AlphaStack 4.1 API endpoints for AMC-trader backend.
-Provides real data from database tables (no mock payloads).
+Provides real data from Redis cache (matches discovery job output).
 """
 
-from fastapi import APIRouter, Query, Depends, HTTPException
+from fastapi import APIRouter, Query, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
-import asyncio
-import asyncpg
+import redis.asyncio as redis
 import os
 import json
+import logging
+
+from backend.src.constants import CACHE_KEY_CONTENDERS
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 # Pydantic models for AlphaStack 4.1 responses
 class CandidateOut(BaseModel):
     symbol: str
+    ticker: str = None  # For compatibility
     total_score: float
+    score: float = None  # For compatibility
     action_tag: Optional[str] = None
     price: Optional[float] = None
     entry: Optional[float] = None
@@ -53,230 +59,178 @@ class TelemetryResp(BaseModel):
     production_health: ProductionHealth
     pipeline_stats: PipelineStats
 
-# Database connection helper
-async def get_db_connection():
-    """Get async database connection."""
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        raise HTTPException(status_code=503, detail="Database not configured")
-
+async def fetch_discovery_cache() -> Dict[str, Any]:
+    """Fetch discovery results from Redis cache"""
     try:
-        conn = await asyncpg.connect(database_url)
-        return conn
+        redis_client = redis.from_url(os.getenv('REDIS_URL'))
+        cache_data = await redis_client.get(CACHE_KEY_CONTENDERS)
+        await redis_client.close()
+
+        if cache_data:
+            try:
+                payload = json.loads(cache_data)
+                logger.info(f"Found cached discovery data: {payload.get('count', 0)} candidates")
+                return payload
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse cache data: {e}")
+                return {}
+        else:
+            logger.warning("No discovery cache data found")
+            return {}
+
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Database connection failed: {str(e)}")
+        logger.error(f"Failed to fetch discovery cache: {e}")
+        return {}
 
-def map_row_to_candidate(row: asyncpg.Record) -> CandidateOut:
-    """Map database row to CandidateOut model."""
-    # Handle both direct columns and JSON payload columns
-    symbol = getattr(row, 'ticker', None) or getattr(row, 'symbol', 'UNKNOWN')
-    score = getattr(row, 'score', 0.0) or 0.0
-
-    # Try to extract price from different possible columns
-    price = None
-    if hasattr(row, 'price') and row.price:
-        price = float(row.price)
-    elif hasattr(row, 'snapshot') and row.snapshot:
-        try:
-            snapshot_data = row.snapshot if isinstance(row.snapshot, dict) else json.loads(row.snapshot)
-            price = snapshot_data.get('price')
-        except:
-            pass
-    elif hasattr(row, 'payload') and row.payload:
-        try:
-            payload_data = row.payload if isinstance(row.payload, dict) else json.loads(row.payload)
-            price = payload_data.get('price')
-        except:
-            pass
-
-    # Extract other fields
-    action_tag = getattr(row, 'action_tag', None)
-    entry = getattr(row, 'entry', None)
-    stop = getattr(row, 'stop', None)
-    tp1 = getattr(row, 'tp1', None)
-    tp2 = getattr(row, 'tp2', None)
-    updated_at = getattr(row, 'updated_at', None)
-
-    # Build snapshot from available data
+def map_candidate_data(candidate: Dict[str, Any]) -> CandidateOut:
+    """Map cached candidate data to CandidateOut model with safety guards"""
     snapshot = {}
-    if hasattr(row, 'snapshot') and row.snapshot:
-        try:
-            snapshot = row.snapshot if isinstance(row.snapshot, dict) else json.loads(row.snapshot)
-        except:
-            pass
-    elif hasattr(row, 'payload') and row.payload:
-        try:
-            snapshot = row.payload if isinstance(row.payload, dict) else json.loads(row.payload)
-        except:
-            pass
 
-    # Add additional fields to snapshot if available
-    if price and 'price' not in snapshot:
-        snapshot['price'] = price
-    if hasattr(row, 'intraday_relvol') and row.intraday_relvol:
-        snapshot['intraday_relvol'] = float(row.intraday_relvol)
+    # Handle various snapshot data formats
+    if isinstance(candidate.get('snapshot'), dict):
+        snapshot = candidate['snapshot']
+    elif candidate.get('relative_volume'):
+        snapshot['intraday_relvol'] = float(candidate['relative_volume'])
+    if candidate.get('volume'):
+        snapshot['volume'] = int(candidate['volume'])
+
+    # Handle price from multiple possible locations
+    price = 0.0
+    if candidate.get('price'):
+        price = float(candidate['price'])
+    elif candidate.get('snapshot', {}).get('price'):
+        price = float(candidate['snapshot']['price'])
+    elif candidate.get('current_price'):
+        price = float(candidate['current_price'])
+
+    # Handle score from multiple possible fields
+    score = 0.0
+    if candidate.get('total_score'):
+        score = float(candidate['total_score'])
+    elif candidate.get('score'):
+        score = float(candidate['score'])
+    elif candidate.get('confidence_score'):
+        score = float(candidate['confidence_score'])
+
+    symbol = candidate.get('symbol', candidate.get('ticker', 'UNKNOWN'))
 
     return CandidateOut(
         symbol=symbol,
-        total_score=float(score) if score else 0.0,
-        action_tag=action_tag,
-        price=float(price) if price else None,
-        entry=float(entry) if entry else None,
-        stop=float(stop) if stop else None,
-        tp1=float(tp1) if tp1 else None,
-        tp2=float(tp2) if tp2 else None,
+        ticker=symbol,  # For compatibility
+        total_score=score,
+        score=score,  # For compatibility
+        action_tag=candidate.get('action_tag', candidate.get('tag', 'MONITOR')),
+        price=price if price > 0 else None,
+        entry=float(candidate['entry']) if candidate.get('entry') else None,
+        stop=float(candidate['stop']) if candidate.get('stop') else None,
+        tp1=float(candidate['tp1']) if candidate.get('tp1') else None,
+        tp2=float(candidate['tp2']) if candidate.get('tp2') else None,
         snapshot=snapshot if snapshot else None,
-        updated_at=updated_at
+        updated_at=None  # Could parse from cache timestamp if needed
     )
 
 @router.get("/candidates/top", response_model=CandidatesResp)
 async def get_top_candidates(limit: int = Query(50, ge=1, le=500)):
-    """Get top candidates from database."""
-    conn = await get_db_connection()
+    """Get top candidates from Redis cache."""
     try:
-        # Try different possible table names and structures
-        candidates = []
+        cache_payload = await fetch_discovery_cache()
 
-        # First try candidates_latest table
-        try:
-            query = """
-            SELECT * FROM candidates_latest
-            ORDER BY score DESC NULLS LAST
-            LIMIT $1
-            """
-            rows = await conn.fetch(query, limit)
-            candidates = [map_row_to_candidate(row) for row in rows]
-        except asyncpg.UndefinedTableError:
-            # Fallback to monitoring.recommendation_tracking
-            try:
-                query = """
-                SELECT
-                    symbol as ticker,
-                    discovery_score as score,
-                    'watchlist' as action_tag,
-                    discovery_price as price,
-                    NULL as entry,
-                    NULL as stop,
-                    NULL as tp1,
-                    NULL as tp2,
-                    NULL as snapshot,
-                    updated_at
-                FROM monitoring.recommendation_tracking
-                WHERE recommendation_date >= NOW() - INTERVAL '24 hours'
-                ORDER BY discovery_score DESC NULLS LAST
-                LIMIT $1
-                """
-                rows = await conn.fetch(query, limit)
-                candidates = [map_row_to_candidate(row) for row in rows]
-            except asyncpg.UndefinedTableError:
-                # No suitable table found, return empty list
-                pass
+        if not cache_payload:
+            logger.warning("No cache data available, returning empty results")
+            return CandidatesResp(items=[])
 
+        candidates_data = cache_payload.get('candidates', [])
+
+        # Apply limit and convert to CandidateOut models
+        limited_candidates = candidates_data[:limit] if candidates_data else []
+        candidates = [map_candidate_data(candidate) for candidate in limited_candidates]
+
+        logger.info(f"Returning {len(candidates)} candidates (requested limit: {limit})")
         return CandidatesResp(items=candidates)
 
-    finally:
-        await conn.close()
+    except Exception as e:
+        logger.error(f"Failed to fetch candidates: {e}")
+        # Return empty but valid response instead of 500 error
+        return CandidatesResp(items=[])
 
 @router.get("/explosive", response_model=ExplosiveResp)
 async def get_explosive_candidates():
-    """Get explosive candidates from database."""
-    conn = await get_db_connection()
+    """Get explosive/high-momentum candidates from cache."""
     try:
-        # Try different possible table names and structures
-        candidates = []
+        cache_payload = await fetch_discovery_cache()
 
-        # First try explosive_latest table
-        try:
-            query = """
-            SELECT * FROM explosive_latest
-            ORDER BY score DESC NULLS LAST
-            """
-            rows = await conn.fetch(query)
-            candidates = [map_row_to_candidate(row) for row in rows]
-        except asyncpg.UndefinedTableError:
-            # Fallback to monitoring.recommendation_tracking with explosive filter
-            try:
-                query = """
-                SELECT
-                    symbol as ticker,
-                    discovery_score as score,
-                    'trade_ready' as action_tag,
-                    discovery_price as price,
-                    NULL as entry,
-                    NULL as stop,
-                    NULL as tp1,
-                    NULL as tp2,
-                    NULL as snapshot,
-                    updated_at
-                FROM monitoring.recommendation_tracking
-                WHERE (outcome_classification = 'EXPLOSIVE' OR discovery_score > 0.8)
-                  AND recommendation_date >= NOW() - INTERVAL '24 hours'
-                ORDER BY discovery_score DESC NULLS LAST
-                LIMIT 20
-                """
-                rows = await conn.fetch(query)
-                candidates = [map_row_to_candidate(row) for row in rows]
-            except asyncpg.UndefinedTableError:
-                # No suitable table found, return empty list
-                pass
+        if not cache_payload:
+            return ExplosiveResp(explosive_top=[])
 
-        return ExplosiveResp(explosive_top=candidates)
+        candidates_data = cache_payload.get('candidates', [])
 
-    finally:
-        await conn.close()
+        # Filter for high-score candidates (explosive criteria)
+        explosive_candidates = []
+        for candidate in candidates_data:
+            # Consider explosive if high score or trade_ready tag
+            score = candidate.get('total_score', candidate.get('score', 0))
+            action_tag = candidate.get('action_tag', candidate.get('tag', ''))
+
+            if (isinstance(score, (int, float)) and score >= 70.0) or action_tag == 'trade_ready':
+                explosive_candidates.append(candidate)
+
+        # Limit to top 20 explosive candidates
+        explosive_candidates = explosive_candidates[:20]
+        explosive = [map_candidate_data(candidate) for candidate in explosive_candidates]
+
+        logger.info(f"Returning {len(explosive)} explosive candidates")
+        return ExplosiveResp(explosive_top=explosive)
+
+    except Exception as e:
+        logger.error(f"Failed to fetch explosive candidates: {e}")
+        return ExplosiveResp(explosive_top=[])
 
 @router.get("/telemetry", response_model=TelemetryResp)
 async def get_telemetry():
-    """Get system telemetry and health information."""
-    conn = await get_db_connection()
+    """Get system telemetry and health status."""
     try:
-        # Check data freshness from candidates_latest or fallback table
-        max_updated = None
-        stale_data_detected = True
-        system_ready = False
+        # Check Redis connectivity
+        redis_connected = False
+        cache_age_seconds = None
 
-        # Try to get latest update time from candidates table
         try:
-            max_updated_result = await conn.fetchval(
-                "SELECT MAX(updated_at) FROM candidates_latest"
-            )
-            max_updated = max_updated_result
-        except asyncpg.UndefinedTableError:
-            # Fallback to monitoring table
-            try:
-                max_updated_result = await conn.fetchval(
-                    "SELECT MAX(updated_at) FROM monitoring.recommendation_tracking"
-                )
-                max_updated = max_updated_result
-            except asyncpg.UndefinedTableError:
-                pass
+            redis_client = redis.from_url(os.getenv('REDIS_URL'))
+            await redis_client.ping()
+            redis_connected = True
 
-        # Determine if data is stale (older than 5 minutes)
-        if max_updated:
-            from datetime import timedelta
-            now = datetime.now(timezone.utc)
-            if max_updated.tzinfo is None:
-                max_updated = max_updated.replace(tzinfo=timezone.utc)
+            # Check cache freshness
+            cache_data = await redis_client.get(CACHE_KEY_CONTENDERS)
+            if cache_data:
+                try:
+                    payload = json.loads(cache_data)
+                    cache_timestamp = payload.get('timestamp', 0)
+                    if cache_timestamp:
+                        cache_age_seconds = int(datetime.now().timestamp() - cache_timestamp)
+                except json.JSONDecodeError:
+                    pass
 
-            time_diff = now - max_updated
-            stale_data_detected = time_diff > timedelta(seconds=300)  # 5 minutes
-            system_ready = not stale_data_detected
+            await redis_client.close()
 
-        # Try to get pipeline stats from discovery_flow_stats
-        pipeline_stats = PipelineStats()
-        try:
-            stats_row = await conn.fetchrow("""
-                SELECT universe_size, final_candidates
-                FROM monitoring.discovery_flow_stats
-                ORDER BY timestamp DESC
-                LIMIT 1
-            """)
-            if stats_row:
-                pipeline_stats.universe_size = stats_row['universe_size']
-                pipeline_stats.scored = stats_row['final_candidates']
-        except asyncpg.UndefinedTableError:
-            # No pipeline stats available
-            pass
+        except Exception as e:
+            logger.warning(f"Redis connectivity check failed: {e}")
+
+        # Determine system status
+        system_ready = redis_connected
+        stale_data_detected = False
+
+        if cache_age_seconds is not None:
+            # Consider data stale if older than 30 minutes (1800 seconds)
+            stale_data_detected = cache_age_seconds > 1800
+        else:
+            # If we can't determine cache age, assume stale
+            stale_data_detected = True
+
+        pipeline_stats = PipelineStats(
+            universe_size=None,  # Could extract from cache payload if available
+            enriched=None,
+            filtered=None,
+            scored=None
+        )
 
         return TelemetryResp(
             system_health=SystemHealth(system_ready=system_ready),
@@ -284,5 +238,10 @@ async def get_telemetry():
             pipeline_stats=pipeline_stats
         )
 
-    finally:
-        await conn.close()
+    except Exception as e:
+        logger.error(f"Telemetry error: {e}")
+        return TelemetryResp(
+            system_health=SystemHealth(system_ready=False),
+            production_health=ProductionHealth(stale_data_detected=True),
+            pipeline_stats=PipelineStats()
+        )
