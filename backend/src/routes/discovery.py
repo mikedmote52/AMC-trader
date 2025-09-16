@@ -9,7 +9,7 @@ from datetime import datetime
 import redis.asyncio as redis
 import os
 
-from constants import CACHE_KEY_CONTENDERS
+from backend.src.constants import CACHE_KEY_CONTENDERS
 
 logger = logging.getLogger(__name__)
 

@@ -12,7 +12,7 @@ import redis.asyncio as redis
 from fastapi import APIRouter, HTTPException, Query
 from datetime import datetime
 
-from constants import CACHE_KEY_CONTENDERS, CACHE_KEY_STATUS, DEFAULT_LIMIT
+from backend.src.constants import CACHE_KEY_CONTENDERS, CACHE_KEY_STATUS, DEFAULT_LIMIT
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
