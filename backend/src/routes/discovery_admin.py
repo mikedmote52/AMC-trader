@@ -25,7 +25,7 @@ async def run_discovery_inline() -> Dict[str, Any]:
 
         # Create and run discovery system
         discovery = NoFallbackDiscovery()
-        await discovery.run()
+        candidates, trace = await discovery.run_discovery(limit=50)
 
         # Check what was written to cache
         redis_client = redis.from_url(os.getenv('REDIS_URL'))
@@ -37,7 +37,7 @@ async def run_discovery_inline() -> Dict[str, Any]:
             payload = json.loads(cache_data)
             written = payload.get('count', 0)
         else:
-            written = 0
+            written = len(candidates) if candidates else 0
 
         # Emit socket event on successful cache update
         if written > 0:
