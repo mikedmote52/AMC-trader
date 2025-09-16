@@ -185,7 +185,76 @@ async def emergency_populate_cache(limit: int = Query(DEFAULT_LIMIT, le=100)):
         logger.error(f"Emergency cache population failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/emergency/status") 
+@router.get("/contenders")
+async def get_contenders(limit: int = Query(50, le=500)):
+    """
+    Get current discovery contenders - Frontend compatibility endpoint
+    Returns cached candidates from unified AlphaStack 4.0 system
+    """
+    try:
+        logger.info(f"🎯 Frontend contenders request with limit={limit}")
+
+        # Try to get from Redis cache first
+        redis_client = redis.from_url(os.getenv('REDIS_URL'))
+        cache_data = await redis_client.get(CACHE_KEY_CONTENDERS)
+        await redis_client.close()
+
+        if cache_data:
+            try:
+                cached_payload = json.loads(cache_data)
+                candidates = cached_payload.get('candidates', [])
+
+                # Limit results if requested
+                if limit and len(candidates) > limit:
+                    candidates = candidates[:limit]
+
+                return {
+                    "success": True,
+                    "count": len(candidates),
+                    "data": candidates,
+                    "source": "cache",
+                    "engine": cached_payload.get('engine', 'AlphaStack 4.0'),
+                    "timestamp": cached_payload.get('iso_timestamp', datetime.now().isoformat())
+                }
+            except json.JSONDecodeError:
+                logger.warning("Corrupted cache data, running fresh discovery")
+
+        # Cache miss - trigger fresh discovery
+        logger.info("Cache miss, triggering fresh discovery for frontend")
+
+        try:
+            from backend.src.jobs.discovery_job import run_discovery_job
+            result = await run_discovery_job(limit)
+
+            if result.get('status') == 'success':
+                candidates = result.get('candidates', [])
+                return {
+                    "success": True,
+                    "count": len(candidates),
+                    "data": candidates,
+                    "source": "fresh",
+                    "engine": "AlphaStack 4.0 Direct",
+                    "timestamp": datetime.now().isoformat()
+                }
+        except Exception as e:
+            logger.error(f"Fresh discovery failed: {e}")
+
+        # Return empty result if all fails
+        return {
+            "success": True,
+            "count": 0,
+            "data": [],
+            "source": "fallback",
+            "engine": "AlphaStack 4.0 Fallback",
+            "timestamp": datetime.now().isoformat(),
+            "note": "Discovery system temporarily unavailable"
+        }
+
+    except Exception as e:
+        logger.error(f"Contenders endpoint failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/emergency/status")
 async def emergency_status():
     """
     Emergency system status check for unified system

@@ -36,7 +36,7 @@ async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
         trade_ready_count = 0
         monitor_count = 0
         
-        for candidate in results['candidates']:
+        for candidate in results['items']:
             # Count action tags
             action_tag = candidate.get('action_tag', 'monitor')
             if action_tag == 'trade_ready':
