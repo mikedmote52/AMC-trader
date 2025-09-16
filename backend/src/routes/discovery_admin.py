@@ -1,6 +1,6 @@
 """
 Discovery Admin Routes - Manual triggers and cache inspection
-Requires ADMIN_TOKEN environment variable for authentication
+Open endpoints for discovery management
 """
 import json
 import logging
@@ -8,7 +8,7 @@ import os
 import asyncio
 from typing import Dict, Any, List, Optional
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException
 import redis.asyncio as redis
 
 from backend.src.constants import CACHE_KEY_CONTENDERS
@@ -16,15 +16,6 @@ from backend.src.constants import CACHE_KEY_CONTENDERS
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-def verify_admin_token(x_admin_token: Optional[str] = Header(None)) -> bool:
-    """Verify admin token from header"""
-    admin_token = os.getenv("ADMIN_TOKEN")
-    if not admin_token:
-        raise HTTPException(status_code=503, detail="ADMIN_TOKEN environment variable not set")
-    if x_admin_token != admin_token:
-        raise HTTPException(status_code=401, detail="Invalid admin token")
-    return True
 
 async def run_discovery_inline() -> Dict[str, Any]:
     """Run discovery job inline and return summary"""
@@ -68,18 +59,16 @@ async def run_discovery_inline() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Discovery failed: {str(e)}")
 
 @router.post("/api/discovery/run-now")
-async def trigger_discovery_now(x_admin_token: Optional[str] = Header(None)):
+async def trigger_discovery_now():
     """Run discovery job immediately and return summary"""
-    verify_admin_token(x_admin_token)
     logger.info("🚀 Manual discovery trigger initiated")
     result = await run_discovery_inline()
     logger.info(f"✅ Manual discovery complete: {result['written']} candidates written")
     return result
 
 @router.post("/api/discovery/clear-cache")
-async def clear_discovery_cache(x_admin_token: Optional[str] = Header(None)):
+async def clear_discovery_cache():
     """Clear discovery cache"""
-    verify_admin_token(x_admin_token)
     try:
         redis_client = redis.from_url(os.getenv('REDIS_URL'))
         deleted = await redis_client.delete(CACHE_KEY_CONTENDERS)
@@ -93,9 +82,8 @@ async def clear_discovery_cache(x_admin_token: Optional[str] = Header(None)):
         raise HTTPException(status_code=500, detail=f"Cache clear failed: {str(e)}")
 
 @router.get("/api/discovery/cache/peek")
-async def peek_discovery_cache(x_admin_token: Optional[str] = Header(None)):
+async def peek_discovery_cache():
     """Inspect discovery cache contents"""
-    verify_admin_token(x_admin_token)
     try:
         redis_client = redis.from_url(os.getenv('REDIS_URL'))
 
