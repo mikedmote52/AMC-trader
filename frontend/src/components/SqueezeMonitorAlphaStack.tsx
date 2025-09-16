@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-// AlphaStack 4.1 Integration
 import SqueezeAlert from "./SqueezeAlert";
 import PatternHistory from "./PatternHistory";
 import { useAlphaStackLive } from "../hooks/useAlphaStackLive";
@@ -331,7 +330,7 @@ export default function SqueezeMonitor({
   );
 }
 
-// Styles
+// Styles (keeping existing styles from original component)
 const containerStyle: React.CSSProperties = {
   fontFamily: "ui-sans-serif, system-ui",
   color: "#e7e7e7",
