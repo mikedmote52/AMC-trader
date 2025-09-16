@@ -22,7 +22,8 @@ sio = socketio.AsyncServer(
         "*"  # Allow all origins for now - can be restricted later
     ],
     logger=True,
-    engineio_logger=True
+    engineio_logger=True,
+    async_mode="asgi"
 )
 
 # Create ASGI app

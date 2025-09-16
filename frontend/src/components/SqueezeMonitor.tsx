@@ -139,8 +139,9 @@ export default function SqueezeMonitor() {
     // Initial fetch
     fetchData();
 
-    // Setup WebSocket
+    // Setup WebSocket with correct path for Socket.IO mounted at /v1/stream
     const socket = io(WS_URL, {
+      path: '/v1/stream/socket.io',
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 2000
