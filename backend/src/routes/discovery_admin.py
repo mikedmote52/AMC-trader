@@ -21,10 +21,10 @@ async def run_discovery_inline() -> Dict[str, Any]:
     """Run discovery job inline and return summary"""
     try:
         # Import the discovery module
-        from backend.src.jobs.discover_no_fallback import DiscoverySystem
+        from backend.src.jobs.discover_no_fallback import NoFallbackDiscovery
 
         # Create and run discovery system
-        discovery = DiscoverySystem()
+        discovery = NoFallbackDiscovery()
         await discovery.run()
 
         # Check what was written to cache
