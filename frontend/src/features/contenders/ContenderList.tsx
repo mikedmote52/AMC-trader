@@ -1,6 +1,6 @@
 // frontend/src/features/contenders/ContenderList.tsx
 import { useEffect, useState } from "react";
-import { fetchContenders, type Candidate, ping } from "@/lib/api";
+import { fetchContenders, type Candidate, ping } from "../../lib/api";
 
 function toAction(score: number) {
   if (score >= 75) return "Trade-ready breakout";

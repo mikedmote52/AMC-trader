@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { API_BASE } from "../config";
 import { getJSON } from "../lib/api";
+import { fetchContenders } from "../lib/api";
 import RecommendationCard from "./RecommendationCard";
 
 type Candidate = {
@@ -59,7 +60,7 @@ export default function Recommendations() {
         
         // Fetch both contenders and diagnostics
         const [contendersData, diagnosticsData] = await Promise.all([
-          getJSON<any>(`${API_BASE}/discovery/contenders`),
+          fetchContenders(),
           getJSON<DiagnosticData>(`${API_BASE}/discovery/diagnostics`)
         ]);
         
