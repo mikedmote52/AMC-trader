@@ -40,9 +40,9 @@ export default function ContenderList() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {data?.map((c) => (
-          <article key={c.ticker} className="p-4 rounded-2xl shadow-sm border bg-white">
+          <article key={c.ticker || c.symbol} className="p-4 rounded-2xl shadow-sm border bg-white">
             <header className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">{c.ticker}</h3>
+              <h3 className="text-lg font-semibold">{c.ticker || c.symbol}</h3>
               <span className="text-sm px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
                 {c.score.toFixed(1)}
               </span>

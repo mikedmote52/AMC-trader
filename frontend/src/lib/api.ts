@@ -19,7 +19,8 @@ export type Subscores = {
 };
 
 export type Candidate = {
-  ticker: string;
+  ticker?: string;  // Some components use ticker
+  symbol?: string;  // Backend returns symbol
   score: number;
   status?: string;
   updated_at?: string;
@@ -30,7 +31,9 @@ export type Candidate = {
 
 /** Specific typed fetch for contenders */
 export async function fetchContenders(signal?: AbortSignal): Promise<Candidate[]> {
-  return getJSON<Candidate[]>("/discovery/contenders", signal);
+  const response = await getJSON<any>("/discovery/contenders", signal);
+  // Handle both array and wrapped formats
+  return response.data || response;
 }
 
 export async function ping(): Promise<boolean> {
