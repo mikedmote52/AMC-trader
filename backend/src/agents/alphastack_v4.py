@@ -876,13 +876,11 @@ class DataHub:
             # Generate more realistic variation in historical volumes
             mock_historical_volumes = [int(snapshot.volume * (0.3 + i*0.02)) for i in range(30)]
             rel_vol = self.indicators.relative_volume(snapshot.volume, mock_historical_volumes)
-            # Boost RelVol to show explosive potential
-            rel_vol = max(rel_vol, 1.8)  # Ensure minimum interesting RelVol
+            # Use actual calculated RelVol without artificial boosting
             indicators['rel_vol_30d'] = rel_vol
             
-            # Mock additional fields for squeeze detection
-            indicators['up_days_5'] = 3  # Mock 3 up days out of 5
-            indicators['prev_day_high'] = current_price * 0.95  # Mock previous day high
+            # Calculate real indicators when possible (remove synthetic data)
+            # up_days_5 and prev_day_high should be calculated from real historical data
             
         except Exception as e:
             logger.warning(f"Local indicator computation failed for {snapshot.symbol}: {e}")
