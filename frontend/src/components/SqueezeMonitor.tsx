@@ -81,12 +81,15 @@ export default function SqueezeMonitor() {
       setLoading(true);
       setError("");
 
-      // Fetch all endpoints in parallel
-      const [candidatesData, explosiveData, telemetryData] = await Promise.all([
-        getJSON<any>('/v1/candidates/top?limit=50').catch(() => ({ items: [] })),
-        getJSON<any>('/v1/explosive').catch(() => ({ explosive_top: [] })),
+      // Fetch discovery data (where real candidates are)
+      const [discoveryData, telemetryData] = await Promise.all([
+        getJSON<any>('/discovery/contenders?limit=50').catch(() => ({ data: [] })),
         getJSON<any>('/v1/telemetry').catch(() => null)
       ]);
+
+      // Convert discovery format to expected format
+      const candidatesData = { items: discoveryData.data || discoveryData || [] };
+      const explosiveData = { explosive_top: [] }; // Empty for now
 
       setCandidates(candidatesData.items || []);
       setExplosive(explosiveData.explosive_top || []);
