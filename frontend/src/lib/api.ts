@@ -20,9 +20,10 @@ export type Candidate = {
 };
 
 export async function fetchContenders(signal?: AbortSignal): Promise<Candidate[]> {
-  const r = await fetch(api("/discovery/contenders"), { signal });
+  const r = await fetch(api("/api/discovery/contenders"), { signal });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
+  const response = await r.json();
+  return response.data || response;
 }
 
 export async function ping(): Promise<boolean> {
