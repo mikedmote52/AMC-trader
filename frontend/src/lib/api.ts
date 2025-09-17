@@ -4,6 +4,15 @@ export const API_BASE =
 
 const api = (p: string) => new URL(p, API_BASE).toString();
 
+/** Generic JSON GET helper kept for legacy components (e.g., BMSDiscovery). */
+export async function getJSON<T = unknown>(path: string, signal?: AbortSignal): Promise<T> {
+  const url = api(path);
+  const r = await fetch(url, { signal });
+  if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+  return r.json() as Promise<T>;
+}
+
+/** Domain types */
 export type Subscores = {
   volume: number; squeeze: number; catalyst: number;
   options: number; technical: number; sentiment: number;
@@ -19,11 +28,9 @@ export type Candidate = {
   subscores?: Subscores;
 };
 
+/** Specific typed fetch for contenders */
 export async function fetchContenders(signal?: AbortSignal): Promise<Candidate[]> {
-  const r = await fetch(api("/api/discovery/contenders"), { signal });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const response = await r.json();
-  return response.data || response;
+  return getJSON<Candidate[]>("/discovery/contenders", signal);
 }
 
 export async function ping(): Promise<boolean> {
@@ -32,5 +39,36 @@ export async function ping(): Promise<boolean> {
     return r.ok;
   } catch {
     return false;
+  }
+}
+
+/** Execute a position trade */
+export async function executePositionTrade(symbol: string, action: string) {
+  try {
+    const response = await fetch(api(`/trades/position/${symbol}/preview`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: { message: data.detail || `HTTP ${response.status}` }
+      };
+    }
+
+    return {
+      success: true,
+      message: data.message || `${action} executed for ${symbol}`,
+      ...data
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: { message: error.message || 'Network error' }
+    };
   }
 }
