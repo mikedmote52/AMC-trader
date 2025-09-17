@@ -103,16 +103,13 @@ export default function SqueezeMonitor() {
   const placeOrder = async (ticker: string) => {
     try {
       const payload = {
-        ticker,
-        side: "buy",
-        type: "market",
-        qty: 1,
-        timeInForce: "day",
-        accountMode: "paper",
-        clientId: crypto.randomUUID()
+        symbol: ticker,
+        action: "BUY",
+        mode: "paper",
+        notional_usd: 100
       };
 
-      const result = await postJSON('/v1/orders', payload);
+      const result = await postJSON('/trades/execute', payload);
       console.log("Order placed:", result);
       alert(`Paper order placed for ${ticker}`);
     } catch (err) {
