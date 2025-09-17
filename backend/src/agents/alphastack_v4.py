@@ -1814,14 +1814,14 @@ class ScoringEngine:
         else:
             sustained_volume_score = 25.0   # No sustained volume
         
-        # Apply action tag rules with liquidity guards and sustained RelVol
-        if (total_score >= 75.0 and confidence >= 0.8 and 
-            liquidity_score >= 70.0 and dollar_volume >= min_dollar_vol_trade_ready and
-            spread_bps <= 25.0 and sustained_volume_score >= 100.0):  # Sustained 3x+ RelVol
+        # Apply action tag rules with liquidity guards and sustained RelVol (RELAXED for market conditions)
+        if (total_score >= 65.0 and confidence >= 0.7 and
+            liquidity_score >= 60.0 and dollar_volume >= min_dollar_vol_trade_ready and
+            spread_bps <= 35.0 and sustained_volume_score >= 75.0):  # Relaxed: 2x+ RelVol for trade_ready
             action_tag = "trade_ready"
-        elif (total_score >= 65.0 and confidence >= 0.6 and
-              liquidity_score >= 60.0 and dollar_volume >= min_dollar_vol_watchlist and
-              spread_bps <= 35.0 and sustained_volume_score >= 75.0):  # Sustained 2x+ RelVol
+        elif (total_score >= 55.0 and confidence >= 0.5 and
+              liquidity_score >= 50.0 and dollar_volume >= min_dollar_vol_watchlist and
+              spread_bps <= 45.0 and sustained_volume_score >= 50.0):  # Relaxed: 1.5x+ RelVol for watchlist
             action_tag = "watchlist"
         
         # Risk flags (with safe None checks)
