@@ -4,7 +4,7 @@ export const API_BASE =
 
 const api = (p: string) => new URL(p, API_BASE).toString();
 
-/** Generic JSON GET helper kept for legacy components (e.g., BMSDiscovery). */
+/** ---- Generic helpers kept for legacy components ---- */
 export async function getJSON<T = unknown>(path: string, signal?: AbortSignal): Promise<T> {
   const url = api(path);
   const r = await fetch(url, { signal });
@@ -12,15 +12,30 @@ export async function getJSON<T = unknown>(path: string, signal?: AbortSignal): 
   return r.json() as Promise<T>;
 }
 
-/** Domain types */
+export async function postJSON<T = unknown, B = unknown>(
+  path: string,
+  body: B,
+  signal?: AbortSignal
+): Promise<T> {
+  const url = api(path);
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+  return r.json() as Promise<T>;
+}
+
+/** ---- Domain types & specific endpoints ---- */
 export type Subscores = {
   volume: number; squeeze: number; catalyst: number;
   options: number; technical: number; sentiment: number;
 };
 
 export type Candidate = {
-  ticker?: string;  // Some components use ticker
-  symbol?: string;  // Backend returns symbol
+  ticker: string;
   score: number;
   status?: string;
   updated_at?: string;
@@ -29,11 +44,8 @@ export type Candidate = {
   subscores?: Subscores;
 };
 
-/** Specific typed fetch for contenders */
 export async function fetchContenders(signal?: AbortSignal): Promise<Candidate[]> {
-  const response = await getJSON<any>("/discovery/contenders", signal);
-  // Handle both array and wrapped formats
-  return response.data || response;
+  return getJSON<Candidate[]>("/discovery/contenders", signal);
 }
 
 export async function ping(): Promise<boolean> {

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import SqueezeAlert from "./SqueezeAlert";
 import PatternHistory from "./PatternHistory";
-import { API_BASE, WS_URL } from "../config";
+import { WS_URL } from "../config";
+import { getJSON, postJSON } from "../lib/api";
 
 // AlphaStack 4.1 Candidate Interface
 interface Candidate {
@@ -81,15 +82,11 @@ export default function SqueezeMonitor() {
       setError("");
 
       // Fetch all endpoints in parallel
-      const [candidatesRes, explosiveRes, telemetryRes] = await Promise.all([
-        fetch(`${API_BASE}/v1/candidates/top?limit=50`, { cache: 'no-store' }),
-        fetch(`${API_BASE}/v1/explosive`, { cache: 'no-store' }),
-        fetch(`${API_BASE}/v1/telemetry`, { cache: 'no-store' })
+      const [candidatesData, explosiveData, telemetryData] = await Promise.all([
+        getJSON<any>('/v1/candidates/top?limit=50').catch(() => ({ items: [] })),
+        getJSON<any>('/v1/explosive').catch(() => ({ explosive_top: [] })),
+        getJSON<any>('/v1/telemetry').catch(() => null)
       ]);
-
-      const candidatesData = candidatesRes.ok ? await candidatesRes.json() : { items: [] };
-      const explosiveData = explosiveRes.ok ? await explosiveRes.json() : { explosive_top: [] };
-      const telemetryData = telemetryRes.ok ? await telemetryRes.json() : null;
 
       setCandidates(candidatesData.items || []);
       setExplosive(explosiveData.explosive_top || []);
@@ -115,17 +112,7 @@ export default function SqueezeMonitor() {
         clientId: crypto.randomUUID()
       };
 
-      const response = await fetch(`${API_BASE}/v1/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        throw new Error(`Order failed: ${response.status}`);
-      }
-
-      const result = await response.json();
+      const result = await postJSON('/v1/orders', payload);
       console.log("Order placed:", result);
       alert(`Paper order placed for ${ticker}`);
     } catch (err) {

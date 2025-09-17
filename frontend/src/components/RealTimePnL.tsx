@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { API_BASE } from "../config";
+import { API_BASE, getJSON } from "../lib/api";
 import "./SqueezeAlert.css"; // Reuse flash animations
 
 interface PnLUpdate {
@@ -153,9 +153,7 @@ export default function RealTimePnL({
     if (!isConnected) {
       const pollInterval = setInterval(async () => {
         try {
-          const response = await fetch(`${API_BASE}/market/quote/${symbol}`);
-          if (response.ok) {
-            const data = await response.json();
+          const data = await getJSON(`/market/quote/${symbol}`);
             if (data.price) {
               const newPrice = data.price;
               const oldPrice = previousPriceRef.current;

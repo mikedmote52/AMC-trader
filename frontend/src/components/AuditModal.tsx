@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { API_BASE } from '../config';
+import { getJSON } from '../lib/api';
 
 interface AuditModalProps {
   symbol: string;
@@ -53,11 +53,7 @@ export default function AuditModal({ symbol, onClose }: AuditModalProps) {
     const fetchAuditData = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`${API_BASE}/discovery/audit/${symbol}`);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        const data = await response.json();
+        const data = await getJSON(`/discovery/audit/${symbol}`);
         setAuditData(data);
       } catch (err) {
         console.error('Failed to fetch audit data:', err);
