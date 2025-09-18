@@ -68,7 +68,25 @@ async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
             candidates.append(api_candidate)
         
         await discovery.close()
-        
+
+        # Send data to learning system (fire-and-forget, never blocks)
+        try:
+            from ..services.learning_integration import collect_discovery_data
+            await collect_discovery_data({
+                'status': 'success',
+                'method': 'alphastack_v4_unified',
+                'universe_size': results['pipeline_stats']['universe_size'],
+                'filtered_size': results['pipeline_stats']['filtered'],
+                'count': len(candidates),
+                'trade_ready_count': trade_ready_count,
+                'monitor_count': monitor_count,
+                'candidates': candidates,
+                'execution_time_sec': results['execution_time_sec'],
+                'pipeline_stats': results['pipeline_stats']
+            })
+        except Exception as e:
+            logger.warning(f"Learning integration failed (non-blocking): {e}")
+
         return {
             'status': 'success',
             'universe_size': results['pipeline_stats']['universe_size'],

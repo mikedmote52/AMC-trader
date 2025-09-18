@@ -435,6 +435,230 @@ class LearningEngine:
                 similarities.append(similarity)
         
         return sum(similarities) / len(similarities) if similarities else 0.0
+
+    async def analyze_winning_patterns(self) -> Dict[str, Any]:
+        """
+        Advanced pattern analysis to identify what makes explosive winners
+        Returns actionable insights for discovery optimization
+        """
+
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            # Analyze successful patterns (7-day returns > 25%)
+            winning_patterns = await conn.fetch("""
+                SELECT
+                    cf.symbol,
+                    cf.score,
+                    cf.volume_momentum_score,
+                    cf.squeeze_score,
+                    cf.catalyst_score,
+                    cf.sentiment_score,
+                    cf.options_score,
+                    cf.technical_score,
+                    cf.price,
+                    cf.rel_vol,
+                    to.return_7d,
+                    to.return_30d,
+                    mr.regime_type
+                FROM learning_intelligence.candidate_features cf
+                JOIN learning_intelligence.trade_outcomes to ON cf.id = to.candidate_id
+                LEFT JOIN learning_intelligence.market_regimes mr ON DATE(cf.created_at) = mr.regime_date
+                WHERE to.return_7d > 25.0
+                ORDER BY to.return_7d DESC
+                LIMIT 100
+            """)
+
+            # Analyze losing patterns (7-day returns < -10%)
+            losing_patterns = await conn.fetch("""
+                SELECT
+                    cf.volume_momentum_score,
+                    cf.squeeze_score,
+                    cf.catalyst_score,
+                    cf.sentiment_score,
+                    cf.options_score,
+                    cf.technical_score,
+                    cf.price,
+                    cf.rel_vol,
+                    to.return_7d
+                FROM learning_intelligence.candidate_features cf
+                JOIN learning_intelligence.trade_outcomes to ON cf.id = to.candidate_id
+                WHERE to.return_7d < -10.0
+                LIMIT 100
+            """)
+
+            if not winning_patterns:
+                return {"error": "Insufficient winning pattern data"}
+
+            # Calculate feature effectiveness
+            feature_analysis = self._analyze_feature_patterns(winning_patterns, losing_patterns)
+
+            # Identify optimal ranges
+            optimal_ranges = self._calculate_optimal_ranges(winning_patterns)
+
+            # Generate scoring weight recommendations
+            weight_recommendations = self._generate_weight_recommendations(feature_analysis)
+
+            return {
+                "pattern_count": {
+                    "winners": len(winning_patterns),
+                    "losers": len(losing_patterns)
+                },
+                "feature_effectiveness": feature_analysis,
+                "optimal_ranges": optimal_ranges,
+                "weight_recommendations": weight_recommendations,
+                "top_performing_patterns": [
+                    {
+                        "symbol": p['symbol'],
+                        "return_7d": p['return_7d'],
+                        "score": p['score'],
+                        "regime": p['regime_type'],
+                        "key_features": self._extract_key_features(p)
+                    }
+                    for p in winning_patterns[:10]
+                ]
+            }
+
+    def _analyze_feature_patterns(self, winners: list, losers: list) -> Dict[str, Any]:
+        """Analyze feature effectiveness between winners and losers"""
+
+        feature_names = [
+            'volume_momentum_score', 'squeeze_score', 'catalyst_score',
+            'sentiment_score', 'options_score', 'technical_score', 'rel_vol'
+        ]
+
+        analysis = {}
+
+        for feature in feature_names:
+            winner_values = [p[feature] or 0.0 for p in winners]
+            loser_values = [p[feature] or 0.0 for p in losers if losers]
+
+            if winner_values:
+                winner_avg = sum(winner_values) / len(winner_values)
+                loser_avg = sum(loser_values) / len(loser_values) if loser_values else 0.0
+
+                # Calculate effectiveness score (higher = more predictive of success)
+                effectiveness = winner_avg - loser_avg
+
+                analysis[feature] = {
+                    "winner_avg": round(winner_avg, 3),
+                    "loser_avg": round(loser_avg, 3),
+                    "effectiveness_score": round(effectiveness, 3),
+                    "winner_min": round(min(winner_values), 3),
+                    "winner_max": round(max(winner_values), 3),
+                    "predictive_power": "high" if effectiveness > 0.2 else "medium" if effectiveness > 0.1 else "low"
+                }
+
+        return analysis
+
+    def _calculate_optimal_ranges(self, winners: list) -> Dict[str, Any]:
+        """Calculate optimal value ranges for each feature based on winners"""
+
+        feature_names = [
+            'volume_momentum_score', 'squeeze_score', 'catalyst_score',
+            'sentiment_score', 'options_score', 'technical_score', 'rel_vol', 'price'
+        ]
+
+        ranges = {}
+
+        for feature in feature_names:
+            values = [p[feature] or 0.0 for p in winners if p[feature] is not None]
+
+            if values:
+                values.sort()
+                n = len(values)
+
+                # Calculate percentiles for optimal ranges
+                p25 = values[int(n * 0.25)]
+                p50 = values[int(n * 0.50)]
+                p75 = values[int(n * 0.75)]
+                p90 = values[int(n * 0.90)]
+
+                ranges[feature] = {
+                    "optimal_min": round(p25, 3),
+                    "optimal_target": round(p75, 3),
+                    "exceptional": round(p90, 3),
+                    "median": round(p50, 3)
+                }
+
+        return ranges
+
+    def _generate_weight_recommendations(self, feature_analysis: Dict) -> Dict[str, Any]:
+        """Generate scoring weight recommendations based on feature effectiveness"""
+
+        # Current weights (from the system)
+        current_weights = {
+            'volume_momentum': 0.35,
+            'squeeze': 0.25,
+            'catalyst': 0.20,
+            'sentiment': 0.10,  # Note: sentiment is part of catalyst in the actual system
+            'options': 0.10,
+            'technical': 0.10
+        }
+
+        # Map feature analysis to weight categories
+        effectiveness_scores = {
+            'volume_momentum': feature_analysis.get('volume_momentum_score', {}).get('effectiveness_score', 0),
+            'squeeze': feature_analysis.get('squeeze_score', {}).get('effectiveness_score', 0),
+            'catalyst': feature_analysis.get('catalyst_score', {}).get('effectiveness_score', 0),
+            'sentiment': feature_analysis.get('sentiment_score', {}).get('effectiveness_score', 0),
+            'options': feature_analysis.get('options_score', {}).get('effectiveness_score', 0),
+            'technical': feature_analysis.get('technical_score', {}).get('effectiveness_score', 0)
+        }
+
+        # Calculate total effectiveness
+        total_effectiveness = sum(effectiveness_scores.values())
+
+        if total_effectiveness > 0:
+            # Normalize effectiveness scores to generate new weights
+            recommended_weights = {}
+            for component, effectiveness in effectiveness_scores.items():
+                if component in current_weights:
+                    # Blend current weight with effectiveness-based weight
+                    effectiveness_weight = effectiveness / total_effectiveness
+                    blended_weight = (current_weights[component] * 0.7) + (effectiveness_weight * 0.3)
+                    recommended_weights[component] = round(blended_weight, 3)
+        else:
+            recommended_weights = current_weights
+
+        # Ensure weights sum to 1.0
+        weight_sum = sum(recommended_weights.values())
+        if weight_sum > 0:
+            recommended_weights = {k: round(v / weight_sum, 3) for k, v in recommended_weights.items()}
+
+        return {
+            "current_weights": current_weights,
+            "recommended_weights": recommended_weights,
+            "weight_changes": {
+                k: round(recommended_weights.get(k, 0) - current_weights.get(k, 0), 3)
+                for k in current_weights.keys()
+            },
+            "rationale": "Based on analysis of successful explosive patterns"
+        }
+
+    def _extract_key_features(self, pattern: Dict) -> Dict[str, Any]:
+        """Extract the most significant features from a winning pattern"""
+
+        features = {}
+
+        # Volume features
+        if pattern.get('rel_vol', 0) > 3.0:
+            features['high_volume'] = f"{pattern['rel_vol']:.1f}x average"
+
+        # Score components
+        if pattern.get('squeeze_score', 0) > 0.7:
+            features['squeeze_setup'] = f"{pattern['squeeze_score']:.2f}"
+
+        if pattern.get('volume_momentum_score', 0) > 0.8:
+            features['strong_momentum'] = f"{pattern['volume_momentum_score']:.2f}"
+
+        if pattern.get('catalyst_score', 0) > 0.6:
+            features['catalyst_present'] = f"{pattern['catalyst_score']:.2f}"
+
+        # Price characteristics
+        if pattern.get('price', 0) < 5.0:
+            features['low_price'] = f"${pattern['price']:.2f}"
+
+        return features
     
     def _calculate_thesis_accuracy(self, predicted_direction: str, 
                                  actual_returns: Dict[str, float], confidence: float) -> float:
@@ -462,17 +686,65 @@ class LearningEngine:
         pass
     
     async def _detect_current_market_regime(self) -> str:
-        """Detect current market regime using various indicators"""
-        
-        # This would integrate with market data to detect regime
-        # For now, return a default regime
-        # In full implementation, this would analyze:
-        # - VIX levels
-        # - Market trend (bull/bear/sideways)
-        # - Volatility patterns
-        # - Volume patterns
-        
-        return "normal"  # Placeholder - implement full market regime detection
+        """Detect current market regime using market indicators and discovery patterns"""
+
+        try:
+            pool = await get_db_pool()
+            async with pool.acquire() as conn:
+                # Analyze recent discovery patterns for regime indicators
+                recent_data = await conn.fetchrow("""
+                    SELECT
+                        AVG(cf.score) as avg_score,
+                        AVG(cf.rel_vol) as avg_rel_vol,
+                        AVG(cf.volume_momentum_score) as avg_volume_momentum,
+                        AVG(cf.squeeze_score) as avg_squeeze,
+                        COUNT(*) as sample_size,
+                        COUNT(CASE WHEN cf.action_tag = 'trade_ready' THEN 1 END) as trade_ready_count
+                    FROM learning_intelligence.candidate_features cf
+                    JOIN learning_intelligence.discovery_events de ON cf.discovery_event_id = de.id
+                    WHERE de.event_timestamp >= NOW() - INTERVAL '7 days'
+                """)
+
+                if not recent_data or recent_data['sample_size'] < 10:
+                    return "insufficient_data"
+
+                avg_score = recent_data['avg_score'] or 0.0
+                avg_rel_vol = recent_data['avg_rel_vol'] or 1.0
+                avg_squeeze = recent_data['avg_squeeze'] or 0.0
+                trade_ready_ratio = (recent_data['trade_ready_count'] or 0) / recent_data['sample_size']
+
+                # Market regime detection logic
+                if avg_score > 0.8 and trade_ready_ratio > 0.3:
+                    regime = "explosive_bull"
+                elif avg_rel_vol > 3.0 and avg_squeeze > 0.7:
+                    regime = "squeeze_setup"
+                elif avg_score < 0.6 and trade_ready_ratio < 0.1:
+                    regime = "low_opportunity"
+                elif avg_rel_vol > 5.0:
+                    regime = "high_volatility"
+                elif avg_rel_vol < 1.5:
+                    regime = "low_volatility"
+                else:
+                    regime = "normal_market"
+
+                # Store regime detection
+                await conn.execute("""
+                    INSERT INTO learning_intelligence.market_regimes
+                    (regime_date, regime_type, explosive_success_rate, avg_pattern_return, detection_confidence)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (regime_date)
+                    DO UPDATE SET
+                        regime_type = $2,
+                        explosive_success_rate = $3,
+                        avg_pattern_return = $4,
+                        detection_confidence = $5
+                """, datetime.now().date(), regime, trade_ready_ratio, avg_score, 0.8)
+
+                return regime
+
+        except Exception as e:
+            logger.warning(f"Market regime detection failed: {e}")
+            return "unknown"
 
 # Factory function for easy import
 async def get_learning_engine() -> LearningEngine:

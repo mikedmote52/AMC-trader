@@ -195,14 +195,14 @@ async def get_learning_insights(days_back: int = 30):
 async def optimize_recommendations():
     """Get AI-optimized recommendations based on learning data"""
     insights = await LearningSystem.get_learning_insights(30)
-    
+
     # Use learning data to optimize recommendations
     optimizations = {
         "best_market_times": [],
         "successful_patterns": [],
         "recommended_adjustments": []
     }
-    
+
     if insights.get("decision_stats"):
         # Find best performing market times
         market_performance = {}
@@ -212,7 +212,7 @@ async def optimize_recommendations():
                 if time not in market_performance:
                     market_performance[time] = []
                 market_performance[time].append(stat["avg_return"])
-        
+
         # Average returns by market time
         for time, returns in market_performance.items():
             avg_return = sum(returns) / len(returns)
@@ -221,7 +221,7 @@ async def optimize_recommendations():
                 "avg_return": round(avg_return, 2),
                 "recommendation": f"{'Strong' if avg_return > 5 else 'Good' if avg_return > 0 else 'Avoid'} timing for decisions"
             })
-    
+
     if insights.get("best_patterns"):
         optimizations["successful_patterns"] = [
             {
@@ -231,7 +231,7 @@ async def optimize_recommendations():
             }
             for pattern in insights["best_patterns"]
         ]
-    
+
     return {
         "success": True,
         "data": {
@@ -239,3 +239,251 @@ async def optimize_recommendations():
             "learning_summary": f"Analyzed {insights.get('total_decisions', 0)} decisions over {insights.get('learning_period_days', 30)} days"
         }
     }
+
+# Enhanced Learning Intelligence API Endpoints
+
+@router.get("/intelligence/discovery-parameters")
+async def get_discovery_parameters():
+    """Get AI-optimized discovery parameters based on learning"""
+    try:
+        from ..services.learning_engine import get_learning_engine
+
+        learning_engine = await get_learning_engine()
+
+        # Get current market regime
+        regime_data = await learning_engine.detect_market_regime_change()
+        current_regime = regime_data['current_regime']
+
+        # Get adaptive parameters
+        optimized_params = await learning_engine.get_adaptive_discovery_parameters(current_regime)
+
+        return {
+            "success": True,
+            "data": {
+                "current_regime": current_regime,
+                "regime_changed": regime_data['regime_changed'],
+                "optimized_parameters": optimized_params,
+                "last_updated": datetime.now().isoformat(),
+                "confidence": 0.8
+            }
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@router.get("/intelligence/pattern-analysis")
+async def get_pattern_analysis():
+    """Get advanced pattern analysis and insights"""
+    try:
+        from ..services.learning_engine import get_learning_engine
+
+        learning_engine = await get_learning_engine()
+        analysis = await learning_engine.analyze_winning_patterns()
+
+        return {
+            "success": True,
+            "data": analysis,
+            "generated_at": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@router.get("/intelligence/market-regime")
+async def get_market_regime():
+    """Get current market regime and regime-specific insights"""
+    try:
+        from ..services.learning_engine import get_learning_engine
+
+        learning_engine = await get_learning_engine()
+        regime_data = await learning_engine.detect_market_regime_change()
+
+        # Get regime-specific performance
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            regime_performance = await conn.fetchrow("""
+                SELECT
+                    AVG(return_7d) as avg_return_7d,
+                    COUNT(*) as trade_count,
+                    COUNT(CASE WHEN return_7d > 0 THEN 1 END) as win_count
+                FROM learning_intelligence.trade_outcomes to
+                JOIN learning_intelligence.candidate_features cf ON to.candidate_id = cf.id
+                JOIN learning_intelligence.market_regimes mr ON DATE(cf.created_at) = mr.regime_date
+                WHERE mr.regime_type = $1
+                AND to.return_7d IS NOT NULL
+            """, regime_data['current_regime'])
+
+        regime_stats = {}
+        if regime_performance and regime_performance['trade_count'] > 0:
+            regime_stats = {
+                "avg_return_7d": round(regime_performance['avg_return_7d'] or 0.0, 2),
+                "win_rate": round((regime_performance['win_count'] / regime_performance['trade_count']) * 100, 1),
+                "trade_count": regime_performance['trade_count']
+            }
+
+        return {
+            "success": True,
+            "data": {
+                "regime_info": regime_data,
+                "regime_performance": regime_stats,
+                "recommendations": _get_regime_recommendations(regime_data['current_regime'])
+            }
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@router.get("/intelligence/confidence-calibration")
+async def get_confidence_calibration():
+    """Get confidence score calibration data"""
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            # Analyze confidence vs actual performance
+            calibration_data = await conn.fetch("""
+                SELECT
+                    CASE
+                        WHEN cf.score >= 0.9 THEN '0.9+'
+                        WHEN cf.score >= 0.8 THEN '0.8-0.9'
+                        WHEN cf.score >= 0.7 THEN '0.7-0.8'
+                        WHEN cf.score >= 0.6 THEN '0.6-0.7'
+                        ELSE '<0.6'
+                    END as confidence_bucket,
+                    AVG(to.return_7d) as avg_return,
+                    COUNT(*) as sample_size,
+                    COUNT(CASE WHEN to.return_7d > 0 THEN 1 END) as positive_count
+                FROM learning_intelligence.candidate_features cf
+                JOIN learning_intelligence.trade_outcomes to ON cf.id = to.candidate_id
+                WHERE to.return_7d IS NOT NULL
+                GROUP BY confidence_bucket
+                ORDER BY confidence_bucket DESC
+            """)
+
+        calibration_results = []
+        for row in calibration_data:
+            calibration_results.append({
+                "confidence_range": row['confidence_bucket'],
+                "avg_return_7d": round(row['avg_return'] or 0.0, 2),
+                "success_rate": round((row['positive_count'] / row['sample_size']) * 100, 1) if row['sample_size'] > 0 else 0,
+                "sample_size": row['sample_size']
+            })
+
+        return {
+            "success": True,
+            "data": {
+                "calibration_table": calibration_results,
+                "calibration_quality": "good" if len(calibration_results) >= 4 else "limited_data"
+            }
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@router.post("/intelligence/track-outcome")
+async def track_trade_outcome(
+    symbol: str,
+    entry_price: float,
+    exit_price: float,
+    days_held: int
+):
+    """Track actual trade outcome for learning"""
+    try:
+        from ..services.learning_integration import track_trade_outcome
+
+        await track_trade_outcome(symbol, entry_price, exit_price, days_held)
+
+        return {
+            "success": True,
+            "message": f"Outcome tracked for {symbol}",
+            "return_pct": round(((exit_price - entry_price) / entry_price) * 100, 2)
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@router.get("/intelligence/learning-summary")
+async def get_learning_summary():
+    """Get comprehensive learning system summary"""
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            # Get overall stats
+            summary_stats = await conn.fetchrow("""
+                SELECT
+                    COUNT(DISTINCT de.id) as discovery_events,
+                    COUNT(DISTINCT cf.id) as candidates_tracked,
+                    COUNT(DISTINCT to.id) as outcomes_recorded,
+                    AVG(to.return_7d) as avg_return_7d,
+                    MAX(de.event_timestamp) as last_discovery
+                FROM learning_intelligence.discovery_events de
+                LEFT JOIN learning_intelligence.candidate_features cf ON de.id = cf.discovery_event_id
+                LEFT JOIN learning_intelligence.trade_outcomes to ON cf.id = to.candidate_id
+            """)
+
+            # Get recent learning activity
+            recent_activity = await conn.fetch("""
+                SELECT
+                    DATE(de.event_timestamp) as activity_date,
+                    COUNT(*) as discovery_count,
+                    AVG(de.candidates_found) as avg_candidates
+                FROM learning_intelligence.discovery_events de
+                WHERE de.event_timestamp >= NOW() - INTERVAL '7 days'
+                GROUP BY DATE(de.event_timestamp)
+                ORDER BY activity_date DESC
+            """)
+
+        return {
+            "success": True,
+            "data": {
+                "system_stats": {
+                    "discovery_events_tracked": summary_stats['discovery_events'] or 0,
+                    "candidates_analyzed": summary_stats['candidates_tracked'] or 0,
+                    "trade_outcomes_recorded": summary_stats['outcomes_recorded'] or 0,
+                    "avg_7d_return": round(summary_stats['avg_return_7d'] or 0.0, 2),
+                    "last_discovery": summary_stats['last_discovery'].isoformat() if summary_stats['last_discovery'] else None
+                },
+                "recent_activity": [
+                    {
+                        "date": row['activity_date'].isoformat(),
+                        "discoveries": row['discovery_count'],
+                        "avg_candidates": round(row['avg_candidates'] or 0.0, 1)
+                    }
+                    for row in recent_activity
+                ],
+                "learning_status": "active" if summary_stats['discovery_events'] and summary_stats['discovery_events'] > 0 else "initializing"
+            }
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def _get_regime_recommendations(regime: str) -> Dict[str, str]:
+    """Get trading recommendations for specific market regime"""
+
+    recommendations = {
+        "explosive_bull": {
+            "strategy": "Aggressive momentum plays",
+            "risk_level": "High",
+            "focus": "High-momentum, low-float stocks with strong volume",
+            "caution": "Watch for overextension signals"
+        },
+        "squeeze_setup": {
+            "strategy": "Squeeze catalyst plays",
+            "risk_level": "Medium-High",
+            "focus": "Short interest + catalyst combinations",
+            "caution": "Verify catalyst authenticity"
+        },
+        "low_opportunity": {
+            "strategy": "Defensive, high-conviction only",
+            "risk_level": "Low",
+            "focus": "Quality setups with strong fundamentals",
+            "caution": "Reduce position sizes"
+        },
+        "high_volatility": {
+            "strategy": "Rapid momentum trades",
+            "risk_level": "Very High",
+            "focus": "Quick entries and exits",
+            "caution": "Use tight stops"
+        }
+    }
+
+    return recommendations.get(regime, {
+        "strategy": "Standard discovery approach",
+        "risk_level": "Medium",
+        "focus": "Balanced scoring approach",
+        "caution": "Monitor market conditions"
+    })

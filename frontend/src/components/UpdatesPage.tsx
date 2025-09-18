@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { API_BASE } from "../config";
 import { getJSON } from "../lib/api";
+import EnhancedLearningDashboard from "./EnhancedLearningDashboard";
+import InteractiveTradeTracker from "./InteractiveTradeTracker";
 
 type Update = {
   time: string;
@@ -152,7 +154,13 @@ export default function UpdatesPage() {
         </div>
       </div>
 
-      {/* Learning System Status Dashboard */}
+      {/* Enhanced Learning Intelligence Dashboard */}
+      <EnhancedLearningDashboard />
+
+      {/* Interactive Trade Outcome Tracker */}
+      <InteractiveTradeTracker />
+
+      {/* Legacy Learning System Status Dashboard */}
       {learningMetrics && (
         <div style={learningDashboardStyle}>
           <div style={dashboardHeaderStyle}>
@@ -161,24 +169,24 @@ export default function UpdatesPage() {
               <span style={healthLabelStyle}>Health Score:</span>
               <span style={{
                 ...healthValueStyle,
-                color: learningMetrics.overall_health_score > 0.8 ? '#22c55e' : 
+                color: learningMetrics.overall_health_score > 0.8 ? '#22c55e' :
                        learningMetrics.overall_health_score > 0.6 ? '#f59e0b' : '#ef4444'
               }}>
                 {(learningMetrics.overall_health_score * 100).toFixed(1)}%
               </span>
             </div>
           </div>
-          
+
           <div style={metricsGridStyle}>
             <div style={metricCardStyle}>
               <div style={metricLabelStyle}>Pattern Learning</div>
               <div style={metricValueStyle}>{(learningMetrics.pattern_learning.success_rate * 100).toFixed(1)}%</div>
               <div style={metricSubtextStyle}>
-                {learningMetrics.pattern_learning.total_patterns_tracked} patterns • 
+                {learningMetrics.pattern_learning.total_patterns_tracked} patterns •
                 Max winner: {learningMetrics.pattern_learning.max_winner_return.toFixed(1)}%
               </div>
             </div>
-            
+
             <div style={metricCardStyle}>
               <div style={metricLabelStyle}>Discovery Engine</div>
               <div style={metricValueStyle}>{(learningMetrics.discovery_optimization.parameter_effectiveness * 100).toFixed(1)}%</div>
@@ -186,7 +194,7 @@ export default function UpdatesPage() {
                 {(learningMetrics.discovery_optimization.explosion_rate * 100).toFixed(1)}% explosion rate
               </div>
             </div>
-            
+
             <div style={metricCardStyle}>
               <div style={metricLabelStyle}>Thesis Accuracy</div>
               <div style={metricValueStyle}>{(learningMetrics.thesis_accuracy.avg_accuracy_score * 100).toFixed(1)}%</div>
