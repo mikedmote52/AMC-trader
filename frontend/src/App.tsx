@@ -5,6 +5,7 @@ import HomePage from "./pages/HomePage";
 import BMSDiscoveryPage from "./pages/BMSDiscoveryPage";
 import SqueezePage from "./pages/SqueezePage";
 import PortfolioPage from "./pages/PortfolioPage";
+import EnhancedPortfolioPage from "./pages/EnhancedPortfolioPage";
 import UpdatesPageWrapper from "./pages/UpdatesPageWrapper";
 
 export default function App() {
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/squeeze" element={<SqueezePage />} />
           <Route path="/discovery" element={<BMSDiscoveryPage />} />
           <Route path="/portfolio" element={<PortfolioPage />} />
+          <Route path="/portfolio-enhanced" element={<EnhancedPortfolioPage />} />
           <Route path="/updates" element={<UpdatesPageWrapper />} />
         </Routes>
       </div>

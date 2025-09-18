@@ -110,6 +110,7 @@ export function NavigationWithResponsive() {
     { path: "/squeeze", label: "Squeeze Monitor", icon: "🔍" },
     { path: "/discovery", label: "Discovery", icon: "🎯" },
     { path: "/portfolio", label: "Portfolio", icon: "📊" },
+    { path: "/portfolio-enhanced", label: "Enhanced Portfolio", icon: "🚀" },
     { path: "/updates", label: "Daily Updates", icon: "📱" }
   ];
 
