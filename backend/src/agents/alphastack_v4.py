@@ -1918,12 +1918,12 @@ class ScoringEngine:
         # VWAP reclaim confirmation for trade_ready
         above_vwap = getattr(snap, 'above_vwap', False)
 
-        # EMERGENCY: Very relaxed action tag rules to show results
-        if (total_score >= 50.0 and confidence >= 0.4 and
-            liquidity_score >= 40.0 and dollar_volume >= 500_000):  # Emergency relaxed
+        # EMERGENCY: Realistic action tag rules based on actual score distribution
+        if (total_score >= 38.0 and confidence >= 0.4 and
+            liquidity_score >= 40.0 and dollar_volume >= 500_000):  # Top tier candidates
             action_tag = "trade_ready"
-        elif (total_score >= 30.0 and confidence >= 0.3 and
-              liquidity_score >= 30.0 and dollar_volume >= 100_000):  # Emergency relaxed
+        elif (total_score >= 25.0 and confidence >= 0.3 and
+              liquidity_score >= 30.0 and dollar_volume >= 100_000):  # Watch candidates
             action_tag = "watchlist"
         
         # Risk flags (with safe None checks)
