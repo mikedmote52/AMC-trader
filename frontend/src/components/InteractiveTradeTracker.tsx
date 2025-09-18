@@ -31,7 +31,7 @@ export default function InteractiveTradeTracker() {
     setResult(null);
 
     try {
-      const response = await getJSON(`${API_BASE}/learning/intelligence/track-outcome`, {
+      const response = await getJSON(`${API_BASE}/learning-analytics/patterns/log-explosive-winner`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

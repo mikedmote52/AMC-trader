@@ -100,15 +100,15 @@ export default function EnhancedLearningDashboard() {
           summaryResponse,
           parametersResponse
         ] = await Promise.all([
-          getJSON(`${API_BASE}/learning/intelligence/market-regime`).catch(() => null),
-          getJSON(`${API_BASE}/learning/intelligence/pattern-analysis`).catch(() => null),
-          getJSON(`${API_BASE}/learning/intelligence/confidence-calibration`).catch(() => null),
-          getJSON(`${API_BASE}/learning/intelligence/learning-summary`).catch(() => null),
-          getJSON(`${API_BASE}/learning/intelligence/discovery-parameters`).catch(() => null)
+          getJSON(`${API_BASE}/learning-analytics/market-regime/current`).catch(() => null),
+          getJSON(`${API_BASE}/learning-analytics/pattern-analysis/feature-importance`).catch(() => null),
+          getJSON(`${API_BASE}/learning-analytics/thesis/accuracy-analysis`).catch(() => null),
+          getJSON(`${API_BASE}/learning-analytics/learning/performance-summary`).catch(() => null),
+          getJSON(`${API_BASE}/learning-analytics/discovery/adaptive-parameters`).catch(() => null)
         ]);
 
         if (regimeResponse?.success) {
-          setMarketRegime(regimeResponse.data.regime_info);
+          setMarketRegime(regimeResponse.current_regime);
         }
 
         if (patternResponse?.success) {
