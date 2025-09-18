@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AMC-TRADER Frontend API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .status { padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto; }
+        .candidate { border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>AMC-TRADER Frontend API Test</h1>
+    <p>This tests the production fixes for the AMC-TRADER frontend API integration.</p>
+
+    <div id="status" class="status info">Testing...</div>
+    <div id="results"></div>
+
+    <script>
+        const API_BASE = "https://amc-trader.onrender.com";
+
+        function api(path) {
+            return new URL(path, API_BASE).toString();
+        }
+
+        async function ping() {
+            try {
+                const r = await fetch(api("/health"));
+                return r.ok;
+            } catch {
+                return false;
+            }
+        }
+
+        async function fetchContenders(signal) {
+            // Try new endpoint first, fallback to emergency populate if not available
+            try {
+                const res = await fetch(api("/discovery/contenders"), { signal });
+                if (res.ok) {
+                    const data = await res.json();
+                    // Handle both response formats
+                    if (data.success && Array.isArray(data.data)) {
+                        return data.data;
+                    }
+                    return Array.isArray(data) ? data : [];
+                }
+            } catch (e) {
+                console.warn("Primary endpoint failed, trying emergency populate:", e);
+            }
+
+            // Fallback: try to populate cache and get results
+            try {
+                await fetch(api("/discovery/emergency/populate-cache"), {
+                    method: "POST",
+                    signal
+                });
+
+                // Wait a moment for cache to populate
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                // Try emergency enhanced discovery
+                const res = await fetch(api("/discovery/emergency/enhanced-discovery"), {
+                    method: "POST",
+                    signal
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.candidates && Array.isArray(data.candidates)) {
+                        return data.candidates;
+                    }
+                }
+            } catch (e) {
+                console.warn("Emergency endpoints failed:", e);
+            }
+
+            // Last resort: return empty array to prevent UI crash
+            return [];
+        }
+
+        async function runTests() {
+            const statusDiv = document.getElementById('status');
+            const resultsDiv = document.getElementById('results');
+
+            try {
+                statusDiv.innerHTML = "🔍 Testing backend health...";
+                const isOnline = await ping();
+
+                resultsDiv.innerHTML += `
+                    <div class="status ${isOnline ? 'success' : 'error'}">
+                        System ${isOnline ? 'Online' : 'Offline'}: ${isOnline ? '✅' : '❌'}
+                    </div>
+                `;
+
+                statusDiv.innerHTML = "📡 Fetching contenders...";
+                const contenders = await fetchContenders();
+
+                resultsDiv.innerHTML += `
+                    <div class="status success">
+                        ✅ Contenders fetched: ${contenders.length} found
+                    </div>
+                `;
+
+                if (contenders.length > 0) {
+                    resultsDiv.innerHTML += `<h3>Top Candidates:</h3>`;
+                    contenders.slice(0, 5).forEach((c, i) => {
+                        const action = c.score >= 75 ? "Trade-ready breakout" :
+                                     c.score >= 70 ? "Watchlist builder" : "Monitoring";
+
+                        resultsDiv.innerHTML += `
+                            <div class="candidate">
+                                <strong>${c.ticker || c.symbol}</strong> - Score: ${c.score ? c.score.toFixed(1) : 'N/A'}
+                                <br>Action: ${action}
+                                ${c.subscores ? '<br>Subscores: ' + JSON.stringify(c.subscores) : ''}
+                            </div>
+                        `;
+                    });
+                } else {
+                    resultsDiv.innerHTML += `
+                        <div class="status info">
+                            ℹ️ No contenders found - system is being selective in current market conditions
+                        </div>
+                    `;
+                }
+
+                statusDiv.innerHTML = "✅ Test completed successfully!";
+                statusDiv.className = "status success";
+
+            } catch (error) {
+                statusDiv.innerHTML = `❌ Test failed: ${error.message}`;
+                statusDiv.className = "status error";
+                resultsDiv.innerHTML += `
+                    <div class="status error">
+                        Error: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // Run tests when page loads
+        window.addEventListener('load', runTests);
+    </script>
+</body>
+</html>

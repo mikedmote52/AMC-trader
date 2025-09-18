@@ -245,6 +245,28 @@ async def _create_performance_tables(conn):
         );
     """)
 
+    # Create position_tracking table for trade outcome learning
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS learning_intelligence.position_tracking (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(10) NOT NULL,
+            action VARCHAR(10) NOT NULL,  -- BUY/SELL
+            entry_price DECIMAL(10,4) NOT NULL,
+            quantity INTEGER NOT NULL,
+            entry_time TIMESTAMP NOT NULL,
+            alpaca_order_id VARCHAR(50) UNIQUE,
+            discovery_source BOOLEAN DEFAULT FALSE,
+            learning_tracked BOOLEAN DEFAULT FALSE,
+            exit_price DECIMAL(10,4),
+            exit_time TIMESTAMP,
+            outcome_recorded BOOLEAN DEFAULT FALSE,
+            return_pct DECIMAL(8,4),
+            days_held INTEGER,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        );
+    """)
+
 async def _create_indexes(conn):
     """Create database indexes for performance"""
 
@@ -267,6 +289,11 @@ async def _create_indexes(conn):
 
         # Explosive patterns indexes
         "CREATE INDEX IF NOT EXISTS idx_explosive_patterns_symbol ON learning_intelligence.explosive_patterns(symbol);",
+
+        # Position tracking indexes
+        "CREATE INDEX IF NOT EXISTS idx_position_tracking_symbol ON learning_intelligence.position_tracking(symbol);",
+        "CREATE INDEX IF NOT EXISTS idx_position_tracking_alpaca_order ON learning_intelligence.position_tracking(alpaca_order_id);",
+        "CREATE INDEX IF NOT EXISTS idx_position_tracking_discovery_source ON learning_intelligence.position_tracking(discovery_source);",
         "CREATE INDEX IF NOT EXISTS idx_explosive_patterns_date ON learning_intelligence.explosive_patterns(discovery_date);",
         "CREATE INDEX IF NOT EXISTS idx_explosive_patterns_success ON learning_intelligence.explosive_patterns(pattern_success);",
 

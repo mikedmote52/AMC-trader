@@ -75,6 +75,17 @@ class LearningIntegration:
         # Fire and forget - don't await
         asyncio.create_task(self._safe_collect_discovery_data(discovery_result))
 
+    async def collect_trade_execution(self, trade_data: Dict[str, Any]):
+        """
+        Collect trade execution data for learning (fire-and-forget)
+        Never blocks main trading system
+        """
+        if not self.learning_enabled or not self.circuit_breaker.can_execute():
+            return
+
+        # Fire and forget - don't await
+        asyncio.create_task(self._safe_collect_trade_data(trade_data))
+
     async def _safe_collect_discovery_data(self, discovery_result: Dict[str, Any]):
         """
         Safely collect discovery data with timeout and error handling
@@ -314,6 +325,114 @@ class LearningIntegration:
             logger.warning(f"Failed to track outcome for {symbol}: {e}")
             self.circuit_breaker.record_failure()
 
+    async def _safe_collect_trade_data(self, trade_data: Dict[str, Any]):
+        """
+        Safely collect trade execution data with timeout and error handling
+        """
+        try:
+            # Import learning system only when needed
+            from ..routes.learning import LearningSystem
+            from ..services.learning_engine import get_learning_engine
+
+            start_time = time.time()
+
+            # Collect trade data with timeout
+            await asyncio.wait_for(
+                self._process_trade_data(trade_data),
+                timeout=self.max_timeout
+            )
+
+            # Record success
+            self.circuit_breaker.record_success()
+
+            elapsed = time.time() - start_time
+            logger.info(f"✅ Trade data collected for {trade_data.get('symbol')} in {elapsed:.3f}s")
+
+        except asyncio.TimeoutError:
+            logger.warning(f"⏰ Learning trade collection timeout for {trade_data.get('symbol')}")
+            self.circuit_breaker.record_failure()
+        except Exception as e:
+            logger.warning(f"❌ Learning trade collection failed for {trade_data.get('symbol')}: {e}")
+            self.circuit_breaker.record_failure()
+
+    async def _process_trade_data(self, trade_data: Dict[str, Any]):
+        """
+        Process trade execution and link to discovery recommendations
+        """
+        from ..routes.learning import LearningSystem
+        from ..services.learning_engine import get_learning_engine
+
+        symbol = trade_data.get('symbol')
+        if not symbol:
+            return
+
+        # Log trade execution decision
+        await LearningSystem.log_decision(
+            symbol=symbol,
+            decision_type='trade_executed',
+            recommendation_source='discovery_to_trade',
+            confidence_score=1.0,  # Execution is definitive
+            price_at_decision=trade_data.get('price', 0.0),
+            market_time=self._get_market_time(),
+            reasoning=f"Executed {trade_data.get('action')} trade for {trade_data.get('qty')} shares",
+            metadata={
+                'alpaca_order_id': trade_data.get('alpaca_order_id'),
+                'execution_mode': trade_data.get('mode'),
+                'trade_source': trade_data.get('trade_source', 'unknown'),
+                'execution_time': trade_data.get('execution_time')
+            }
+        )
+
+        # Store in learning database for outcome tracking
+        learning_engine = await get_learning_engine()
+
+        # Add to position tracking for later outcome analysis
+        position_data = {
+            'symbol': symbol,
+            'action': trade_data.get('action'),
+            'entry_price': trade_data.get('price'),
+            'quantity': trade_data.get('qty'),
+            'entry_time': trade_data.get('execution_time'),
+            'alpaca_order_id': trade_data.get('alpaca_order_id'),
+            'discovery_source': True,
+            'learning_tracked': True
+        }
+
+        await self._store_position_for_tracking(position_data)
+
+    async def _store_position_for_tracking(self, position_data: Dict[str, Any]):
+        """
+        Store position data for future outcome tracking
+        """
+        try:
+            from ..shared.database import get_db_pool
+
+            pool = await get_db_pool()
+            if not pool:
+                return
+
+            async with pool.acquire() as conn:
+                await conn.execute("""
+                    INSERT INTO learning_intelligence.position_tracking
+                    (symbol, action, entry_price, quantity, entry_time, alpaca_order_id,
+                     discovery_source, learning_tracked, created_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+                    ON CONFLICT (alpaca_order_id) DO UPDATE SET
+                    learning_tracked = EXCLUDED.learning_tracked
+                """,
+                position_data['symbol'],
+                position_data['action'],
+                position_data['entry_price'],
+                position_data['quantity'],
+                position_data['entry_time'],
+                position_data['alpaca_order_id'],
+                position_data['discovery_source'],
+                position_data['learning_tracked']
+                )
+
+        except Exception as e:
+            logger.warning(f"Failed to store position tracking for {position_data.get('symbol')}: {e}")
+
 # Global instance
 learning_integration = LearningIntegration()
 
@@ -323,6 +442,13 @@ async def collect_discovery_data(discovery_result: Dict[str, Any]):
     Safe to call from discovery system - never blocks
     """
     await learning_integration.collect_discovery_data(discovery_result)
+
+async def collect_trade_execution(trade_data: Dict[str, Any]):
+    """
+    Public function to collect trade execution data for learning
+    Safe to call from trading system - never blocks
+    """
+    await learning_integration.collect_trade_execution(trade_data)
 
 async def track_trade_outcome(symbol: str, entry_price: float, exit_price: float, days_held: int):
     """

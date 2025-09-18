@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field, field_validator
 import os, math, httpx, json
 from prometheus_client import Counter
 from typing import Literal, Optional
+from datetime import datetime
 from backend.src.services.polygon_client import poly_singleton
 from backend.src.shared.redis_client import get_redis_client
 
@@ -246,6 +247,24 @@ async def execute(req: TradeReq):
             })
         j = r.json()
         trade_submissions.labels(mode="live", result="ok").inc()
+
+        # Send trade execution to learning system (fire-and-forget)
+        try:
+            from ..services.learning_integration import collect_trade_execution
+            import asyncio
+            asyncio.create_task(collect_trade_execution({
+                "symbol": req.symbol,
+                "action": req.action,
+                "mode": effective_mode,
+                "qty": req.qty or calculated_qty,
+                "price": latest_price,
+                "execution_time": datetime.now().isoformat(),
+                "alpaca_order_id": j.get("id"),
+                "trade_source": "discovery"
+            }))
+        except Exception as e:
+            logger.warning(f"Learning integration failed for trade {req.symbol}: {e}")
+
         return TradeResp(
             success=True, 
             mode="live",

@@ -3,6 +3,7 @@ import { API_BASE } from "../config";
 import { getJSON } from "../lib/api";
 import EnhancedLearningDashboard from "./EnhancedLearningDashboard";
 import InteractiveTradeTracker from "./InteractiveTradeTracker";
+import LearningWorkflowDashboard from "./LearningWorkflowDashboard";
 
 type Update = {
   time: string;
@@ -153,6 +154,9 @@ export default function UpdatesPage() {
           Real-time learning system monitoring and actionable insights • Last update: {lastRefresh.toLocaleTimeString()}
         </div>
       </div>
+
+      {/* Learning Workflow Dashboard - Shows complete user journey */}
+      <LearningWorkflowDashboard />
 
       {/* Enhanced Learning Intelligence Dashboard */}
       <EnhancedLearningDashboard />
