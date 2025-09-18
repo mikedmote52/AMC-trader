@@ -4,6 +4,8 @@ import { getJSON } from "../lib/api";
 import { fetchContenders } from "../lib/api";
 import TradeModal from "./TradeModal";
 import PortfolioSummary from "./PortfolioSummary";
+import { unifiedDecisionEngine, type DecisionResult } from "../lib/unifiedDecisionEngine";
+import { useTradeTracking } from "../lib/learningSystemIntegration";
 
 type Holding = {
   symbol: string;
@@ -32,6 +34,15 @@ export default function EnhancedHoldings() {
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradePreset, setTradePreset] = useState<{symbol: string; action: "BUY" | "SELL"; qty?: number} | null>(null);
 
+  // 🧠 ENHANCED: Learning system integration
+  const { trackTrade, getMetrics, refreshInsights } = useTradeTracking();
+  const [learningMetrics, setLearningMetrics] = useState({
+    totalTrades: 0,
+    winRate: 0,
+    avgReturn: 0,
+    learningAccuracy: 0
+  });
+
   // Enhanced filtering and sorting state - default to highest P&L amount first
   const [sortBy, setSortBy] = useState<"pl_pct" | "pl_amount" | "confidence" | "value" | "symbol">("pl_amount");
   const [filterBy, setFilterBy] = useState<"all" | "winners" | "losers" | "action_needed">("all");
@@ -46,6 +57,9 @@ export default function EnhancedHoldings() {
       const positions = holdingsData?.data?.positions || holdingsData?.positions || [];
       setHoldings(Array.isArray(positions) ? positions : []);
 
+      // 🧠 ENHANCED: Update learning metrics
+      setLearningMetrics(getMetrics());
+
       // Fetch contenders separately with timeout handling (non-critical)
       try {
         const contendersData = await fetchContenders();
@@ -53,6 +67,11 @@ export default function EnhancedHoldings() {
       } catch (contenderError) {
         console.warn('Failed to load contenders (non-critical):', contenderError);
         setContenders([]);
+      }
+
+      // 🧠 ENHANCED: Refresh learning insights periodically
+      if (Math.random() < 0.1) { // 10% chance to refresh insights
+        refreshInsights().catch(console.warn);
       }
     } catch (e: any) {
       setErr(e?.message || String(e));
@@ -66,6 +85,20 @@ export default function EnhancedHoldings() {
   }, []);
 
   const handleTrade = (symbol: string, action: "BUY" | "SELL", qty?: number) => {
+    // 🧠 ENHANCED: Track trade with learning system
+    const holding = holdings.find(h => h.symbol === symbol);
+    const recommendation = holding ? getRecommendation(holding) : null;
+
+    if (holding && recommendation) {
+      trackTrade({
+        symbol,
+        action,
+        entry_price: action === "BUY" ? holding.last_price : holding.avg_entry_price,
+        quantity: qty || (action === "BUY" ? 10 : holding.qty), // Default qty
+        recommendation_source: recommendation.source
+      });
+    }
+
     setTradePreset({ symbol, action, qty });
     setShowTradeModal(true);
   };
@@ -129,124 +162,9 @@ export default function EnhancedHoldings() {
     }, {});
   };
 
-  const getRecommendation = (holding: Holding) => {
-    const plPct = holding.unrealized_pl_pct;
-    const suggestion = holding.suggestion?.toLowerCase() || "";
-    const confidence = holding.confidence || 0;
-    const marketValue = holding.market_value;
-
-    // Use API-provided suggestion when available and reliable
-    if (confidence > 0.6 && suggestion) {
-      const apiSuggestion = suggestion.toUpperCase();
-      if (apiSuggestion === "INCREASE" || apiSuggestion === "BUY_MORE") {
-        return {
-          action: "BUY MORE",
-          reason: `🎯 AI recommends adding (${(confidence * 100).toFixed(0)}% confidence)`,
-          color: "#16a34a",
-          buttonText: "🎯 Add Position",
-          buttonColor: "#16a34a"
-        };
-      } else if (apiSuggestion === "REDUCE" || apiSuggestion === "TRIM") {
-        return {
-          action: "TRIM",
-          reason: `⚠️ AI recommends reducing (${(confidence * 100).toFixed(0)}% confidence)`,
-          color: "#f59e0b",
-          buttonText: "⚠️ Reduce Position",
-          buttonColor: "#f59e0b"
-        };
-      }
-    }
-
-    // Positions with VIGL thesis and confidence
-    if (confidence > 0.55 && holding.thesis) {
-      if (plPct > 2) {
-        return {
-          action: "BUY MORE",
-          reason: `🎯 VIGL pattern developing (${(confidence * 100).toFixed(0)}% confidence)`,
-          color: "#16a34a",
-          buttonText: "🎯 Add on Pattern",
-          buttonColor: "#16a34a"
-        };
-      } else {
-        return {
-          action: "HOLD",
-          reason: `⏳ VIGL thesis developing (${(confidence * 100).toFixed(0)}% confidence)`,
-          color: "#6b7280",
-          buttonText: "⏳ Wait for Signal",
-          buttonColor: "#6b7280"
-        };
-      }
-    }
-
-    // General P&L-based logic with more nuanced recommendations
-    if (plPct >= 50) {
-      return {
-        action: "TRIM",
-        reason: "💰 Strong gains - consider taking some profits",
-        color: "#f59e0b",
-        buttonText: "💰 Take Profits",
-        buttonColor: "#f59e0b"
-      };
-    }
-
-    if (plPct >= 15) {
-      return {
-        action: "HOLD",
-        reason: "📈 Good performance - let it run",
-        color: "#22c55e",
-        buttonText: "📈 Let it Run",
-        buttonColor: "#22c55e"
-      };
-    }
-
-    if (plPct >= 5) {
-      return {
-        action: "BUY MORE",
-        reason: "🚀 Building momentum - consider adding",
-        color: "#16a34a",
-        buttonText: "🚀 Add on Strength",
-        buttonColor: "#16a34a"
-      };
-    }
-
-    if (plPct >= -2) {
-      return {
-        action: "HOLD",
-        reason: "⚖️ Flat position - thesis intact",
-        color: "#6b7280",
-        buttonText: "⚖️ Hold Position",
-        buttonColor: "#6b7280"
-      };
-    }
-
-    if (plPct >= -5) {
-      return {
-        action: "HOLD",
-        reason: "⚠️ Small loss - monitor closely",
-        color: "#f59e0b",
-        buttonText: "⚠️ Monitor Closely",
-        buttonColor: "#f59e0b"
-      };
-    }
-
-    if (plPct >= -15) {
-      return {
-        action: "TRIM",
-        reason: "🔄 Moderate loss - consider reducing",
-        color: "#ef4444",
-        buttonText: "🔄 Reduce Position",
-        buttonColor: "#ef4444"
-      };
-    }
-
-    // Heavy losses
-    return {
-      action: "LIQUIDATE",
-      reason: "🚨 Heavy loss - exit position",
-      color: "#dc2626",
-      buttonText: "🚨 Exit Position",
-      buttonColor: "#dc2626"
-    };
+  // 🧠 ENHANCED: Use unified decision engine instead of conflicting logic
+  const getRecommendation = (holding: Holding): DecisionResult => {
+    return unifiedDecisionEngine.getRecommendation(holding);
   };
 
   if (err) return <div style={{padding:12, color:"#c00"}}>Error loading holdings: {err}</div>;
@@ -263,6 +181,29 @@ export default function EnhancedHoldings() {
         <div style={enhancedNoticeTitleStyle}>🚀 Enhanced Portfolio System</div>
         <div style={enhancedNoticeDescStyle}>
           This is the experimental enhanced version. Your current working portfolio system at /portfolio remains unchanged.
+        </div>
+      </div>
+
+      {/* 🧠 ENHANCED: Learning System Metrics */}
+      <div style={learningMetricsStyle}>
+        <div style={learningMetricsTitleStyle}>🧠 Learning Intelligence Metrics</div>
+        <div style={learningMetricsGridStyle}>
+          <div style={learningMetricItemStyle}>
+            <div style={learningMetricValueStyle}>{learningMetrics.totalTrades}</div>
+            <div style={learningMetricLabelStyle}>Tracked Trades</div>
+          </div>
+          <div style={learningMetricItemStyle}>
+            <div style={learningMetricValueStyle}>{(learningMetrics.winRate * 100).toFixed(1)}%</div>
+            <div style={learningMetricLabelStyle}>Win Rate</div>
+          </div>
+          <div style={learningMetricItemStyle}>
+            <div style={learningMetricValueStyle}>{learningMetrics.avgReturn.toFixed(1)}%</div>
+            <div style={learningMetricLabelStyle}>Avg Return</div>
+          </div>
+          <div style={learningMetricItemStyle}>
+            <div style={learningMetricValueStyle}>{(learningMetrics.learningAccuracy * 100).toFixed(1)}%</div>
+            <div style={learningMetricLabelStyle}>Learning Accuracy</div>
+          </div>
         </div>
       </div>
 
@@ -373,12 +314,38 @@ export default function EnhancedHoldings() {
                     color: recommendation.color,
                     marginBottom: 6,
                     textTransform: "uppercase",
-                    letterSpacing: "0.5px"
+                    letterSpacing: "0.5px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center"
                   }}>
-                    {recommendation.action} • {holding.confidence ? (holding.confidence * 100).toFixed(0) : "0"}% Confidence
+                    <span>{recommendation.action}</span>
+                    <span style={{
+                      fontSize: 12,
+                      background: recommendation.source === "learning" ? "#22c55e20" :
+                                 recommendation.source === "pattern" ? "#f59e0b20" : "#6b728020",
+                      color: recommendation.source === "learning" ? "#22c55e" :
+                             recommendation.source === "pattern" ? "#f59e0b" : "#94a3b8",
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                      textTransform: "capitalize"
+                    }}>
+                      {recommendation.source === "learning" ? "🧠 Learning" :
+                       recommendation.source === "pattern" ? "🎯 Pattern" :
+                       recommendation.source === "rules" ? "📊 Rules" : "📋 Review"}
+                    </span>
                   </div>
-                  <div style={{fontSize: 13, color: "#ddd", lineHeight: 1.4}}>
+                  <div style={{fontSize: 13, color: "#ddd", lineHeight: 1.4, marginBottom: 4}}>
                     {recommendation.reason}
+                  </div>
+                  <div style={{
+                    fontSize: 12,
+                    color: "#94a3b8",
+                    display: "flex",
+                    justifyContent: "space-between"
+                  }}>
+                    <span>Confidence: {Math.round(recommendation.confidence * 100)}%</span>
+                    <span>Source: {recommendation.source}</span>
                   </div>
                 </div>
 
@@ -638,6 +605,47 @@ const enhancedNoticeDescStyle: React.CSSProperties = {
   fontSize: "14px",
   color: "#ccc",
   lineHeight: "1.4"
+};
+
+// 🧠 ENHANCED: Learning Metrics Styles
+const learningMetricsStyle: React.CSSProperties = {
+  background: "linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0.05))",
+  border: "2px solid rgba(34, 197, 94, 0.3)",
+  borderRadius: "12px",
+  padding: "16px 20px",
+  marginBottom: "24px"
+};
+
+const learningMetricsTitleStyle: React.CSSProperties = {
+  fontSize: "16px",
+  fontWeight: 700,
+  color: "#22c55e",
+  marginBottom: "16px",
+  textAlign: "center"
+};
+
+const learningMetricsGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, 1fr)",
+  gap: "16px"
+};
+
+const learningMetricItemStyle: React.CSSProperties = {
+  textAlign: "center"
+};
+
+const learningMetricValueStyle: React.CSSProperties = {
+  fontSize: "20px",
+  fontWeight: 700,
+  color: "#22c55e",
+  marginBottom: "4px"
+};
+
+const learningMetricLabelStyle: React.CSSProperties = {
+  fontSize: "12px",
+  color: "#94a3b8",
+  textTransform: "uppercase",
+  fontWeight: 600
 };
 
 // New styles for enhanced controls
