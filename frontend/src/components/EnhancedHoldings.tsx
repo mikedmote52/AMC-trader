@@ -6,6 +6,8 @@ import TradeModal from "./TradeModal";
 import PortfolioSummary from "./PortfolioSummary";
 import { unifiedDecisionEngine, type DecisionResult } from "../lib/unifiedDecisionEngine";
 import { useTradeTracking } from "../lib/learningSystemIntegration";
+import { useThesisEvolution } from "../lib/dynamicThesisEvolution";
+import { useCircuitBreaker } from "../lib/circuitBreaker";
 
 type Holding = {
   symbol: string;
@@ -36,6 +38,13 @@ export default function EnhancedHoldings() {
 
   // 🧠 ENHANCED: Learning system integration
   const { trackTrade, getMetrics, refreshInsights } = useTradeTracking();
+
+  // 📈 ENHANCED: Dynamic thesis evolution
+  const { getEvolutionData, getEvolutionSummary } = useThesisEvolution();
+
+  // 🛡️ ENHANCED: Circuit breaker for safe fallback
+  const { executeSync, getStatus } = useCircuitBreaker();
+  const [circuitBreakerStatus, setCircuitBreakerStatus] = useState(getStatus());
   const [learningMetrics, setLearningMetrics] = useState({
     totalTrades: 0,
     winRate: 0,
@@ -57,8 +66,9 @@ export default function EnhancedHoldings() {
       const positions = holdingsData?.data?.positions || holdingsData?.positions || [];
       setHoldings(Array.isArray(positions) ? positions : []);
 
-      // 🧠 ENHANCED: Update learning metrics
+      // 🧠 ENHANCED: Update learning metrics and circuit breaker status
       setLearningMetrics(getMetrics());
+      setCircuitBreakerStatus(getStatus());
 
       // Fetch contenders separately with timeout handling (non-critical)
       try {
@@ -162,9 +172,28 @@ export default function EnhancedHoldings() {
     }, {});
   };
 
-  // 🧠 ENHANCED: Use unified decision engine instead of conflicting logic
+  // 🧠 ENHANCED: Use unified decision engine with circuit breaker protection
   const getRecommendation = (holding: Holding): DecisionResult => {
-    return unifiedDecisionEngine.getRecommendation(holding);
+    return executeSync(
+      () => unifiedDecisionEngine.getRecommendation(holding),
+      () => {
+        // Fallback to simple rule-based logic when circuit breaker is open
+        const plPct = holding.unrealized_pl_pct;
+        return {
+          action: plPct >= 25 ? "TRIM" as const :
+                  plPct <= -15 ? "LIQUIDATE" as const : "HOLD" as const,
+          reason: `📊 Fallback mode: ${plPct >= 25 ? "Taking profits" :
+                                      plPct <= -15 ? "Cutting losses" : "Monitoring position"}`,
+          color: plPct >= 25 ? "#f59e0b" : plPct <= -15 ? "#ef4444" : "#6b7280",
+          buttonText: plPct >= 25 ? "💰 Take Profits" :
+                      plPct <= -15 ? "🛑 Cut Losses" : "📊 Hold",
+          buttonColor: plPct >= 25 ? "#f59e0b" : plPct <= -15 ? "#ef4444" : "#6b7280",
+          confidence: 0.6,
+          source: "fallback" as const
+        };
+      },
+      "unified_decision"
+    );
   };
 
   if (err) return <div style={{padding:12, color:"#c00"}}>Error loading holdings: {err}</div>;
@@ -203,6 +232,54 @@ export default function EnhancedHoldings() {
           <div style={learningMetricItemStyle}>
             <div style={learningMetricValueStyle}>{(learningMetrics.learningAccuracy * 100).toFixed(1)}%</div>
             <div style={learningMetricLabelStyle}>Learning Accuracy</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 🛡️ ENHANCED: Circuit Breaker Status */}
+      <div style={{
+        ...learningMetricsStyle,
+        background: circuitBreakerStatus.isOperational ?
+          "linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0.05))" :
+          "linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05))",
+        border: circuitBreakerStatus.isOperational ?
+          "2px solid rgba(34, 197, 94, 0.3)" :
+          "2px solid rgba(239, 68, 68, 0.3)"
+      }}>
+        <div style={{
+          ...learningMetricsTitleStyle,
+          color: circuitBreakerStatus.isOperational ? "#22c55e" : "#ef4444"
+        }}>
+          🛡️ System Status: {circuitBreakerStatus.isOperational ? "✅ OPERATIONAL" : "⚠️ FALLBACK MODE"}
+        </div>
+        {!circuitBreakerStatus.isOperational && (
+          <div style={{
+            fontSize: "12px",
+            color: "#ef4444",
+            textAlign: "center",
+            marginBottom: "8px"
+          }}>
+            Enhanced features temporarily disabled. Using safe fallback logic.
+          </div>
+        )}
+        <div style={learningMetricsGridStyle}>
+          <div style={learningMetricItemStyle}>
+            <div style={learningMetricValueStyle}>{circuitBreakerStatus.state.toUpperCase()}</div>
+            <div style={learningMetricLabelStyle}>Circuit State</div>
+          </div>
+          <div style={learningMetricItemStyle}>
+            <div style={learningMetricValueStyle}>{circuitBreakerStatus.consecutiveFailures}</div>
+            <div style={learningMetricLabelStyle}>Consecutive Failures</div>
+          </div>
+          <div style={learningMetricItemStyle}>
+            <div style={learningMetricValueStyle}>{circuitBreakerStatus.recentFailures}</div>
+            <div style={learningMetricLabelStyle}>Recent Failures</div>
+          </div>
+          <div style={learningMetricItemStyle}>
+            <div style={learningMetricValueStyle}>
+              {circuitBreakerStatus.isOperational ? "🟢" : "🔴"}
+            </div>
+            <div style={learningMetricLabelStyle}>System Health</div>
           </div>
         </div>
       </div>
@@ -363,49 +440,103 @@ export default function EnhancedHoldings() {
                   )}
                 </div>
 
-                {/* Enhanced Investment Thesis Display */}
-                {holding.thesis && (
-                  <div style={{
-                    background: "#0f1419",
-                    border: "1px solid #2a2a2a",
-                    borderRadius: 8,
-                    padding: 14,
-                    marginBottom: 12,
-                    fontSize: 12,
-                    lineHeight: 1.5
-                  }}>
+                {/* 📈 ENHANCED: Dynamic Investment Thesis Display */}
+                {(() => {
+                  const evolutionData = getEvolutionData(holding.symbol);
+                  const evolutionSummary = getEvolutionSummary(holding.symbol);
+                  const displayThesis = evolutionData?.current_thesis || holding.thesis;
+
+                  if (!displayThesis) return null;
+
+                  return (
                     <div style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: "#888",
-                      marginBottom: 8,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center"
+                      background: "#0f1419",
+                      border: "1px solid #2a2a2a",
+                      borderRadius: 8,
+                      padding: 14,
+                      marginBottom: 12,
+                      fontSize: 12,
+                      lineHeight: 1.5
                     }}>
-                      <span>📊 Investment Analysis</span>
-                      <span style={{color: holding.confidence > 0.7 ? "#22c55e" : holding.confidence > 0.4 ? "#f59e0b" : "#ef4444"}}>
-                        {holding.thesis_source || "AI"}
-                      </span>
-                    </div>
-                    <div style={{color: "#e5e7eb", marginBottom: 10}}>
-                      {holding.thesis}
-                    </div>
-                    {holding.reasoning && (
                       <div style={{
-                        borderTop: "1px solid #374151",
-                        paddingTop: 8,
                         fontSize: 11,
-                        color: "#9ca3af",
-                        fontStyle: "italic"
+                        fontWeight: 600,
+                        color: "#888",
+                        marginBottom: 8,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center"
                       }}>
-                        <strong>Decision Logic:</strong> {holding.reasoning}
+                        <span>
+                          📊 Investment Analysis
+                          {evolutionSummary.hasEvolved && (
+                            <span style={{
+                              color: "#22c55e",
+                              marginLeft: 8,
+                              fontSize: 9,
+                              background: "#22c55e20",
+                              padding: "2px 4px",
+                              borderRadius: 3
+                            }}>
+                              📈 EVOLVED ({evolutionSummary.evolutionCount}x)
+                            </span>
+                          )}
+                        </span>
+                        <span style={{
+                          color: evolutionData?.confidence ?
+                            (evolutionData.confidence > 0.7 ? "#22c55e" : evolutionData.confidence > 0.4 ? "#f59e0b" : "#ef4444") :
+                            (holding.confidence > 0.7 ? "#22c55e" : holding.confidence > 0.4 ? "#f59e0b" : "#ef4444")
+                        }}>
+                          {evolutionData?.status ? evolutionData.status.toUpperCase() : (holding.thesis_source || "AI")}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                )}
+
+                      <div style={{color: "#e5e7eb", marginBottom: 10}}>
+                        {displayThesis}
+                      </div>
+
+                      {/* Evolution History */}
+                      {evolutionSummary.hasEvolved && evolutionSummary.latestEvolution && (
+                        <div style={{
+                          borderTop: "1px solid #374151",
+                          paddingTop: 6,
+                          marginBottom: 6
+                        }}>
+                          <div style={{
+                            fontSize: 10,
+                            color: "#94a3b8",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center"
+                          }}>
+                            <span>Latest: {evolutionSummary.latestEvolution.reason}</span>
+                            <span style={{
+                              color: evolutionSummary.confidenceTrend === "improving" ? "#22c55e" :
+                                     evolutionSummary.confidenceTrend === "declining" ? "#ef4444" : "#94a3b8"
+                            }}>
+                              {evolutionSummary.confidenceTrend === "improving" ? "📈" :
+                               evolutionSummary.confidenceTrend === "declining" ? "📉" : "➡️"}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {holding.reasoning && (
+                        <div style={{
+                          borderTop: "1px solid #374151",
+                          paddingTop: 8,
+                          fontSize: 11,
+                          color: "#9ca3af",
+                          fontStyle: "italic"
+                        }}>
+                          <strong>Decision Logic:</strong> {holding.reasoning}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div style={{display:"flex", gap:8, marginTop:"auto"}}>
