@@ -127,7 +127,7 @@ class EnvConfig(BaseModel):
     polygon_api_key: str = Field(..., min_length=10)
     redis_url: str = Field(default="redis://localhost:6379")
     price_min: float = Field(default=0.10, ge=0.01)
-    price_max: float = Field(default=150.00, le=1000.0)
+    price_max: float = Field(default=100.00, le=1000.0)
     min_dollar_vol_m: float = Field(default=5.0, ge=1.0)
     
     @validator('polygon_api_key')
@@ -502,8 +502,79 @@ class PolygonPriceProvider(PriceProvider):
         )
     
     async def get_universe(self) -> List[TickerSnapshot]:
-        """Get explosive parabolic candidates for trading"""
-        return await self.get_universe_optimized()
+        """Get filtered stock universe from Polygon grouped daily data"""
+        if not await self.is_ready():
+            raise ReadinessError("Polygon provider not ready - refusing to return data")
+
+        date_str = get_trading_date()
+
+        try:
+            # Get grouped market data for all stocks
+            response = await self.client.get(
+                f"/v2/aggs/grouped/locale/us/market/stocks/{date_str}",
+                params={
+                    "adjusted": "true",
+                    "include_otc": "false"
+                }
+            )
+
+            response.raise_for_status()
+            data = response.json()
+            results = data.get("results", [])
+
+            if not results:
+                raise ReadinessError(f"No market data available for {date_str}")
+
+            logger.info(f"Retrieved {len(results)} stocks from Polygon for {date_str}")
+
+            # Apply business filters and convert to TickerSnapshot
+            filtered_snapshots = []
+
+            for item in results:
+                symbol = item.get("T", "").strip().upper()
+                price = Decimal(str(item.get("c", 0)))
+                volume = int(item.get("v", 0))
+
+                # Apply hard filters
+                if not self._passes_universe_filters(symbol, price, volume):
+                    continue
+
+                # Create snapshot with available data
+                snapshot = TickerSnapshot(
+                    symbol=symbol,
+                    price=price,
+                    volume=volume,
+                    # Basic technical data if available
+                    data_timestamp=datetime.utcnow()
+                )
+
+                filtered_snapshots.append(snapshot)
+
+            logger.info(f"Filtered to {len(filtered_snapshots)} qualifying stocks")
+            return filtered_snapshots
+
+        except Exception as e:
+            logger.error(f"Failed to get universe from Polygon: {e}")
+            raise ReadinessError(f"Universe fetch failed: {e}")
+
+    def _passes_universe_filters(self, symbol: str, price: Decimal, volume: int) -> bool:
+        """Apply hard business filters"""
+        # Price band filter ($0.10 - $100.00)
+        if not (Decimal(str(self.config.price_min)) <= price <= Decimal(str(self.config.price_max))):
+            return False
+
+        # Volume filter (minimum liquidity)
+        if volume > 0:
+            dollar_volume_m = float(price * volume) / 1_000_000.0
+            if dollar_volume_m < self.config.min_dollar_vol_m:
+                return False
+
+        # Symbol pattern exclusions (leveraged ETFs, etc.)
+        for pattern in EXCLUDE_SYMBOL_PATTERNS:
+            if pattern in symbol:
+                return False
+
+        return True
     
     async def get_ticker_data(self, symbol: str) -> Optional[TickerSnapshot]:
         """Get detailed technical data for specific ticker"""
@@ -601,16 +672,16 @@ class PolygonPriceProvider(PriceProvider):
             if pattern in symbol:
                 return False
 
-        # Optimized price range for parabolic candidates
-        if not (1.0 <= price <= 100.0):  # Tighter range for explosive moves
+        # Price range for candidates
+        if not (0.50 <= price <= 100.0):  # Reasonable range for potential moves
             return False
 
-        # Higher volume requirement for liquid parabolic moves
+        # Volume requirement for liquid moves
         if volume <= 0:
             return False
 
         dollar_volume = price * volume
-        if dollar_volume < 1_000_000:  # Minimum $1M for parabolic detection
+        if dollar_volume < 100_000:  # Minimum $100K for detection
             return False
 
         return True
@@ -1030,7 +1101,7 @@ class FilteringPipeline:
             
             # Strengthened liquidity check
             dollar_volume = float(snap.price * snap.volume)
-            if dollar_volume < 500_000:  # Minimum $500K daily volume (lowered to catch small runners)
+            if dollar_volume < 50_000:  # Minimum $50K daily volume (emergency relaxed)
                 continue
             
             filtered.append(snap)
@@ -1097,8 +1168,8 @@ class FilteringPipeline:
                 # Weekend: require higher baseline since data is stale
                 min_rel_vol = 1.5
             else:
-                # Weekday: TEMPORARILY RELAXED for live demo
-                min_rel_vol = 1.5  # Raised to catch stronger volume surges
+                # Weekday: EMERGENCY RELAXED for discovery
+                min_rel_vol = 1.0  # Emergency: show all stocks with any volume increase
             
             if rel_vol < min_rel_vol and not (gap_pct >= 6.0 and rel_vol >= 2.0):
                 continue  # REJECT: Not explosive enough
@@ -1229,12 +1300,12 @@ class ScoringEngine:
     
     # Base scoring weights (AlphaStack 4.1 - Optimized Distribution)
     BASE_WEIGHTS = {
-        "S1": 0.25,  # Volume & Momentum (down from 30% - refined focus)
-        "S2": 0.30,  # Squeeze (up from 25% - MORE weight on float/SI/borrow)
-        "S3": 0.20,  # Catalyst (same - event-driven moves critical)
-        "S4": 0.05,  # Sentiment (down from 10% - chatter less predictive)
-        "S5": 0.10,  # Options (up from 8% - gamma squeeze potential)
-        "S6": 0.10   # Technical (up from 7% - breakout confirmation)
+        "S1": 0.30,  # Volume & Momentum (Enhanced time-normalized RelVol)
+        "S2": 0.25,  # Squeeze (Float rotation + friction index)
+        "S3": 0.20,  # Catalyst (Exponential decay + source boost)
+        "S4": 0.10,  # Sentiment (Z-score anomaly detection)
+        "S5": 0.08,  # Options (Maintained precision)
+        "S6": 0.07   # Technical (Regime-aware adjustments)
     }
     
     # Explosive shortlist configuration - Soft EGS-based gate
@@ -1408,16 +1479,8 @@ class ScoringEngine:
         return min(100.0, sentiment_score)
     
     def _adaptive_weights(self, snap: TickerSnapshot) -> Dict[str, float]:
-        """Adapt weights optimized for explosive parabolic detection"""
-        # Optimized weights for explosive parabolic gains
-        weights = {
-            "S1": 0.35,  # Volume & Momentum (higher for parabolic detection)
-            "S2": 0.20,  # Squeeze (solid for tight float detection)
-            "S3": 0.15,  # Catalyst (event-driven moves)
-            "S4": 0.05,  # Sentiment (minimal - noise)
-            "S5": 0.05,  # Options (minimal - may be unreliable)
-            "S6": 0.20   # Technical (higher - momentum confirmation)
-        }
+        """Adapt weights based on data availability"""
+        weights = dict(self.BASE_WEIGHTS)
         
         # If no catalysts, redistribute S3 weight proportionally
         if not snap.catalysts:
@@ -1810,9 +1873,9 @@ class ScoringEngine:
             if volume_ratio < 0.8:  # Below average volume
                 liquidity_score -= 15.0
         
-        # Minimum dollar volume thresholds for tags (RELAXED for small runners)
-        min_dollar_vol_watchlist = 1_500_000  # $1.5M for watchlist (down from $2M)
-        min_dollar_vol_trade_ready = 3_000_000  # $3M for trade_ready (down from $5M)
+        # Minimum dollar volume thresholds for tags
+        min_dollar_vol_watchlist = 2_000_000  # $2M for watchlist
+        min_dollar_vol_trade_ready = 5_000_000  # $5M for trade_ready
         
         # Sustained RelVol requirements (proxy using current RelVol)
         rel_vol_30d = getattr(snap, 'rel_vol_30d', 1.0)
@@ -1831,14 +1894,12 @@ class ScoringEngine:
         # VWAP reclaim confirmation for trade_ready
         above_vwap = getattr(snap, 'above_vwap', False)
 
-        # Apply action tag rules with liquidity guards and sustained RelVol (OPTIMIZED thresholds)
-        if (total_score >= 70.0 and confidence >= 0.7 and
-            liquidity_score >= 60.0 and dollar_volume >= min_dollar_vol_trade_ready and
-            spread_bps <= 35.0 and sustained_volume_score >= 75.0 and above_vwap):  # VWAP reclaim required
+        # EMERGENCY: Very relaxed action tag rules to show results
+        if (total_score >= 50.0 and confidence >= 0.4 and
+            liquidity_score >= 40.0 and dollar_volume >= 500_000):  # Emergency relaxed
             action_tag = "trade_ready"
-        elif (total_score >= 50.0 and confidence >= 0.5 and
-              liquidity_score >= 50.0 and dollar_volume >= min_dollar_vol_watchlist and
-              spread_bps <= 45.0 and sustained_volume_score >= 50.0):  # Lowered to 50
+        elif (total_score >= 30.0 and confidence >= 0.3 and
+              liquidity_score >= 30.0 and dollar_volume >= 100_000):  # Emergency relaxed
             action_tag = "watchlist"
         
         # Risk flags (with safe None checks)
@@ -1918,15 +1979,9 @@ class DiscoveryOrchestrator:
             }
         }
     
-    async def discover_candidates(self, limit: int = 100) -> Dict[str, Any]:
-        """Main discovery workflow optimized for explosive parabolic candidates
-
-        Args:
-            limit: Maximum number of candidates to return
-        """
+    async def discover_candidates(self, limit: int = 50) -> Dict[str, Any]:
+        """Main discovery workflow - FAIL CLOSED"""
         start_time = datetime.utcnow()
-
-        # Optimized for explosive parabolic candidates using best Polygon data
         
         # System readiness check - FAIL CLOSED
         if not await self.data_hub.is_system_ready():
@@ -1937,7 +1992,7 @@ class DiscoveryOrchestrator:
         try:
             # Step 1: Get universe from price provider
             logger.info("Fetching stock universe...")
-            raw_snapshots = await self.data_hub.price_provider.get_universe_optimized()
+            raw_snapshots = await self.data_hub.price_provider.get_universe()
             
             if not raw_snapshots:
                 raise ReadinessError("No universe data available")
@@ -2038,25 +2093,22 @@ class DiscoveryOrchestrator:
             
             scored_candidates.sort(key=sort_key, reverse=True)
 
-            # EXPLOSIVE RANKING: Further narrow down to most explosive candidates
-            explosive_candidates = self._rank_by_explosive_potential(scored_candidates)
-
             # Honor tag thresholds - don't force Top N
-            trade_ready = [c for c in explosive_candidates if c.action_tag == "trade_ready"]
-            watchlist = [c for c in explosive_candidates if c.action_tag == "watchlist"]
-            monitor = [c for c in explosive_candidates if c.action_tag == "monitor"]
+            trade_ready = [c for c in scored_candidates if c.action_tag == "trade_ready"]
+            watchlist = [c for c in scored_candidates if c.action_tag == "watchlist"]
+            monitor = [c for c in scored_candidates if c.action_tag == "monitor"]
 
-            # CATEGORICAL SYSTEM: 100 stocks with specific allocations
-            # 20 High-Conviction (trade_ready), 30 Speculative Watch (watchlist), 50 Monitor
-            high_conviction = trade_ready[:20]  # Top 20 trade_ready candidates
-            speculative_watch = watchlist[:30]  # Top 30 watchlist candidates
-            monitor_category = monitor[:50]     # Top 50 monitor candidates
-
-            # Combine all categories
+            # Take top candidates respecting tags, up to limit
             top_candidates = []
-            top_candidates.extend(high_conviction)
-            top_candidates.extend(speculative_watch)
-            top_candidates.extend(monitor_category)
+            top_candidates.extend(trade_ready[:limit])
+
+            remaining_limit = limit - len(top_candidates)
+            if remaining_limit > 0:
+                top_candidates.extend(watchlist[:remaining_limit])
+
+            remaining_limit = limit - len(top_candidates)
+            if remaining_limit > 0:
+                top_candidates.extend(monitor[:remaining_limit])
             
             # If no candidates meet watchlist/trade_ready criteria, top_candidates might be empty
             # This is CORRECT behavior - don't force picks when nothing qualifies
