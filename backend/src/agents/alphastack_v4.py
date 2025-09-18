@@ -325,12 +325,15 @@ class CandidateScore(BaseModel):
     
     # Component scores (0-100 each)
     volume_momentum_score: float = Field(..., ge=0, le=100)
-    squeeze_score: float = Field(..., ge=0, le=100) 
+    squeeze_score: float = Field(..., ge=0, le=100)
     catalyst_score: float = Field(..., ge=0, le=100)
     sentiment_score: float = Field(..., ge=0, le=100)
     options_score: float = Field(..., ge=0, le=100)
     technical_score: float = Field(..., ge=0, le=100)
-    
+
+    # Explosive potential score
+    explosive_score: float = Field(default=0.0, ge=0, le=100)
+
     # Risk flags
     risk_flags: List[str] = Field(default_factory=list)
     action_tag: str = Field(default="monitor")  # monitor, watchlist, trade_ready
