@@ -2453,6 +2453,21 @@ class DiscoveryOrchestrator:
 
         return True
 
+    async def close(self):
+        """Clean up resources and close connections"""
+        try:
+            # Close data hub connections
+            if hasattr(self.data_hub, 'close'):
+                await self.data_hub.close()
+
+            # Close individual provider connections
+            if hasattr(self.data_hub.price_provider, 'close'):
+                await self.data_hub.price_provider.close()
+
+            logger.info("Discovery system closed successfully")
+        except Exception as e:
+            logger.warning(f"Error during discovery system close: {e}")
+
 # ============================================================================
 # Factory Functions
 # ============================================================================
