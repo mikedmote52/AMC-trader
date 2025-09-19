@@ -1798,78 +1798,103 @@ class FilteringPipeline:
         return filtered
     
     def apply_rvol_filter(self, snapshots: List[TickerSnapshot]) -> List[TickerSnapshot]:
-        """Apply HARD relative volume filter - squeeze-friendly gates"""
+        """Apply HARD relative volume filter - squeeze-friendly gates with detailed rejection tracking"""
         filtered = []
-        
+
+        # Rejection counters
+        rejected_rvol = 0
+        rejected_price = 0
+        rejected_atr = 0
+
         # Detect if it's weekend/market closed
         from datetime import datetime
         current_time = datetime.now()
         is_weekend = current_time.weekday() >= 5  # Saturday = 5, Sunday = 6
-        
+
+        # Set threshold based on day
+        if is_weekend:
+            min_rel_vol = 1.5  # TESTING: Relaxed from 4.0 to 1.5
+        else:
+            min_rel_vol = 1.5  # TESTING: Relaxed from 3.0 to 1.5
+
+        logger.info(f"    RelVol Gate: {min_rel_vol}x minimum ({'Weekend' if is_weekend else 'Weekday'} threshold)")
+
         for snap in snapshots:
             # Time-normalized RelVol requirement (strengthened)
             rel_vol = snap.rel_vol_30d or 1.0  # Default to 1.0 if missing
-            
+
             # Calculate gap % (need previous close - using current price as proxy)
             gap_pct = 0.0  # TODO: Add actual gap calculation with previous close
-            
-            # Explosive volume requirements for true breakout detection
-            if is_weekend:
-                # Weekend: require higher baseline since data is stale
-                min_rel_vol = 1.5  # TESTING: Relaxed from 4.0 to 1.5
-            else:
-                # Weekday: TESTING RELAXED THRESHOLDS
-                min_rel_vol = 1.5  # TESTING: Relaxed from 3.0 to 1.5
-            
+
+            # RelVol check
             if rel_vol < min_rel_vol and not (gap_pct >= 6.0 and rel_vol >= 2.0):
+                rejected_rvol += 1
                 continue  # REJECT: Not explosive enough
-            
+
             # Price gate: ≥$1 during RTH unless micro float
             if snap.price < 1.0:
                 float_shares = getattr(snap, 'float_shares_m', 999) or 999  # Default large if unknown
                 spread_bps = getattr(snap, 'bid_ask_spread_bps', 999) or 999  # Default wide if unknown
                 if not (float_shares <= 20 and spread_bps <= 80):  # 0.8%
+                    rejected_price += 1
                     continue  # REJECT: Sub-dollar without micro float exception
-            
+
             # ATR explosive gate: ≥2% volatility expansion (TESTING RELAXED)
             atr_pct = getattr(snap, 'atr_pct', 5.0)  # Default to 5% if missing
             if atr_pct < 2.0:  # TESTING: Relaxed from 3.0 to 2.0
+                rejected_atr += 1
                 continue  # REJECT: Not volatile enough
-            
+
             filtered.append(snap)
-        
-        logger.info(f"RelVol filter (HARD GATES): {len(snapshots)} → {len(filtered)}")
+
+        logger.info(f"    ❌ RelVol rejections: {rejected_rvol} (< {min_rel_vol}x volume)")
+        logger.info(f"    ❌ Price rejections: {rejected_price} (< $1.00 without micro float)")
+        logger.info(f"    ❌ ATR rejections: {rejected_atr} (< 2.0% volatility)")
+        logger.info(f"    ✅ Total passed: {len(filtered)}")
+
         return filtered
     
     def apply_vwap_filter(self, snapshots: List[TickerSnapshot]) -> List[TickerSnapshot]:
-        """Apply VWAP reclaim and hold filter - explosive trigger"""
+        """Apply VWAP reclaim and hold filter - explosive trigger with rejection tracking"""
         filtered = []
-        
+
+        # Rejection counters
+        rejected_below_vwap = 0
+        rejected_too_extended = 0
+        allowed_missing_vwap = 0
+
         for snap in snapshots:
             # HARD GATE: Must be above and HOLDING VWAP
             if snap.vwap is None:
                 # Allow through if VWAP missing (for now)
                 filtered.append(snap)
+                allowed_missing_vwap += 1
                 continue
-            
+
             # Price above VWAP requirement
             vwap_float = float(snap.vwap) if snap.vwap else 0.0
             if float(snap.price) <= vwap_float:
+                rejected_below_vwap += 1
                 continue  # REJECT: Below VWAP
-            
+
             # VWAP premium check (not too extended) - RELAXED
             price_float = float(snap.price)
             vwap_float = float(snap.vwap) if snap.vwap else price_float
             vwap_premium = ((price_float - vwap_float) / vwap_float) if vwap_float > 0 else 0.0
             if vwap_premium > 0.20:  # >20% above VWAP (relaxed from 15%)
+                rejected_too_extended += 1
                 continue  # REJECT: Too extended above VWAP
-            
+
             # TODO: Add "holding" check (15 of last 20 minutes above VWAP)
             # For now, just require being above VWAP
             
             filtered.append(snap)
-        
-        logger.info(f"VWAP filter (RECLAIM+HOLD): {len(snapshots)} → {len(filtered)}")
+
+        logger.info(f"    ❌ Below VWAP rejections: {rejected_below_vwap}")
+        logger.info(f"    ❌ Too extended rejections: {rejected_too_extended} (>20% above VWAP)")
+        logger.info(f"    ⚠️  Missing VWAP allowed: {allowed_missing_vwap}")
+        logger.info(f"    ✅ Total passed: {len(filtered)}")
+
         return filtered
     
     def apply_squeeze_filter(self, snapshots: List[TickerSnapshot]) -> List[TickerSnapshot]:
@@ -1922,24 +1947,58 @@ class FilteringPipeline:
             return snapshots
     
     def apply_all_filters(self, snapshots: List[TickerSnapshot]) -> List[TickerSnapshot]:
-        """Apply complete filtering pipeline"""
-        logger.info(f"Starting pipeline with {len(snapshots)} snapshots")
-        
-        # Progressive filtering pipeline
-        filtered = self.apply_universe_filter(snapshots)
-        filtered = self.apply_basic_filter(filtered)
-        
-        # Apply ETP filtering early to remove leveraged ETFs like TSLL
-        filtered = self.apply_etp_filter(filtered)
-        
-        filtered = self.apply_liquidity_filter(filtered)
-        filtered = self.apply_microstructure_filter(filtered) 
-        filtered = self.apply_rvol_filter(filtered)
-        filtered = self.apply_vwap_filter(filtered)
-        filtered = self.apply_squeeze_filter(filtered)
-        
-        logger.info(f"Final pipeline result: {len(filtered)} candidates")
-        return filtered
+        """Apply complete filtering pipeline with detailed stage tracking"""
+        logger.info(f"🔍 FILTRATION PIPELINE ANALYSIS")
+        logger.info(f"=" * 60)
+
+        # Stage 0: Initial Universe
+        current = snapshots
+        logger.info(f"Stage 0 - Initial Universe: {len(current)} stocks")
+
+        # Stage 1: Universe Filter
+        current = self.apply_universe_filter(current)
+        logger.info(f"Stage 1 - Universe Filter: {len(snapshots)} → {len(current)} (-{len(snapshots) - len(current)} rejected)")
+
+        # Stage 2: Basic Filter
+        prev_count = len(current)
+        current = self.apply_basic_filter(current)
+        logger.info(f"Stage 2 - Basic Filter: {prev_count} → {len(current)} (-{prev_count - len(current)} rejected)")
+
+        # Stage 3: ETP Filter (remove leveraged ETFs)
+        prev_count = len(current)
+        current = self.apply_etp_filter(current)
+        logger.info(f"Stage 3 - ETP Filter: {prev_count} → {len(current)} (-{prev_count - len(current)} rejected)")
+
+        # Stage 4: Liquidity Filter
+        prev_count = len(current)
+        current = self.apply_liquidity_filter(current)
+        logger.info(f"Stage 4 - Liquidity Filter: {prev_count} → {len(current)} (-{prev_count - len(current)} rejected)")
+
+        # Stage 5: Microstructure Filter
+        prev_count = len(current)
+        current = self.apply_microstructure_filter(current)
+        logger.info(f"Stage 5 - Microstructure Filter: {prev_count} → {len(current)} (-{prev_count - len(current)} rejected)")
+
+        # Stage 6: RelVol Filter (CRITICAL GATE)
+        prev_count = len(current)
+        current = self.apply_rvol_filter(current)
+        logger.info(f"Stage 6 - RelVol Filter (EXPLOSIVE GATE): {prev_count} → {len(current)} (-{prev_count - len(current)} rejected)")
+
+        # Stage 7: VWAP Filter
+        prev_count = len(current)
+        current = self.apply_vwap_filter(current)
+        logger.info(f"Stage 7 - VWAP Filter: {prev_count} → {len(current)} (-{prev_count - len(current)} rejected)")
+
+        # Stage 8: Squeeze Filter
+        prev_count = len(current)
+        current = self.apply_squeeze_filter(current)
+        logger.info(f"Stage 8 - Squeeze Filter: {prev_count} → {len(current)} (-{prev_count - len(current)} rejected)")
+
+        logger.info(f"=" * 60)
+        logger.info(f"🎯 FINAL PIPELINE RESULT: {len(snapshots)} → {len(current)} candidates ({((len(current)/len(snapshots))*100):.2f}% survival rate)")
+        logger.info(f"=" * 60)
+
+        return current
 
 # ============================================================================
 # AlphaStack Scoring Engine
