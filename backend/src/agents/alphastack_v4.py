@@ -1393,13 +1393,13 @@ class FilteringPipeline:
             # Calculate gap % (need previous close - using current price as proxy)
             gap_pct = 0.0  # TODO: Add actual gap calculation with previous close
             
-            # Strengthened gates based on market state
+            # Explosive volume requirements for true breakout detection
             if is_weekend:
                 # Weekend: require higher baseline since data is stale
-                min_rel_vol = 1.5
+                min_rel_vol = 4.0  # Minimum 4x for explosive weekend detection
             else:
-                # Weekday: EMERGENCY RELAXED for discovery
-                min_rel_vol = 1.0  # Emergency: show all stocks with any volume increase
+                # Weekday: RESTORED EXPLOSIVE THRESHOLDS
+                min_rel_vol = 3.0  # Minimum 3x for explosive intraday detection
             
             if rel_vol < min_rel_vol and not (gap_pct >= 6.0 and rel_vol >= 2.0):
                 continue  # REJECT: Not explosive enough
@@ -1735,7 +1735,21 @@ class ScoringEngine:
         normalized_relvol = self._get_time_normalized_relvol(current_vol, avg_vol_30d, current_hour)
         # Apply regime adjustment
         adjusted_relvol = normalized_relvol * regime['relvol_multiplier']
-        rel_vol_score = min(100.0, max(0.0, (adjusted_relvol - 1.0) * 30.0))
+
+        # ENHANCED: Explosive volume scoring with proper thresholds
+        if adjusted_relvol >= 10.0:    # 10x+ volume = maximum explosive score
+            rel_vol_score = 100.0
+        elif adjusted_relvol >= 5.0:   # 5x+ volume = very strong
+            rel_vol_score = 85.0 + (adjusted_relvol - 5.0) * 3.0  # 85-100 range
+        elif adjusted_relvol >= 3.0:   # 3x+ volume = strong (minimum explosive)
+            rel_vol_score = 65.0 + (adjusted_relvol - 3.0) * 10.0  # 65-85 range
+        elif adjusted_relvol >= 2.0:   # 2x+ volume = moderate
+            rel_vol_score = 40.0 + (adjusted_relvol - 2.0) * 25.0  # 40-65 range
+        elif adjusted_relvol >= 1.5:   # 1.5x+ volume = weak
+            rel_vol_score = 20.0 + (adjusted_relvol - 1.5) * 40.0  # 20-40 range
+        else:                          # <1.5x volume = minimal
+            rel_vol_score = max(5.0, adjusted_relvol * 13.3)       # 0-20 range
+
         score += rel_vol_score * 0.4
         
         # Uptrend momentum (30% of S1) - enhanced with price velocity
@@ -2124,13 +2138,19 @@ class ScoringEngine:
         # VWAP reclaim confirmation for trade_ready
         above_vwap = getattr(snap, 'above_vwap', False)
 
-        # EMERGENCY: Realistic action tag rules based on actual score distribution
-        if (total_score >= 38.0 and confidence >= 0.4 and
-            liquidity_score >= 40.0 and dollar_volume >= 500_000):  # Top tier candidates
+        # RESTORED: Explosive-calibrated action tag thresholds
+        # With real catalyst data and explosive volume scoring, expect higher differentiation
+        rel_vol_30d = getattr(snap, 'rel_vol_30d', 1.0)
+
+        if (total_score >= 65.0 and confidence >= 0.7 and
+            liquidity_score >= 60.0 and dollar_volume >= 2_000_000 and rel_vol_30d >= 3.0):  # True explosive candidates
             action_tag = "trade_ready"
-        elif (total_score >= 25.0 and confidence >= 0.3 and
-              liquidity_score >= 30.0 and dollar_volume >= 100_000):  # Watch candidates
+        elif (total_score >= 50.0 and confidence >= 0.6 and
+              liquidity_score >= 45.0 and dollar_volume >= 1_000_000 and rel_vol_30d >= 2.0):  # Strong momentum candidates
             action_tag = "watchlist"
+        elif (total_score >= 35.0 and confidence >= 0.4 and
+              liquidity_score >= 30.0 and dollar_volume >= 500_000):  # Developing patterns
+            action_tag = "monitor"
         
         # Risk flags (with safe None checks)
         risk_flags = []
