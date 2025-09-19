@@ -1816,10 +1816,10 @@ class FilteringPipeline:
             # Explosive volume requirements for true breakout detection
             if is_weekend:
                 # Weekend: require higher baseline since data is stale
-                min_rel_vol = 4.0  # Minimum 4x for explosive weekend detection
+                min_rel_vol = 1.5  # TESTING: Relaxed from 4.0 to 1.5
             else:
-                # Weekday: RESTORED EXPLOSIVE THRESHOLDS
-                min_rel_vol = 3.0  # Minimum 3x for explosive intraday detection
+                # Weekday: TESTING RELAXED THRESHOLDS
+                min_rel_vol = 1.5  # TESTING: Relaxed from 3.0 to 1.5
             
             if rel_vol < min_rel_vol and not (gap_pct >= 6.0 and rel_vol >= 2.0):
                 continue  # REJECT: Not explosive enough
@@ -1831,9 +1831,9 @@ class FilteringPipeline:
                 if not (float_shares <= 20 and spread_bps <= 80):  # 0.8%
                     continue  # REJECT: Sub-dollar without micro float exception
             
-            # ATR explosive gate: ≥3% volatility expansion (relaxed)
+            # ATR explosive gate: ≥2% volatility expansion (TESTING RELAXED)
             atr_pct = getattr(snap, 'atr_pct', 5.0)  # Default to 5% if missing
-            if atr_pct < 3.0:
+            if atr_pct < 2.0:  # TESTING: Relaxed from 3.0 to 2.0
                 continue  # REJECT: Not volatile enough
             
             filtered.append(snap)
