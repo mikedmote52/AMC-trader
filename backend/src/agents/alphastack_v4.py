@@ -11,7 +11,7 @@ Professional-grade stock discovery with enhanced scoring algorithms:
 import os
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Protocol, runtime_checkable
 from decimal import Decimal
 from enum import Enum
@@ -763,20 +763,226 @@ class MockSocialProvider(SocialProvider):
     async def get_social_data(self, symbol: str) -> Dict[str, Any]:
         return {}
 
-class MockCatalystProvider(CatalystProvider):
-    """TEMPORARY mock - MUST BE REPLACED with real catalyst data"""
-    
-    async def health_check(self) -> HealthReport:
-        return HealthReport(
-            status=HealthStatus.DEGRADED,
-            error_msg="MOCK PROVIDER - NOT PRODUCTION READY"
+class PolygonCatalystProvider(CatalystProvider):
+    """Real catalyst provider using Polygon news API with multi-criteria scoring"""
+
+    def __init__(self, config: EnvConfig):
+        if not config.polygon_api_key:
+            raise ValueError("Polygon API key required for catalyst detection")
+
+        self.config = config
+        self.client = httpx.AsyncClient(
+            base_url="https://api.polygon.io",
+            headers={"Authorization": f"Bearer {config.polygon_api_key}"},
+            timeout=POLYGON_TIMEOUT_SECONDS
         )
-    
+
+        # Event scoring weights
+        self.CATALYST_WEIGHTS = {
+            # Confirmed High-Impact Events
+            "fda_approval": 45,      "merger_confirmed": 40,   "earnings_beat": 35,
+            "contract_major": 30,    "guidance_raise": 30,
+
+            # Corporate Strategy Events
+            "partnership": 25,       "product_launch": 20,    "expansion": 18,
+
+            # Market Events
+            "analyst_upgrade": 15,   "analyst_downgrade": -15,
+
+            # Negative Events (still create volatility/trading opportunities)
+            "underperformance": -15, "investigation": -25,    "recall": -20
+        }
+
+        # Keyword patterns for event detection
+        self.KEYWORD_PATTERNS = {
+            "partnership": ["partnership", "collaboration", "joint venture", "strategic alliance"],
+            "underperformance": ["underperformed", "missed expectations", "below expectations", "struggled", "disappointing"],
+            "expansion": ["international expansion", "expanding to", "new market", "global launch"],
+            "product_launch": ["launches", "unveils", "introduces new", "announces new"],
+            "earnings_beat": ["beats estimates", "exceeds expectations", "earnings surprise"],
+            "merger_confirmed": ["merger agreement", "acquisition announced", "buyout confirmed"],
+            "fda_approval": ["FDA approves", "FDA approval", "approved by FDA"],
+            "analyst_upgrade": ["upgrades", "raises target", "increases rating"],
+            "analyst_downgrade": ["downgrades", "lowers target", "reduces rating"],
+            "contract_major": ["awarded contract", "wins deal", "secures order"],
+            "investigation": ["SEC investigation", "lawsuit", "legal action"],
+            "recall": ["recall", "safety issue", "defect"]
+        }
+
+    async def health_check(self) -> HealthReport:
+        """Test catalyst provider connectivity"""
+        start_time = datetime.utcnow()
+
+        try:
+            # Test with a major stock that should have news
+            response = await self.client.get(
+                "/v2/reference/news",
+                params={"ticker": "AAPL", "limit": 1}
+            )
+
+            latency_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+
+            if response.status_code != 200:
+                return HealthReport(
+                    status=HealthStatus.FAILED,
+                    latency_ms=latency_ms,
+                    error_msg=f"HTTP {response.status_code}"
+                )
+
+            data = response.json()
+            if not data.get("results"):
+                return HealthReport(
+                    status=HealthStatus.DEGRADED,
+                    latency_ms=latency_ms,
+                    error_msg="No news data available"
+                )
+
+            return HealthReport(
+                status=HealthStatus.HEALTHY,
+                latency_ms=latency_ms
+            )
+
+        except Exception as e:
+            return HealthReport(
+                status=HealthStatus.FAILED,
+                error_msg=str(e),
+                latency_ms=int((datetime.utcnow() - start_time).total_seconds() * 1000)
+            )
+
     async def is_ready(self) -> bool:
-        return False
-    
+        """Check if catalyst provider is ready"""
+        health = await self.health_check()
+        return health.status in [HealthStatus.HEALTHY, HealthStatus.DEGRADED]
+
+    def _hours_since_published(self, published_utc: str) -> float:
+        """Calculate hours since article was published"""
+        try:
+            published = datetime.fromisoformat(published_utc.replace('Z', '+00:00'))
+            now = datetime.now(timezone.utc)
+            return (now - published).total_seconds() / 3600
+        except:
+            return 999.0  # Very old if can't parse
+
+    def _detect_events(self, title: str, description: str) -> tuple[float, list]:
+        """Detect catalyst events with context-aware scoring"""
+        text = f"{title.lower()} {description.lower()}"
+        detected_events = []
+        total_score = 0
+
+        for event_type, patterns in self.KEYWORD_PATTERNS.items():
+            for pattern in patterns:
+                if pattern in text:
+                    base_score = self.CATALYST_WEIGHTS[event_type]
+
+                    # Context modifiers
+                    if any(word in text for word in ["rumor", "potential", "explores", "discusses"]):
+                        modifier = 0.4  # Speculation gets 40% weight
+                        context = "speculation"
+                    elif any(word in text for word in ["confirmed", "announced", "agreement"]):
+                        modifier = 1.0  # Confirmed gets full weight
+                        context = "confirmed"
+                    else:
+                        modifier = 0.8  # Default 80% weight
+                        context = "reported"
+
+                    event_score = base_score * modifier
+                    total_score += event_score
+
+                    detected_events.append({
+                        "type": event_type,
+                        "pattern_matched": pattern,
+                        "context": context,
+                        "score": event_score
+                    })
+                    break  # Only count each event type once per article
+
+        return total_score, detected_events
+
+    def _extract_sentiment_boost(self, article: dict, symbol: str) -> float:
+        """Extract sentiment boost from Polygon insights"""
+        insights = article.get('insights', [])
+
+        for insight in insights:
+            if insight.get('ticker') == symbol:
+                sentiment = insight.get('sentiment', 'neutral')
+                reasoning = insight.get('sentiment_reasoning', '')
+
+                if sentiment == 'positive':
+                    if any(word in reasoning.lower() for word in ['significantly', 'strong', 'major']):
+                        return 10  # Strong positive
+                    else:
+                        return 5   # Moderate positive
+                elif sentiment == 'negative':
+                    if any(word in reasoning.lower() for word in ['significantly', 'major', 'substantial']):
+                        return -10  # Strong negative
+                    else:
+                        return -5   # Moderate negative
+
+        return 0  # Neutral
+
     async def get_catalysts(self, symbol: str) -> List[str]:
-        return []
+        """Get catalyst events for a symbol - main interface method"""
+        try:
+            # Get recent news from Polygon
+            response = await self.client.get(
+                "/v2/reference/news",
+                params={
+                    "ticker": symbol,
+                    "limit": 10,
+                    "order": "desc"
+                }
+            )
+
+            if response.status_code != 200:
+                logger.warning(f"Failed to get news for {symbol}: HTTP {response.status_code}")
+                return []
+
+            data = response.json()
+            news_articles = data.get("results", [])
+
+            if not news_articles:
+                return []
+
+            # Calculate catalyst score
+            total_score = 0
+            all_events = []
+
+            for article in news_articles:
+                hours_ago = self._hours_since_published(article.get('published_utc', ''))
+
+                # Skip old news (>72 hours)
+                if hours_ago > 72:
+                    continue
+
+                # Recency decay
+                if hours_ago <= 6:      recency = 1.0
+                elif hours_ago <= 24:   recency = 0.8
+                elif hours_ago <= 48:   recency = 0.5
+                else:                   recency = 0.3
+
+                # Event detection
+                event_score, events = self._detect_events(
+                    article.get('title', ''),
+                    article.get('description', '')
+                )
+
+                # Sentiment boost
+                sentiment_boost = self._extract_sentiment_boost(article, symbol)
+
+                # Apply recency decay
+                final_score = (event_score + sentiment_boost) * recency
+                total_score += final_score
+
+                # Collect events for return
+                for event in events:
+                    all_events.append(f"{event['type']}:{event['score']:.1f}:{event['context']}")
+
+            # Return event list (legacy interface)
+            return all_events[:5]  # Limit to top 5 events
+
+        except Exception as e:
+            logger.error(f"Catalyst detection failed for {symbol}: {e}")
+            return []
 
 class MockReferenceProvider(ReferenceProvider):
     """TEMPORARY mock - MUST BE REPLACED with real reference data"""
@@ -1970,7 +2176,7 @@ class DiscoveryOrchestrator:
             options_provider=MockOptionsProvider(),
             short_provider=MockShortProvider(),
             social_provider=MockSocialProvider(),
-            catalyst_provider=MockCatalystProvider(),
+            catalyst_provider=PolygonCatalystProvider(config),  # REAL DATA: Polygon news API
             reference_provider=MockReferenceProvider()
         )
         
