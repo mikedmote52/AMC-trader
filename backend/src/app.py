@@ -221,6 +221,7 @@ app.mount("/v1/stream", sockets_app)
 
 # Include discovery (enhanced only), portfolio, learning, daily updates, thesis, analytics, and pattern memory routers  
 from backend.src.routes import discovery_unified as discovery_routes
+from backend.src.routes import discovery_explosive as discovery_explosive_routes
 from backend.src.routes import portfolio as portfolio_routes
 from backend.src.routes import learning as learning_routes
 from backend.src.routes import daily_updates as daily_updates_routes
@@ -239,6 +240,7 @@ from backend.src.routes import thesis_monitor as thesis_monitor_routes
 # Enhanced discovery system - single unified system
 app.include_router(discovery_routes.router, prefix="/api/discovery", tags=["discovery"])
 app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery"])
+app.include_router(discovery_explosive_routes.router, prefix="/discovery", tags=["discovery-explosive"])
 app.include_router(discovery_admin_router, prefix="", tags=["discovery-admin"])
 # Calibration routes removed - unified BMS system
 app.include_router(advanced_ranking_routes.router, prefix="/advanced-ranking", tags=["advanced-ranking"])
