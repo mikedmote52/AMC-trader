@@ -37,13 +37,13 @@ async def get_explosive_candidates(limit: int = Query(20, le=100, ge=1)):
                 "data": result['candidates'],
                 "count": result['count'],
                 "metadata": {
-                    "engine": result['engine'],
-                    "strategy": result['strategy'],
-                    "execution_time_sec": result['execution_time_sec'],
-                    "pipeline_stats": result['pipeline_stats'],
-                    "universe_size": result['pipeline_stats']['universe_size'],
-                    "analyzed_count": result['pipeline_stats']['analyzed'],
-                    "filter_efficiency": f"{result['pipeline_stats']['analyzed']}/{result['pipeline_stats']['universe_size']}"
+                    "engine": result.get('engine', 'Unknown'),
+                    "strategy": result.get('strategy', 'Unknown'),
+                    "execution_time_sec": result.get('execution_time_sec', 0),
+                    "pipeline_stats": result.get('pipeline_stats', {}),
+                    "universe_size": result.get('pipeline_stats', {}).get('universe_size', 0),
+                    "analyzed_count": result.get('pipeline_stats', {}).get('analyzed', 0),
+                    "filter_efficiency": f"{result.get('pipeline_stats', {}).get('analyzed', 0)}/{result.get('pipeline_stats', {}).get('universe_size', 0)}"
                 },
                 "timestamp": datetime.now().isoformat()
             }
