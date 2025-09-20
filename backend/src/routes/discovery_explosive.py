@@ -134,11 +134,11 @@ async def explosive_discovery_health():
     """
     try:
         from backend.src.discovery.polygon_explosive_discovery import create_polygon_explosive_discovery
-        from backend.src.services.mcp_bridge import mcp_bridge
+        from backend.src.services.mcp_polygon_bridge import mcp_polygon_bridge
 
         # Test MCP bridge
         test_tickers = ['AAPL', 'TSLA', 'NVDA']
-        snapshot_result = await mcp_bridge.get_market_snapshot(tickers=test_tickers)
+        snapshot_result = await mcp_polygon_bridge.get_market_snapshot(tickers=test_tickers)
 
         # Test discovery engine creation
         discovery_engine = create_polygon_explosive_discovery()
@@ -147,9 +147,9 @@ async def explosive_discovery_health():
             "status": "healthy",
             "components": {
                 "explosive_discovery_engine": True,
-                "mcp_bridge": True,
-                "market_data_access": snapshot_result.get('status') == 'ok',
-                "universe_size": len(mcp_bridge._get_default_universe())
+                "mcp_polygon_bridge": True,
+                "market_data_access": snapshot_result.get('status') == 'OK',
+                "universe_size": len(mcp_polygon_bridge._get_liquid_universe())
             },
             "test_results": {
                 "snapshot_status": snapshot_result.get('status'),
@@ -164,7 +164,7 @@ async def explosive_discovery_health():
             "error": f"Component unavailable: {e}",
             "components": {
                 "explosive_discovery_engine": False,
-                "mcp_bridge": False,
+                "mcp_polygon_bridge": False,
                 "market_data_access": False
             },
             "timestamp": datetime.now().isoformat()
