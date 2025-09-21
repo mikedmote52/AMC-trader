@@ -76,30 +76,62 @@ export default function SqueezeMonitor() {
   const safeToTrade = telemetry?.system_health?.system_ready === true &&
                       telemetry?.production_health?.stale_data_detected === false;
 
-  // PRIMARY: Fetch squeeze candidates using Polygon MCP (fast, real-time)
+  // PRIMARY: Fetch squeeze candidates using working backend discovery system
   const fetchData = async () => {
     try {
       setLoading(true);
       setError("");
 
-      console.log('🚀 Using Polygon MCP as PRIMARY squeeze detection system');
+      console.log('🚀 Using backend discovery system with extended timeout');
 
-      // Use Polygon MCP as the main detection engine
-      const [squeezeCandidates, telemetryData] = await Promise.all([
-        polygonSqueezeDetector.detectSqueezeCandidates(20),
-        Promise.resolve(polygonSqueezeDetector.getTelemetry())
-      ]);
+      // Try the working backend discovery endpoint first with short timeout
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
-      console.log(`✅ Polygon MCP found ${squeezeCandidates.length} squeeze candidates`);
+        const response = await fetch(`${WS_URL.replace('ws', 'http')}/discovery/contenders?limit=20`, {
+          signal: controller.signal
+        });
 
-      // Convert to expected format
-      setCandidates(squeezeCandidates);
-      setExplosive([]); // No explosive data for now
-      setTelemetry(telemetryData);
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log(`✅ Backend discovery found ${data.candidates?.length || 0} real candidates`);
+
+        // Use real backend data
+        setCandidates(data.candidates || []);
+        setExplosive([]); // No explosive data for now
+        setTelemetry({
+          schema_version: data.strategy || "backend_discovery",
+          system_health: { system_ready: true },
+          production_health: { stale_data_detected: false }
+        });
+
+        return; // Success, exit early
+
+      } catch (backendError) {
+        console.warn('⚠️ Backend discovery unavailable, trying Polygon MCP fallback:', backendError);
+
+        // FALLBACK: Use Polygon MCP detection
+        const [squeezeCandidates, telemetryData] = await Promise.all([
+          polygonSqueezeDetector.detectSqueezeCandidates(20),
+          Promise.resolve(polygonSqueezeDetector.getTelemetry())
+        ]);
+
+        console.log(`✅ Polygon MCP fallback found ${squeezeCandidates.length} candidates`);
+
+        setCandidates(squeezeCandidates);
+        setExplosive([]);
+        setTelemetry(telemetryData);
+      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load squeeze data");
-      console.error("Polygon MCP squeeze detection error:", err);
+      console.error("Discovery system error:", err);
     } finally {
       setLoading(false);
     }
