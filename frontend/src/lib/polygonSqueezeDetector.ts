@@ -1,5 +1,27 @@
-// Polygon MCP Primary Squeeze Detection System
-// Real-time squeeze detection using direct Polygon market data
+// REAL POLYGON MCP SQUEEZE DETECTION SYSTEM
+// Uses ONLY real Polygon.io data via MCP functions - NO MOCK DATA
+
+// Declare MCP functions available in this environment
+declare function mcp__polygon__list_tickers(params: {
+  limit?: number;
+  active?: boolean;
+  type?: string;
+  market?: string;
+}): Promise<{ results: any[]; status: string; count: number; next_url?: string }>;
+
+declare function mcp__polygon__get_snapshot_ticker(params: {
+  market_type: string;
+  ticker: string;
+}): Promise<any>;
+
+declare function mcp__polygon__get_aggs(params: {
+  ticker: string;
+  multiplier: number;
+  timespan: string;
+  from_: string;
+  to: string;
+  adjusted?: boolean;
+}): Promise<any>;
 
 export interface SqueezeCandidate {
   symbol: string;
@@ -22,185 +44,173 @@ export interface SqueezeCandidate {
   stop?: number;
   tp1?: number;
   tp2?: number;
+  filtration_path?: string[]; // Track which filters this stock passed
 }
 
-// High-volume, high-momentum tickers to scan for squeezes
-const SQUEEZE_WATCHLIST = [
-  // Meme/Squeeze Favorites
-  "AMC", "GME", "BBBY", "PLTR", "SOFI", "WISH", "CLOV", "SPCE",
-  // Small Cap High Beta
-  "VIGL", "PTNM", "QUBT", "UP", "WULF", "RIOT", "MARA", "COIN",
-  // Bio/Pharma Squeeze Potential
-  "SAVA", "BIIB", "GILD", "MRNA", "BNTX", "NVAX", "VXRT",
-  // Tech High Volatility
-  "NVDA", "TSLA", "AAPL", "GOOGL", "META", "NFLX", "AMD", "INTC",
-  // Recent Movers
-  "DJT", "DWAC", "PHUN", "MARK", "MULN", "ATER", "RDBX", "REDBOX"
-];
+export interface FiltrationStats {
+  step: string;
+  count_before: number;
+  count_after: number;
+  rejection_count: number;
+  rejection_percentage: number;
+  examples_rejected?: string[];
+  examples_passed?: string[];
+}
 
 export class PolygonSqueezeDetector {
 
   /**
-   * PRIMARY: Detect squeeze candidates using real-time Polygon data
+   * PRIMARY: Real Polygon MCP squeeze detection - NO MOCK DATA
    */
   async detectSqueezeCandidates(limit: number = 20): Promise<SqueezeCandidate[]> {
-    console.log('🔥 Polygon MCP: Starting primary squeeze detection...');
+    console.log('🔴 REAL POLYGON MCP SQUEEZE DETECTION STARTING');
+    console.log('==============================================');
+    console.log('⚠️  USING ONLY REAL POLYGON.IO DATA VIA MCP');
 
     try {
-      // Get real-time snapshots for all watchlist symbols
-      const snapshots = await this.getMarketSnapshots(SQUEEZE_WATCHLIST);
+      // STEP 1: Get real stock universe from Polygon MCP
+      console.log('📊 STEP 1: Fetching REAL stock universe from Polygon MCP...');
 
-      // Calculate squeeze scores for each symbol
-      const candidates = snapshots
-        .map(snapshot => this.calculateSqueezeMetrics(snapshot))
-        .filter(candidate => candidate.score > 0.3) // Only meaningful scores
-        .sort((a, b) => b.score - a.score) // Highest scores first
-        .slice(0, limit);
+      const universeResponse = await (window as any).mcp__polygon__list_tickers({
+        limit: 500,
+        active: true,
+        type: 'CS',
+        market: 'stocks'
+      });
 
-      console.log(`🎯 Polygon MCP: Found ${candidates.length} squeeze candidates`);
-      return candidates;
+      if (!universeResponse || !universeResponse.results) {
+        throw new Error('Failed to get real stock universe from Polygon MCP');
+      }
+
+      const universeStocks = universeResponse.results;
+      console.log(`✅ REAL Universe loaded: ${universeStocks.length} stocks from Polygon`);
+      console.log(`📋 Sample: ${universeStocks.slice(0, 10).map(s => s.ticker).join(', ')}`);
+
+      // STEP 2: Filter to main exchange stocks only
+      const mainExchangeStocks = universeStocks.filter(stock =>
+        stock.primary_exchange &&
+        ['XNYS', 'XNAS', 'ARCX'].includes(stock.primary_exchange) &&
+        !stock.ticker.includes('.') &&
+        stock.ticker.length <= 5
+      );
+
+      console.log(`✅ Main exchange filter: ${mainExchangeStocks.length} stocks`);
+
+      // STEP 3: Get real market snapshots for top candidates
+      console.log('📊 STEP 3: Getting REAL market snapshots from Polygon...');
+      const candidateSymbols = mainExchangeStocks.slice(0, 50).map(s => s.ticker);
+      const snapshots: any[] = [];
+
+      // Get individual snapshots (since bulk snapshot is too large)
+      for (let i = 0; i < Math.min(candidateSymbols.length, 20); i++) {
+        const symbol = candidateSymbols[i];
+        try {
+          const snapshot = await (window as any).mcp__polygon__get_snapshot_ticker({
+            market_type: 'stocks',
+            ticker: symbol
+          });
+
+          if (snapshot && snapshot.results && snapshot.results.value > 0) {
+            snapshots.push({
+              symbol: symbol,
+              data: snapshot.results
+            });
+          }
+        } catch (error) {
+          console.warn(`Failed to get snapshot for ${symbol}:`, error);
+        }
+      }
+
+      console.log(`✅ REAL Market data: ${snapshots.length} stocks with trading data`);
+
+      // STEP 4: Filter and score real candidates
+      const candidates: SqueezeCandidate[] = [];
+
+      for (const snapshot of snapshots) {
+        const data = snapshot.data;
+        const price = data.value || 0;
+        const volume = data.day?.v || 0;
+        const changePercent = data.todaysChangePerc || 0;
+
+        // Apply filters
+        if (price < 1.0 || price > 500 || volume < 100000) {
+          continue;
+        }
+
+        // Calculate squeeze score based on real data
+        const score = this.calculateRealSqueezeScore(data);
+        if (score < 0.3) continue;
+
+        candidates.push({
+          symbol: snapshot.symbol,
+          score: score,
+          action_tag: score > 0.7 ? 'trade_ready' : 'watchlist',
+          price: price,
+          snapshot: {
+            price: price,
+            intraday_relvol: data.day?.v / (data.prevDay?.v || data.day?.v) || 1,
+            volume: volume,
+            change_percent: changePercent
+          },
+          squeeze_metrics: {
+            volume_surge: data.day?.v / (data.prevDay?.v || data.day?.v) || 1,
+            price_momentum: Math.abs(changePercent) / 100,
+            float_tightness: 0.5, // Would need additional data
+            squeeze_score: score
+          },
+          entry: price,
+          stop: price * (changePercent > 0 ? 0.95 : 1.05),
+          tp1: price * (changePercent > 0 ? 1.15 : 0.85),
+          tp2: price * (changePercent > 0 ? 1.30 : 0.70)
+        });
+      }
+
+      // Sort by score and limit
+      candidates.sort((a, b) => b.score - a.score);
+      const finalCandidates = candidates.slice(0, limit);
+
+      console.log('🏆 REAL POLYGON RESULTS:');
+      finalCandidates.forEach((candidate, index) => {
+        console.log(`${index + 1}. ${candidate.symbol}: $${candidate.price.toFixed(2)} (${(candidate.score * 100).toFixed(1)}%)`);
+      });
+
+      if (finalCandidates.length === 0) {
+        console.warn('⚠️  No candidates passed filters - market may be quiet');
+      }
+
+      return finalCandidates;
 
     } catch (error) {
-      console.error('❌ Polygon MCP squeeze detection failed:', error);
-      return [];
+      console.error('❌ REAL Polygon MCP detection failed:', error);
+      console.error('This should NEVER show mock data - system failure');
+      throw error; // Don't fall back to mock data
     }
   }
 
   /**
-   * Get real-time market snapshots using simulated high-momentum data
-   * TODO: Integrate with actual Polygon MCP when backend bridge is ready
+   * Calculate squeeze score from real Polygon data
    */
-  private async getMarketSnapshots(symbols: string[]): Promise<any[]> {
-    console.log('📊 Generating real-time squeeze candidates...');
+  private calculateRealSqueezeScore(data: any): number {
+    const volume = data.day?.v || 0;
+    const prevVolume = data.prevDay?.v || volume;
+    const price = data.value || 0;
+    const changePercent = Math.abs(data.todaysChangePerc || 0);
 
-    // Simulate high-quality squeeze candidates with realistic market data
-    const simulatedSnapshots = [
-      {
-        symbol: "VIGL",
-        todaysChangePerc: 8.45,
-        day: { c: 5.12, v: 2456789, o: 4.85, h: 5.20, l: 4.80 },
-        prevDay: { c: 4.70, v: 1234567 }
-      },
-      {
-        symbol: "PTNM",
-        todaysChangePerc: -2.95,
-        day: { c: 7.55, v: 373500, o: 7.95, h: 8.00, l: 7.03 },
-        prevDay: { c: 7.80, v: 530335 }
-      },
-      {
-        symbol: "QUBT",
-        todaysChangePerc: 26.21,
-        day: { c: 23.27, v: 98555890, o: 18.19, h: 23.98, l: 18.18 },
-        prevDay: { c: 18.35, v: 42934199 }
-      },
-      {
-        symbol: "UP",
-        todaysChangePerc: 3.67,
-        day: { c: 2.50, v: 8656550, o: 2.51, h: 2.56, l: 2.35 },
-        prevDay: { c: 2.45, v: 10655585 }
-      },
-      {
-        symbol: "WULF",
-        todaysChangePerc: 12.8,
-        day: { c: 10.98, v: 15234567, o: 9.75, h: 11.25, l: 9.65 },
-        prevDay: { c: 9.73, v: 8234567 }
-      },
-      {
-        symbol: "AMC",
-        todaysChangePerc: 5.2,
-        day: { c: 4.85, v: 45234567, o: 4.61, h: 4.92, l: 4.58 },
-        prevDay: { c: 4.61, v: 32145678 }
-      },
-      {
-        symbol: "GME",
-        todaysChangePerc: -3.1,
-        day: { c: 18.45, v: 8234567, o: 19.02, h: 19.15, l: 18.22 },
-        prevDay: { c: 19.04, v: 12345678 }
-      },
-      {
-        symbol: "SOFI",
-        todaysChangePerc: 7.3,
-        day: { c: 8.92, v: 28345678, o: 8.31, h: 9.05, l: 8.28 },
-        prevDay: { c: 8.31, v: 18234567 }
-      }
-    ];
-
-    // Filter to requested symbols and add realistic variance
-    return simulatedSnapshots
-      .filter(snap => symbols.includes(snap.symbol))
-      .map(snap => ({
-        ...snap,
-        // Add small random variance to make it feel live
-        day: {
-          ...snap.day,
-          c: snap.day.c * (0.98 + Math.random() * 0.04), // ±2% variance
-          v: Math.floor(snap.day.v * (0.8 + Math.random() * 0.4)) // ±20% volume variance
-        }
-      }));
-  }
-
-  /**
-   * Calculate squeeze metrics and score from Polygon snapshot data
-   */
-  private calculateSqueezeMetrics(snapshot: any): SqueezeCandidate {
-    const symbol = snapshot.symbol;
-    const price = snapshot.day?.c || 0;
-    const volume = snapshot.day?.v || 0;
-    const prevVolume = snapshot.prevDay?.v || volume;
-    const changePercent = snapshot.todaysChangePerc || 0;
-
-    // Volume Surge Score (0-1)
+    // Volume surge component (0-1)
     const volumeRatio = prevVolume > 0 ? volume / prevVolume : 1;
-    const volumeSurge = Math.min(volumeRatio / 5.0, 1.0); // Max at 5x volume
+    const volumeScore = Math.min(volumeRatio / 3.0, 1.0); // Max at 3x volume
 
-    // Price Momentum Score (0-1)
-    const priceMomentum = Math.min(Math.abs(changePercent) / 20.0, 1.0); // Max at 20% move
+    // Price momentum component (0-1)
+    const momentumScore = Math.min(changePercent / 10.0, 1.0); // Max at 10% move
 
-    // Float Tightness (simplified - based on volume vs market cap proxy)
-    const marketCapProxy = price * volume; // Rough proxy
-    const floatTightness = marketCapProxy < 100000000 ? 0.8 : 0.4; // Favor smaller caps
+    // Price level component (favor mid-range prices)
+    const priceScore = price >= 5 && price <= 100 ? 1.0 : 0.5;
 
-    // Combined Squeeze Score
-    const squeezeScore = (
-      volumeSurge * 0.4 +      // 40% volume surge
-      priceMomentum * 0.3 +    // 30% price momentum
-      floatTightness * 0.3     // 30% float characteristics
-    );
-
-    // Action tag based on score
-    let actionTag = 'monitor';
-    if (squeezeScore > 0.7) actionTag = 'trade_ready';
-    else if (squeezeScore > 0.5) actionTag = 'watchlist';
-
-    // Price targets (simple momentum-based)
-    const entry = price;
-    const stop = price * (changePercent > 0 ? 0.95 : 1.05);
-    const tp1 = price * (changePercent > 0 ? 1.15 : 0.85);
-    const tp2 = price * (changePercent > 0 ? 1.30 : 0.70);
-
-    return {
-      symbol,
-      score: squeezeScore,
-      action_tag: actionTag,
-      price,
-      snapshot: {
-        price,
-        intraday_relvol: volumeRatio,
-        volume,
-        change_percent: changePercent
-      },
-      squeeze_metrics: {
-        volume_surge: volumeSurge,
-        price_momentum: priceMomentum,
-        float_tightness: floatTightness,
-        squeeze_score: squeezeScore
-      },
-      entry,
-      stop,
-      tp1,
-      tp2
-    };
+    // Combined score
+    return (volumeScore * 0.5 + momentumScore * 0.3 + priceScore * 0.2);
   }
+
+  // ALL MOCK DATA FUNCTIONS REMOVED - USING ONLY REAL POLYGON MCP DATA
 
   /**
    * Get system telemetry for status display
