@@ -85,7 +85,8 @@ export default function SqueezeMonitor() {
       console.log('🔄 Using existing discovery system...');
 
       // Call the WORKING discovery system that's already built
-      const discoveryResponse = await fetch(`${WS_URL.replace('ws', 'http')}/discovery/contenders?limit=50`);
+      const discoveryURL = WS_URL.replace('wss', 'https').replace('ws', 'http').replace('/v1/stream', '');
+      const discoveryResponse = await fetch(`${discoveryURL}/discovery/contenders?limit=50`);
 
       if (!discoveryResponse.ok) {
         throw new Error(`Discovery system failed: ${discoveryResponse.status}`);

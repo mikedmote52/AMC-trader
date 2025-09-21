@@ -25,19 +25,29 @@ async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
     try:
         logger.info(f"💥 Running explosive discovery job with limit={limit}")
 
-        # TEMPORARY FIX: Skip Polygon explosive discovery due to performance issues
-        # Use AlphaStack system directly until Polygon MCP issues are resolved
-        logger.info("🔧 TEMP FIX: Bypassing Polygon explosive discovery due to timeout issues")
+        # Initialize explosive discovery engine - try Polygon first, fallback to AlphaStack
+        try:
+            from polygon_explosive_discovery import create_polygon_explosive_discovery
+            discovery_engine = create_polygon_explosive_discovery()
+            logger.info("✅ Polygon explosive discovery engine loaded")
+        except ImportError as e:
+            logger.error(f"Failed to import polygon explosive discovery engine: {e}")
+            # Fallback to old system
+            try:
+                from explosive_discovery_v2 import create_explosive_discovery_engine
+                discovery_engine = create_explosive_discovery_engine()
+                logger.info("✅ Fallback to explosive discovery v2")
+            except ImportError as e2:
+                logger.error(f"Failed to import any explosive discovery engine: {e2}")
+                # Final fallback to old system
+                from alphastack_v4 import create_discovery_system
+                discovery = create_discovery_system()
+                results = await discovery.discover_candidates(limit=limit)
+                await discovery.close()
+                logger.info("✅ Using legacy AlphaStack system")
 
-        # Use reliable AlphaStack system
-        from alphastack_v4 import create_discovery_system
-        discovery = create_discovery_system()
-        results = await discovery.discover_candidates(limit=limit)
-        await discovery.close()
-        logger.info("✅ Using reliable AlphaStack system")
-
-        # Transform old format to new format
-        return _transform_legacy_results(results)
+                # Transform old format to new format
+                return _transform_legacy_results(results)
 
         # Run explosive discovery
         if hasattr(discovery_engine, 'discover_explosive_stocks'):
