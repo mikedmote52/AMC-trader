@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { API_BASE } from "../config";
-import { getJSON } from "../lib/api";
+import { API_BASE, getJSON } from "../lib/api";
 import { fetchContenders } from "../lib/api";
 import TradeModal from "./TradeModal";
 import PortfolioSummary from "./PortfolioSummary";
-// Temporarily disabled advanced features to fix build
-// import { unifiedDecisionEngine, type DecisionResult } from "../lib/unifiedDecisionEngine";
-// import { useTradeTracking } from "../lib/learningSystemIntegration";
-// import { useThesisEvolution } from "../lib/dynamicThesisEvolution";
-// import { useCircuitBreaker } from "../lib/circuitBreaker";
+import { intelligentDecisionEngine, type IntelligentDecisionResult } from "../lib/intelligentDecisionEngine";
+import { useTradeTracking } from "../lib/learningSystemIntegration";
+import { useThesisEvolution } from "../lib/dynamicThesisEvolution";
+import { useCircuitBreaker } from "../lib/circuitBreaker";
 
 type Holding = {
   symbol: string;
@@ -38,13 +36,13 @@ export default function EnhancedHoldings() {
   const [tradePreset, setTradePreset] = useState<{symbol: string; action: "BUY" | "SELL"; qty?: number} | null>(null);
 
   // 🧠 ENHANCED: Learning system integration
-  // const { trackTrade, getMetrics, refreshInsights } = useTradeTracking();
+  const { trackTrade, getMetrics, refreshInsights } = useTradeTracking();
 
   // 📈 ENHANCED: Dynamic thesis evolution
-  // const { getEvolutionData, getEvolutionSummary } = useThesisEvolution();
+  const { getEvolutionData, getEvolutionSummary } = useThesisEvolution();
 
   // 🛡️ ENHANCED: Circuit breaker for safe fallback
-  // const { executeSync, getStatus } = useCircuitBreaker();
+  const { executeSync, getStatus } = useCircuitBreaker();
   const [circuitBreakerStatus, setCircuitBreakerStatus] = useState(getStatus());
   const [learningMetrics, setLearningMetrics] = useState({
     totalTrades: 0,
@@ -61,15 +59,26 @@ export default function EnhancedHoldings() {
   async function fetchData() {
     try {
       setErr("");
+      console.log('🔄 Starting enhanced data fetch from backend...');
 
-      // Fetch holdings first (critical for portfolio display)
-      const holdingsData = await getJSON<any>(`${API_BASE}/portfolio/holdings`);
+      // INVESTMENT SYSTEM: ONLY use real backend data - NO mock data
+      console.log('🌐 Fetching real portfolio from:', `${API_BASE}/portfolio/holdings`);
+      const portfolioPath = `/portfolio/holdings`;
+      const holdingsData = await getJSON<any>(portfolioPath);
+      console.log('📊 Backend response received:', holdingsData);
+
       const positions = holdingsData?.data?.positions || holdingsData?.positions || [];
+
+      if (positions.length === 0) {
+        throw new Error('No positions found in portfolio');
+      }
+
       setHoldings(Array.isArray(positions) ? positions : []);
+      console.log('✅ Holdings loaded from backend, count:', positions.length);
 
       // 🧠 ENHANCED: Update learning metrics and circuit breaker status
-      // setLearningMetrics(getMetrics());
-      // setCircuitBreakerStatus(getStatus());
+      setLearningMetrics(getMetrics());
+      setCircuitBreakerStatus(getStatus());
 
       // Fetch contenders separately with timeout handling (non-critical)
       try {
@@ -82,10 +91,13 @@ export default function EnhancedHoldings() {
 
       // 🧠 ENHANCED: Refresh learning insights periodically
       if (Math.random() < 0.1) { // 10% chance to refresh insights
-        // refreshInsights().catch(console.warn);
+        refreshInsights().catch(console.warn);
       }
+
     } catch (e: any) {
+      console.error('❌ Failed to fetch data even with fallback:', e);
       setErr(e?.message || String(e));
+      setUsingFallback(false);
     }
   }
 
@@ -101,13 +113,13 @@ export default function EnhancedHoldings() {
     const recommendation = holding ? getRecommendation(holding) : null;
 
     if (holding && recommendation) {
-      // trackTrade({
-      //   symbol,
-      //   action,
-      //   entry_price: action === "BUY" ? holding.last_price : holding.avg_entry_price,
-      //   quantity: qty || (action === "BUY" ? 10 : holding.qty), // Default qty
-      //   recommendation_source: recommendation.source
-      // });
+      trackTrade({
+        symbol,
+        action,
+        entry_price: action === "BUY" ? holding.last_price : holding.avg_entry_price,
+        quantity: qty || (action === "BUY" ? 10 : holding.qty), // Default qty
+        recommendation_source: recommendation.source
+      });
     }
 
     setTradePreset({ symbol, action, qty });
@@ -128,7 +140,7 @@ export default function EnhancedHoldings() {
         break;
       case "action_needed":
         filtered = filtered.filter(h => {
-          const rec = getRecommendation(h);
+          const rec = getRecommendationSync(h);
           return rec.action !== "HOLD";
         });
         break;
@@ -162,7 +174,7 @@ export default function EnhancedHoldings() {
       if (groupBy === "sector") {
         key = holding.sector || "Unknown";
       } else if (groupBy === "recommendation") {
-        key = getRecommendation(holding).action;
+        key = getRecommendationSync(holding).action;
       } else {
         key = "All";
       }
@@ -173,32 +185,100 @@ export default function EnhancedHoldings() {
     }, {});
   };
 
-  // 🧠 ENHANCED: Use unified decision engine with circuit breaker protection
-  const getRecommendation = (holding: Holding): any => {
-    return Promise.resolve(
-      () => ({ action: 'HOLD', confidence: 0.5, reasoning: 'Basic hold recommendation' }),
-      () => {
-        // Fallback to simple rule-based logic when circuit breaker is open
-        const plPct = holding.unrealized_pl_pct;
-        return {
-          action: plPct >= 25 ? "TRIM" as const :
-                  plPct <= -15 ? "LIQUIDATE" as const : "HOLD" as const,
-          reason: `📊 Fallback mode: ${plPct >= 25 ? "Taking profits" :
-                                      plPct <= -15 ? "Cutting losses" : "Monitoring position"}`,
-          color: plPct >= 25 ? "#f59e0b" : plPct <= -15 ? "#ef4444" : "#6b7280",
-          buttonText: plPct >= 25 ? "💰 Take Profits" :
-                      plPct <= -15 ? "🛑 Cut Losses" : "📊 Hold",
-          buttonColor: plPct >= 25 ? "#f59e0b" : plPct <= -15 ? "#ef4444" : "#6b7280",
-          confidence: 0.6,
-          source: "fallback" as const
-        };
-      },
-      "unified_decision"
-    );
+  // 🧠 ENHANCED: Use intelligent decision engine with learning + pattern analysis
+  const [recommendations, setRecommendations] = useState<Map<string, IntelligentDecisionResult>>(new Map());
+
+  const getRecommendation = async (holding: Holding): Promise<IntelligentDecisionResult> => {
+    // Check cache first
+    const cached = recommendations.get(holding.symbol);
+    if (cached) return cached;
+
+    try {
+      const recommendation = await executeSync(
+        () => intelligentDecisionEngine.getRecommendation(holding),
+        () => {
+          // Fallback to simple rule-based logic when circuit breaker is open
+          const plPct = holding.unrealized_pl_pct;
+          return {
+            action: plPct >= 25 ? "TRIM" as const :
+                    plPct <= -15 ? "LIQUIDATE" as const : "HOLD" as const,
+            reason: `📊 Fallback mode: ${plPct >= 25 ? "Taking profits" :
+                                        plPct <= -15 ? "Cutting losses" : "Monitoring position"}`,
+            color: plPct >= 25 ? "#f59e0b" : plPct <= -15 ? "#ef4444" : "#6b7280",
+            buttonText: plPct >= 25 ? "💰 Take Profits" :
+                        plPct <= -15 ? "🛑 Cut Losses" : "📊 Hold",
+            buttonColor: plPct >= 25 ? "#f59e0b" : plPct <= -15 ? "#ef4444" : "#6b7280",
+            confidence: 0.6,
+            source: "fallback" as const
+          };
+        },
+        "intelligent_decision"
+      );
+
+      // Cache the recommendation
+      setRecommendations(prev => new Map(prev.set(holding.symbol, recommendation)));
+      return recommendation;
+
+    } catch (error) {
+      console.warn(`Failed to get recommendation for ${holding.symbol}:`, error);
+      // Return basic fallback
+      const plPct = holding.unrealized_pl_pct;
+      return {
+        action: "HOLD" as const,
+        reason: `📋 Basic analysis: ${plPct.toFixed(1)}% P&L`,
+        color: "#6b7280",
+        buttonText: "📊 Monitor",
+        buttonColor: "#6b7280",
+        confidence: 0.3,
+        source: "fallback" as const
+      };
+    }
   };
 
+  // Synchronous version for immediate UI rendering
+  const getRecommendationSync = (holding: Holding): IntelligentDecisionResult => {
+    const cached = recommendations.get(holding.symbol);
+    if (cached) return cached;
+
+    // Return loading state while async recommendation loads
+    return {
+      action: "HOLD" as const,
+      reason: `🔄 Analyzing ${holding.symbol}...`,
+      color: "#6b7280",
+      buttonText: "🔄 Analyzing...",
+      buttonColor: "#6b7280",
+      confidence: 0.5,
+      source: "fallback" as const
+    };
+  };
+
+  // Load recommendations for all holdings
+  useEffect(() => {
+    const loadRecommendations = async () => {
+      for (const holding of holdings) {
+        if (!recommendations.has(holding.symbol)) {
+          try {
+            await getRecommendation(holding);
+          } catch (error) {
+            console.warn(`Failed to load recommendation for ${holding.symbol}:`, error);
+          }
+        }
+      }
+    };
+
+    if (holdings.length > 0) {
+      loadRecommendations();
+    }
+  }, [holdings.map(h => h.symbol).join(',')]);  // Re-run when holdings change
+
   if (err) return <div style={{padding:12, color:"#c00"}}>Error loading holdings: {err}</div>;
-  if (!holdings.length) return <div style={{padding:12, color:"#888"}}>No holdings found.</div>;
+  if (!holdings.length) return (
+    <div style={{padding:12, color:"#888"}}>
+      No holdings found. Check browser console for debug logs.
+      <br />
+      <small>API Base: {API_BASE}/portfolio/holdings</small>
+    </div>
+  );
 
   const groupedHoldings = getFilteredAndSortedHoldings();
 
@@ -213,6 +293,7 @@ export default function EnhancedHoldings() {
           This is the experimental enhanced version. Your current working portfolio system at /portfolio remains unchanged.
         </div>
       </div>
+
 
       {/* 🧠 ENHANCED: Learning System Metrics */}
       <div style={learningMetricsStyle}>
@@ -329,7 +410,7 @@ export default function EnhancedHoldings() {
             <option value="all">🎯 All Positions ({holdings.length})</option>
             <option value="winners">📈 Winners ({holdings.filter(h => h.unrealized_pl_pct >= 5).length})</option>
             <option value="losers">📉 Losers ({holdings.filter(h => h.unrealized_pl_pct <= -2).length})</option>
-            <option value="action_needed">⚡ Action Needed ({holdings.filter(h => getRecommendation(h).action !== "HOLD").length})</option>
+            <option value="action_needed">⚡ Action Needed ({holdings.filter(h => getRecommendationSync(h).action !== "HOLD").length})</option>
           </select>
         </div>
 
@@ -358,7 +439,7 @@ export default function EnhancedHoldings() {
           <div className="grid-responsive">
             {groupHoldings.map((holding) => {
               const plColor = holding.unrealized_pl >= 0 ? "#22c55e" : "#ef4444";
-              const recommendation = getRecommendation(holding);
+              const recommendation = getRecommendationSync(holding);
 
           return (
             <div key={holding.symbol} style={cardStyle}>
@@ -413,9 +494,43 @@ export default function EnhancedHoldings() {
                        recommendation.source === "rules" ? "📊 Rules" : "📋 Review"}
                     </span>
                   </div>
-                  <div style={{fontSize: 13, color: "#ddd", lineHeight: 1.4, marginBottom: 4}}>
+                  <div style={{fontSize: 13, color: "#ddd", lineHeight: 1.4, marginBottom: 8}}>
                     {recommendation.reason}
                   </div>
+
+                  {/* Enhanced Intelligence Insights */}
+                  {(recommendation.learningInsight || recommendation.patternMatch || recommendation.expectedMove) && (
+                    <div style={{
+                      background: "#0a0a0a",
+                      border: "1px solid #333",
+                      borderRadius: 6,
+                      padding: 8,
+                      marginBottom: 8,
+                      fontSize: 11
+                    }}>
+                      {recommendation.learningInsight && (
+                        <div style={{ color: "#22c55e", marginBottom: 4 }}>
+                          🧠 <strong>Learning:</strong> {recommendation.learningInsight}
+                        </div>
+                      )}
+                      {recommendation.patternMatch && (
+                        <div style={{ color: "#f59e0b", marginBottom: 4 }}>
+                          🎯 <strong>Pattern:</strong> {recommendation.patternMatch}
+                        </div>
+                      )}
+                      {recommendation.expectedMove && (
+                        <div style={{ color: "#94a3b8", marginBottom: 4 }}>
+                          📊 <strong>Expected:</strong> {recommendation.expectedMove} in {recommendation.timeHorizon || "2-4 weeks"}
+                        </div>
+                      )}
+                      {recommendation.historicalAccuracy && recommendation.historicalAccuracy > 0 && (
+                        <div style={{ color: "#6b7280" }}>
+                          📈 <strong>Track Record:</strong> {Math.round(recommendation.historicalAccuracy * 100)}% accuracy
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div style={{
                     fontSize: 12,
                     color: "#94a3b8",
@@ -443,10 +558,8 @@ export default function EnhancedHoldings() {
 
                 {/* 📈 ENHANCED: Dynamic Investment Thesis Display */}
                 {(() => {
-                  // const evolutionData = getEvolutionData(holding.symbol);
-                  // const evolutionSummary = getEvolutionSummary(holding.symbol);
-                  const evolutionData = null;
-                  const evolutionSummary = null;
+                  const evolutionData = getEvolutionData(holding.symbol);
+                  const evolutionSummary = getEvolutionSummary(holding.symbol);
                   const displayThesis = evolutionData?.current_thesis || holding.thesis;
 
                   if (!displayThesis) return null;
@@ -542,109 +655,168 @@ export default function EnhancedHoldings() {
                 })()}
               </div>
 
-              <div style={{display:"flex", gap:8, marginTop:"auto"}}>
-                {recommendation.action === "LIQUIDATE" ? (
-                  <button
-                    onClick={() => handleTrade(holding.symbol, "SELL", holding.qty)}
-                    style={{
-                      ...actionBtn,
-                      background: recommendation.buttonColor,
-                      border: `1px solid ${recommendation.buttonColor}`,
-                      flex: 1
-                    }}
-                  >
-                    {recommendation.buttonText}
-                  </button>
-                ) : recommendation.action === "TRIM" ? (
-                  <>
+              {/* Enhanced Action Buttons with Smart Position Sizing */}
+              <div style={{display:"flex", flexDirection: "column", gap:8, marginTop:"auto"}}>
+                {/* Primary Recommendation Button */}
+                <button
+                  onClick={() => {
+                    if (recommendation.action === "LIQUIDATE") {
+                      handleTrade(holding.symbol, "SELL", holding.qty);
+                    } else if (recommendation.action === "TRIM") {
+                      // Smart trim: 50% for high gains, 25% for moderate
+                      const trimPercent = holding.unrealized_pl_pct > 100 ? 0.75 : 0.5;
+                      handleTrade(holding.symbol, "SELL", Math.floor(holding.qty * trimPercent));
+                    } else if (recommendation.action === "BUY MORE") {
+                      // Smart position sizing based on current value
+                      const addAmount = Math.min(holding.market_value * 0.3, 1000); // Add 30% of current or $1000 max
+                      handleTrade(holding.symbol, "BUY", Math.floor(addAmount / holding.last_price));
+                    }
+                  }}
+                  style={{
+                    ...actionBtn,
+                    background: recommendation.buttonColor,
+                    border: `2px solid ${recommendation.buttonColor}`,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    padding: "12px 16px",
+                    textTransform: "uppercase"
+                  }}
+                >
+                  {recommendation.action === "LIQUIDATE" ? "🛑 Exit All" :
+                   recommendation.action === "TRIM" ? `💰 Trim ${holding.unrealized_pl_pct > 100 ? "75%" : "50%"}` :
+                   recommendation.action === "BUY MORE" ? "🚀 Add Position" :
+                   "📊 Continue Holding"}
+                </button>
+
+                {/* Secondary Action Buttons */}
+                {recommendation.action !== "HOLD" && (
+                  <div style={{display:"flex", gap:6}}>
+                    {recommendation.action === "TRIM" && (
+                      <>
+                        <button
+                          onClick={() => handleTrade(holding.symbol, "SELL", Math.floor(holding.qty * 0.25))}
+                          style={{
+                            ...actionBtn,
+                            background: "#6b7280",
+                            border: "1px solid #6b7280",
+                            fontSize: 11,
+                            flex: 1
+                          }}
+                        >
+                          Trim 25%
+                        </button>
+                        <button
+                          onClick={() => handleTrade(holding.symbol, "SELL", holding.qty)}
+                          style={{
+                            ...actionBtn,
+                            background: "#ef4444",
+                            border: "1px solid #ef4444",
+                            fontSize: 11,
+                            flex: 1
+                          }}
+                        >
+                          Exit All
+                        </button>
+                      </>
+                    )}
+
+                    {recommendation.action === "BUY MORE" && (
+                      <>
+                        <button
+                          onClick={() => {
+                            const smallAdd = Math.floor(500 / holding.last_price); // $500 worth
+                            handleTrade(holding.symbol, "BUY", smallAdd);
+                          }}
+                          style={{
+                            ...actionBtn,
+                            background: "#374151",
+                            border: "1px solid #4b5563",
+                            fontSize: 11,
+                            flex: 1
+                          }}
+                        >
+                          Add $500
+                        </button>
+                        <button
+                          onClick={() => {
+                            const largeAdd = Math.floor(1500 / holding.last_price); // $1500 worth
+                            handleTrade(holding.symbol, "BUY", largeAdd);
+                          }}
+                          style={{
+                            ...actionBtn,
+                            background: "#374151",
+                            border: "1px solid #4b5563",
+                            fontSize: 11,
+                            flex: 1
+                          }}
+                        >
+                          Add $1.5K
+                        </button>
+                      </>
+                    )}
+
+                    {recommendation.action === "LIQUIDATE" && (
+                      <>
+                        <button
+                          onClick={() => handleTrade(holding.symbol, "SELL", Math.floor(holding.qty * 0.5))}
+                          style={{
+                            ...actionBtn,
+                            background: "#f59e0b",
+                            border: "1px solid #f59e0b",
+                            fontSize: 11,
+                            flex: 1
+                          }}
+                        >
+                          Exit 50%
+                        </button>
+                        <button
+                          onClick={() => handleTrade(holding.symbol, "SELL", Math.floor(holding.qty * 0.75))}
+                          style={{
+                            ...actionBtn,
+                            background: "#f59e0b",
+                            border: "1px solid #f59e0b",
+                            fontSize: 11,
+                            flex: 1
+                          }}
+                        >
+                          Exit 75%
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Alternative Actions for HOLD */}
+                {recommendation.action === "HOLD" && (
+                  <div style={{display:"flex", gap:6}}>
                     <button
-                      onClick={() => handleTrade(holding.symbol, "SELL", Math.floor(holding.qty * 0.5))}
-                      style={{
-                        ...actionBtn,
-                        background: recommendation.buttonColor,
-                        border: `1px solid ${recommendation.buttonColor}`,
-                        flex: 1
+                      onClick={() => {
+                        const smallAdd = Math.floor(250 / holding.last_price);
+                        handleTrade(holding.symbol, "BUY", smallAdd);
                       }}
-                    >
-                      {recommendation.buttonText}
-                    </button>
-                    <button
-                      onClick={() => handleTrade(holding.symbol, "SELL", Math.floor(holding.qty * 0.25))}
-                      style={{
-                        ...actionBtn,
-                        background: "#6b7280",
-                        border: "1px solid #6b7280",
-                        opacity: 0.7,
-                        fontSize: 11
-                      }}
-                    >
-                      Trim 25%
-                    </button>
-                  </>
-                ) : recommendation.action === "BUY MORE" ? (
-                  <>
-                    <button
-                      onClick={() => handleTrade(holding.symbol, "BUY")}
-                      style={{
-                        ...actionBtn,
-                        background: recommendation.buttonColor,
-                        border: `1px solid ${recommendation.buttonColor}`,
-                        flex: 1
-                      }}
-                    >
-                      {recommendation.buttonText}
-                    </button>
-                    <button
-                      onClick={() => handleTrade(holding.symbol, "SELL", Math.floor(holding.qty * 0.25))}
-                      style={{
-                        ...actionBtn,
-                        background: "#6b7280",
-                        border: "1px solid #6b7280",
-                        opacity: 0.5,
-                        fontSize: 11
-                      }}
-                    >
-                      Trim
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => handleTrade(holding.symbol, "BUY")}
                       style={{
                         ...actionBtn,
                         background: "#374151",
                         border: "1px solid #4b5563",
-                        opacity: 0.7,
-                        fontSize: 11
+                        fontSize: 11,
+                        flex: 1
                       }}
                     >
-                      Add More
+                      Add $250
                     </button>
                     <button
-                      style={{
-                        ...actionBtn,
-                        background: recommendation.buttonColor,
-                        border: `1px solid ${recommendation.buttonColor}`,
-                        flex: 1,
-                        cursor: "default"
-                      }}
-                    >
-                      {recommendation.buttonText}
-                    </button>
-                    <button
-                      onClick={() => handleTrade(holding.symbol, "SELL", Math.floor(holding.qty * 0.25))}
+                      onClick={() => handleTrade(holding.symbol, "SELL", Math.floor(holding.qty * 0.2))}
                       style={{
                         ...actionBtn,
                         background: "#374151",
                         border: "1px solid #4b5563",
-                        opacity: 0.7,
-                        fontSize: 11
+                        fontSize: 11,
+                        flex: 1
                       }}
                     >
-                      Trim
+                      Trim 20%
                     </button>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
@@ -736,6 +908,29 @@ const enhancedNoticeTitleStyle: React.CSSProperties = {
 };
 
 const enhancedNoticeDescStyle: React.CSSProperties = {
+  fontSize: "14px",
+  color: "#ccc",
+  lineHeight: "1.4"
+};
+
+// 🔄 POLYGON FALLBACK INDICATOR STYLES
+const polygonFallbackNoticeStyle: React.CSSProperties = {
+  background: "linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.05))",
+  border: "2px solid rgba(59, 130, 246, 0.3)",
+  borderRadius: "12px",
+  padding: "16px 20px",
+  marginBottom: "24px",
+  textAlign: "center"
+};
+
+const polygonFallbackTitleStyle: React.CSSProperties = {
+  fontSize: "16px",
+  fontWeight: 700,
+  color: "#3b82f6",
+  marginBottom: "8px"
+};
+
+const polygonFallbackDescStyle: React.CSSProperties = {
   fontSize: "14px",
   color: "#ccc",
   lineHeight: "1.4"

@@ -1,8 +1,15 @@
 // frontend/src/lib/api.ts
 export const API_BASE =
-  (import.meta.env.VITE_API_BASE as string) ?? "https://amc-trader.onrender.com";
+  (import.meta.env.VITE_API_BASE as string) ??
+  (window.location.hostname === 'localhost' ? '/api' : "https://amc-trader.onrender.com");
 
-const api = (p: string) => new URL(p, API_BASE).toString();
+const api = (p: string) => {
+  // Handle relative URLs for proxy correctly
+  if (API_BASE.startsWith('/')) {
+    return `${API_BASE}${p}`;
+  }
+  return new URL(p, API_BASE).toString();
+};
 
 /** ---- Generic helpers kept for legacy components ---- */
 export async function getJSON<T = unknown>(path: string, signal?: AbortSignal): Promise<T> {

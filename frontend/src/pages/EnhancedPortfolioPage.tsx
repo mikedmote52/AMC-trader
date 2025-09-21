@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import EnhancedHoldings from "../components/EnhancedHoldings";
-import { API_BASE } from "../config";
-import { getJSON } from "../lib/api";
+import { API_BASE, getJSON } from "../lib/api";
 
 export default function EnhancedPortfolioPage() {
   const [isPaused, setIsPaused] = useState(false);
