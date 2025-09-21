@@ -124,24 +124,23 @@ class PolygonExplosiveDiscovery:
 
     async def _get_high_momentum_stocks(self) -> List[Dict[str, Any]]:
         """
-        Get stocks with high momentum using market snapshot
+        Get stocks with high momentum from real market universe
         """
         try:
-            # Get a selection of potentially active stocks
-            # Since we can't get full market data efficiently, focus on known active stocks
-            active_tickers = [
-                'AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NFLX',
-                'AMD', 'INTC', 'CRM', 'UBER', 'LYFT', 'SNAP', 'TWTR', 'ROKU',
-                'ZOOM', 'PLTR', 'COIN', 'HOOD', 'AMC', 'GME', 'BB', 'NOK',
-                'SPCE', 'LCID', 'RIVN', 'F', 'GM', 'NIO', 'XPEV', 'LI',
-                'BABA', 'JD', 'PDD', 'TME', 'BIDU', 'IQ', 'BILI', 'DIDI',
-                'SQ', 'PYPL', 'SHOP', 'SPOT', 'ZM', 'DOCU', 'OKTA', 'CRWD'
-            ]
+            # Get real universe of active stocks from Polygon
+            logger.info("📊 Fetching real market universe from Polygon...")
+            universe_tickers = await self._get_real_universe()
+
+            if not universe_tickers:
+                logger.warning("Failed to get real universe, falling back to liquid subset")
+                universe_tickers = await self._get_liquid_subset()
+
+            logger.info(f"📈 Analyzing {len(universe_tickers)} stocks for explosive potential")
 
             # Get snapshot data for these tickers using real MCP Polygon bridge
             from backend.src.services.mcp_polygon_bridge import mcp_polygon_bridge
             snapshot_data = await mcp_polygon_bridge.get_market_snapshot(
-                tickers=active_tickers,
+                tickers=universe_tickers,
                 market_type='stocks',
                 include_otc=False
             )
@@ -199,6 +198,106 @@ class PolygonExplosiveDiscovery:
         except Exception as e:
             logger.error(f"Failed to get high-momentum stocks: {e}")
             return []
+
+    async def _get_real_universe(self) -> List[str]:
+        """
+        Get real universe of active, liquid stocks from Polygon
+        Returns top liquid stocks that can actually move explosively
+        """
+        try:
+            logger.info("🔍 Building explosive discovery universe...")
+
+            # Use MCP bridge to get active tickers list
+            from backend.src.services.mcp_polygon_bridge import mcp_polygon_bridge
+            liquid_universe = mcp_polygon_bridge._get_liquid_universe()
+
+            # Expand with additional explosive candidates
+            additional_tickers = [
+                # High-momentum small/mid caps
+                'SMCI', 'ARM', 'AVGO', 'PANW', 'FTNT', 'CYBR', 'S', 'MDB',
+                'MARA', 'RIOT', 'CLSK', 'HUT', 'BITF', 'COIN',
+
+                # Biotech with explosive potential
+                'SAVA', 'BIIB', 'VRTX', 'GILD', 'REGN', 'AMGN', 'BMY',
+
+                # Recent IPOs and growth stocks
+                'RBLX', 'ABNB', 'DASH', 'UBER', 'LYFT', 'AFRM', 'UPST',
+
+                # Energy and commodities
+                'XOM', 'CVX', 'SLB', 'HAL', 'OXY', 'COP', 'EOG',
+
+                # Semiconductor and AI
+                'NVDA', 'AMD', 'INTC', 'QCOM', 'MRVL', 'ON', 'MU',
+
+                # Cloud and enterprise software
+                'CRM', 'NOW', 'WDAY', 'VEEV', 'TEAM', 'DDOG', 'NET'
+            ]
+
+            # Combine and deduplicate
+            all_tickers = list(set(liquid_universe + additional_tickers))
+
+            # Filter out known invalid tickers
+            verified_universe = [t for t in all_tickers if self._is_valid_ticker(t)]
+
+            logger.info(f"✅ Built explosive discovery universe of {len(verified_universe)} stocks")
+            return verified_universe
+
+        except Exception as e:
+            logger.error(f"Failed to build real universe: {e}")
+            # Fallback to known good universe
+            return self._get_liquid_subset()
+
+    async def _get_liquid_subset(self) -> List[str]:
+        """
+        Get subset of stocks with explosive potential for discovery
+        Focused on small/mid caps and high-beta stocks that can move explosively
+        """
+        return [
+            # AI/Quantum stocks (high volatility, explosive potential)
+            'QUBT', 'IONQ', 'RGTI', 'BBAI', 'SOUN', 'LUNR', 'ARQQ', 'IBA',
+
+            # Crypto mining and blockchain (high-beta)
+            'MARA', 'RIOT', 'CLSK', 'HUT', 'BITF', 'COIN', 'HOOD',
+
+            # Biotech with breakout potential (small/mid cap)
+            'SAVA', 'BIIB', 'MRNA', 'BNTX', 'NVAX', 'VRTX', 'REGN',
+
+            # High-beta momentum plays
+            'RIVN', 'LCID', 'SOFI', 'RBLX', 'SPCE', 'NKLA',
+
+            # Volatile small/mid caps
+            'SMCI', 'ARM', 'S', 'MDB', 'SNOW', 'CRWD', 'ZS', 'NET',
+
+            # Energy/EV (smaller players)
+            'NIO', 'XPEV', 'LI', 'PLUG', 'FCEL', 'BE', 'CHPT', 'BLNK',
+
+            # Media/Entertainment with volatility
+            'WBD', 'PARA', 'ROKU', 'SNAP', 'SPOT', 'ZM',
+
+            # Fintech growth stocks
+            'SQ', 'AFRM', 'UPST', 'LMND', 'LC',
+
+            # Retail/E-commerce disruptors
+            'SHOP', 'ETSY', 'CHWY', 'CVNA', 'W', 'OPEN',
+
+            # Recent SPACs and growth stocks
+            'WISH', 'CLOV', 'SKLZ', 'DKNG', 'PLTR',
+
+            # Semiconductor growth plays
+            'AMD', 'MRVL', 'ON', 'MU', 'AMAT'
+        ]
+
+    def _is_valid_ticker(self, ticker: str) -> bool:
+        """
+        Basic validation to exclude known delisted/problematic tickers
+        """
+        # Exclude known delisted or problematic tickers
+        invalid_tickers = {
+            'VIGL',  # Delisted
+            'TWTR',  # Acquired/delisted
+            'DIDI',  # Delisted from US
+        }
+        return ticker not in invalid_tickers and len(ticker) <= 5
 
     async def _analyze_explosive_potential(self, stock_data: Dict[str, Any]) -> Optional[ExplosiveStock]:
         """
