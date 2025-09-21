@@ -65,29 +65,40 @@ async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
         momentum_count = len([c for c in candidates if c['action_tag'] == 'momentum'])
         watch_count = len([c for c in candidates if c['action_tag'] == 'watch'])
 
+        # Handle different field names between discovery systems
+        pipeline_stats = results['pipeline_stats']
+
+        # Get filtered_size - different systems use different field names
+        filtered_size = (
+            pipeline_stats.get('explosive_filtered') or  # Polygon system
+            pipeline_stats.get('filtered') or            # AlphaStack system
+            pipeline_stats.get('final_count') or         # Other systems
+            len(candidates)                               # Fallback
+        )
+
         # Send data to learning system (fire-and-forget, never blocks)
         try:
             from ..services.learning_integration import collect_discovery_data
             await collect_discovery_data({
                 'status': 'success',
                 'method': 'explosive_discovery_v2_polygon_mcp',
-                'universe_size': results['pipeline_stats']['universe_size'],
-                'filtered_size': results['pipeline_stats']['explosive_filtered'],
+                'universe_size': pipeline_stats.get('universe_size', 0),
+                'filtered_size': filtered_size,
                 'count': len(candidates),
                 'explosive_count': explosive_count,
                 'momentum_count': momentum_count,
                 'watch_count': watch_count,
                 'candidates': candidates,
                 'execution_time_sec': results['execution_time_sec'],
-                'pipeline_stats': results['pipeline_stats']
+                'pipeline_stats': pipeline_stats
             })
         except Exception as e:
             logger.warning(f"Learning integration failed (non-blocking): {e}")
 
         return {
             'status': 'success',
-            'universe_size': results['pipeline_stats']['universe_size'],
-            'filtered_size': results['pipeline_stats']['explosive_filtered'],
+            'universe_size': pipeline_stats.get('universe_size', 0),
+            'filtered_size': filtered_size,
             'count': len(candidates),
             'trade_ready_count': explosive_count,  # Map explosive to trade_ready
             'monitor_count': momentum_count + watch_count,  # Combine momentum and watch
@@ -96,7 +107,7 @@ async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
             'engine': 'Explosive Discovery V2 - Polygon MCP',
             'schema_version': '2.0',
             'algorithm_version': 'explosive_discovery_v2',
-            'pipeline_stats': results['pipeline_stats']
+            'pipeline_stats': pipeline_stats
         }
 
     except Exception as e:
