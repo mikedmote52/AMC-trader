@@ -4,7 +4,7 @@ import SqueezeAlert from "./SqueezeAlert";
 import PatternHistory from "./PatternHistory";
 import { WS_URL } from "../config";
 import { getJSON, postJSON } from "../lib/api";
-import { polygonSqueezeDetector, SqueezeCandidate } from "../lib/polygonSqueezeDetector";
+import { polygonSqueezeDetector } from "../lib/polygonSqueezeDetector";
 
 // AlphaStack 4.1 Candidate Interface
 interface Candidate {
