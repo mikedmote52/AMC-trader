@@ -4,6 +4,7 @@ import SqueezeAlert from "./SqueezeAlert";
 import PatternHistory from "./PatternHistory";
 import { WS_URL } from "../config";
 import { getJSON, postJSON } from "../lib/api";
+import { polygonSqueezeDetector, SqueezeCandidate } from "../lib/polygonSqueezeDetector";
 
 // AlphaStack 4.1 Candidate Interface
 interface Candidate {
@@ -75,28 +76,30 @@ export default function SqueezeMonitor() {
   const safeToTrade = telemetry?.system_health?.system_ready === true &&
                       telemetry?.production_health?.stale_data_detected === false;
 
-  // Fetch all data
+  // PRIMARY: Fetch squeeze candidates using Polygon MCP (fast, real-time)
   const fetchData = async () => {
     try {
       setLoading(true);
       setError("");
 
-      // Fetch discovery data (where real candidates are)
-      const [discoveryData, telemetryData] = await Promise.all([
-        getJSON<any>('/discovery/contenders?limit=50').catch(() => ({ data: [] })),
-        getJSON<any>('/v1/telemetry').catch(() => null)
+      console.log('🚀 Using Polygon MCP as PRIMARY squeeze detection system');
+
+      // Use Polygon MCP as the main detection engine
+      const [squeezeCandidates, telemetryData] = await Promise.all([
+        polygonSqueezeDetector.detectSqueezeCandidates(20),
+        Promise.resolve(polygonSqueezeDetector.getTelemetry())
       ]);
 
-      // Convert discovery format to expected format
-      const candidatesData = { items: discoveryData.data || discoveryData || [] };
-      const explosiveData = { explosive_top: [] }; // Empty for now
+      console.log(`✅ Polygon MCP found ${squeezeCandidates.length} squeeze candidates`);
 
-      setCandidates(candidatesData.items || []);
-      setExplosive(explosiveData.explosive_top || []);
+      // Convert to expected format
+      setCandidates(squeezeCandidates);
+      setExplosive([]); // No explosive data for now
       setTelemetry(telemetryData);
+
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
-      console.error("AlphaStack fetch error:", err);
+      setError(err instanceof Error ? err.message : "Failed to load squeeze data");
+      console.error("Polygon MCP squeeze detection error:", err);
     } finally {
       setLoading(false);
     }
