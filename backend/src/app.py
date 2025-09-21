@@ -277,8 +277,9 @@ async def api_contenders():
     return RedirectResponse(url="/discovery/emergency/enhanced-discovery?limit=20", status_code=307)
 
 # MCP Proxy endpoint for frontend to access real Polygon data
+from fastapi import Body as FastAPIBody
 @app.post("/api/mcp/proxy")
-async def mcp_proxy(payload: dict = Body(...)):
+async def mcp_proxy(payload: dict = FastAPIBody(...)):
     """Proxy MCP function calls for frontend"""
     try:
         function_name = payload.get("function")
@@ -335,9 +336,8 @@ async def mcp_proxy(payload: dict = Body(...)):
         return {"error": str(e)}
 
 # Optional buy-now alias if the UI ever posts here:
-from fastapi import Body
 @app.post("/api/buy")
-async def compat_buy(payload: dict = Body(...)):
+async def compat_buy(payload: dict = FastAPIBody(...)):
     # forward to the actual executor
     from fastapi import Request
     # re-use existing trades endpoint by calling it directly
