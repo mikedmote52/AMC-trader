@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Navigation from "./components/Navigation";
 import HomePage from "./pages/HomePage";
 import BMSDiscoveryPage from "./pages/BMSDiscoveryPage";
@@ -23,6 +23,7 @@ export default function App() {
           <Route path="/squeeze" element={<SqueezePage />} />
           <Route path="/discovery" element={<BMSDiscoveryPage />} />
           <Route path="/portfolio" element={<EnhancedPortfolioPage />} />
+          <Route path="/portfolio-enhanced" element={<Navigate to="/portfolio" replace />} />
           <Route path="/updates" element={<UpdatesPageWrapper />} />
         </Routes>
       </div>
