@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AMC-TRADER Discovery System Test</title>
+    <style>
+        body { font-family: monospace; background: #000; color: #0f0; padding: 20px; }
+        .test { margin: 20px 0; padding: 10px; border: 1px solid #333; }
+        .success { border-color: #0f0; }
+        .error { border-color: #f00; color: #f00; }
+        .loading { border-color: #ff0; color: #ff0; }
+        pre { background: #111; padding: 10px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔧 AMC-TRADER Discovery System Fix Test</h1>
+
+    <div id="backend-health" class="test loading">
+        <h3>1. Backend Health Check</h3>
+        <div id="backend-health-result">Testing...</div>
+    </div>
+
+    <div id="backend-discovery" class="test loading">
+        <h3>2. Backend Discovery Endpoint (5s timeout)</h3>
+        <div id="backend-discovery-result">Testing...</div>
+    </div>
+
+    <div id="polygon-universe" class="test loading">
+        <h3>3. Polygon Universe Endpoint</h3>
+        <div id="polygon-universe-result">Testing...</div>
+    </div>
+
+    <div id="polygon-snapshots" class="test loading">
+        <h3>4. Polygon Snapshots Endpoint</h3>
+        <div id="polygon-snapshots-result">Testing...</div>
+    </div>
+
+    <div id="frontend-squeeze" class="test loading">
+        <h3>5. Frontend Squeeze Detector Integration</h3>
+        <div id="frontend-squeeze-result">Testing...</div>
+    </div>
+
+    <script>
+        const API_BASE = "https://amc-trader.onrender.com";
+
+        async function testWithTimeout(url, options = {}, timeoutMs = 5000) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+            try {
+                const response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                return response;
+            } catch (error) {
+                clearTimeout(timeoutId);
+                throw error;
+            }
+        }
+
+        async function test1_BackendHealth() {
+            const resultDiv = document.getElementById('backend-health-result');
+            const testDiv = document.getElementById('backend-health');
+
+            try {
+                const response = await testWithTimeout(`${API_BASE}/health`);
+                const data = await response.json();
+
+                if (data.status === 'healthy') {
+                    resultDiv.innerHTML = `✅ Backend healthy: ${JSON.stringify(data.components, null, 2)}`;
+                    testDiv.className = 'test success';
+                } else {
+                    resultDiv.innerHTML = `⚠️ Backend degraded: ${JSON.stringify(data, null, 2)}`;
+                    testDiv.className = 'test error';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `❌ Backend health check failed: ${error.message}`;
+                testDiv.className = 'test error';
+            }
+        }
+
+        async function test2_BackendDiscovery() {
+            const resultDiv = document.getElementById('backend-discovery-result');
+            const testDiv = document.getElementById('backend-discovery');
+
+            try {
+                const response = await testWithTimeout(`${API_BASE}/discovery/contenders?limit=3`, {}, 5000);
+                const data = await response.json();
+
+                if (data.candidates && data.candidates.length > 0) {
+                    resultDiv.innerHTML = `✅ Discovery working: Found ${data.candidates.length} candidates<pre>${JSON.stringify(data.candidates.slice(0, 2), null, 2)}</pre>`;
+                    testDiv.className = 'test success';
+                } else {
+                    resultDiv.innerHTML = `⚠️ Discovery empty: ${JSON.stringify(data, null, 2)}`;
+                    testDiv.className = 'test error';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `❌ Discovery timeout/error (expected): ${error.message}`;
+                testDiv.className = 'test error';
+            }
+        }
+
+        async function test3_PolygonUniverse() {
+            const resultDiv = document.getElementById('polygon-universe-result');
+            const testDiv = document.getElementById('polygon-universe');
+
+            try {
+                const response = await testWithTimeout(`${API_BASE}/api/polygon/universe`);
+                const data = await response.json();
+
+                if (data.results && data.results.length > 0) {
+                    resultDiv.innerHTML = `✅ Polygon universe working: ${data.results.length} stocks<pre>${JSON.stringify(data.results.slice(0, 3), null, 2)}</pre>`;
+                    testDiv.className = 'test success';
+                } else {
+                    resultDiv.innerHTML = `❌ Polygon universe empty: ${JSON.stringify(data, null, 2)}`;
+                    testDiv.className = 'test error';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `❌ Polygon universe failed: ${error.message} (Endpoint not deployed yet)`;
+                testDiv.className = 'test error';
+            }
+        }
+
+        async function test4_PolygonSnapshots() {
+            const resultDiv = document.getElementById('polygon-snapshots-result');
+            const testDiv = document.getElementById('polygon-snapshots');
+
+            try {
+                const response = await testWithTimeout(`${API_BASE}/api/polygon/snapshots`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ symbols: ['AAPL', 'TSLA', 'NVDA'] })
+                });
+                const data = await response.json();
+
+                if (data.results && data.results.length > 0) {
+                    resultDiv.innerHTML = `✅ Polygon snapshots working: ${data.results.length} snapshots<pre>${JSON.stringify(data.results.slice(0, 2), null, 2)}</pre>`;
+                    testDiv.className = 'test success';
+                } else {
+                    resultDiv.innerHTML = `❌ Polygon snapshots empty: ${JSON.stringify(data, null, 2)}`;
+                    testDiv.className = 'test error';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `❌ Polygon snapshots failed: ${error.message} (Endpoint not deployed yet)`;
+                testDiv.className = 'test error';
+            }
+        }
+
+        async function test5_FrontendIntegration() {
+            const resultDiv = document.getElementById('frontend-squeeze-result');
+            const testDiv = document.getElementById('frontend-squeeze');
+
+            try {
+                // Simulate the frontend squeeze detector logic
+                let backendFailed = false;
+                let candidates = [];
+
+                // Try backend first (short timeout)
+                try {
+                    const response = await testWithTimeout(`${API_BASE}/discovery/contenders?limit=5`, {}, 5000);
+                    const data = await response.json();
+                    candidates = data.candidates || [];
+
+                    if (candidates.length > 0) {
+                        resultDiv.innerHTML = `✅ Frontend can use backend: ${candidates.length} candidates<pre>${JSON.stringify(candidates.slice(0, 2), null, 2)}</pre>`;
+                        testDiv.className = 'test success';
+                        return;
+                    }
+                } catch (error) {
+                    backendFailed = true;
+                }
+
+                // Fallback to Polygon MCP
+                try {
+                    const universeResponse = await testWithTimeout(`${API_BASE}/api/polygon/universe`);
+                    const universeData = await universeResponse.json();
+
+                    if (universeData.results && universeData.results.length > 0) {
+                        resultDiv.innerHTML = `✅ Frontend fallback to Polygon MCP: ${universeData.results.length} stocks available<br>Backend failed: ${backendFailed}<pre>${JSON.stringify(universeData.results.slice(0, 3), null, 2)}</pre>`;
+                        testDiv.className = 'test success';
+                    } else {
+                        resultDiv.innerHTML = `❌ Both backend and Polygon MCP failed`;
+                        testDiv.className = 'test error';
+                    }
+                } catch (error) {
+                    resultDiv.innerHTML = `❌ Frontend integration failed - both systems unavailable. Backend timeout: ${backendFailed}, Polygon error: ${error.message}`;
+                    testDiv.className = 'test error';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `❌ Frontend integration test failed: ${error.message}`;
+                testDiv.className = 'test error';
+            }
+        }
+
+        // Run tests sequentially
+        async function runTests() {
+            await test1_BackendHealth();
+            await test2_BackendDiscovery();
+            await test3_PolygonUniverse();
+            await test4_PolygonSnapshots();
+            await test5_FrontendIntegration();
+        }
+
+        // Start tests
+        runTests();
+    </script>
+</body>
+</html>

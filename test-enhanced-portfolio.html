@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Portfolio System - Visual Testing Guide</title>
+    <style>
+        body {
+            font-family: ui-sans-serif, system-ui;
+            background: #000;
+            color: #e7e7e7;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .title {
+            font-size: 32px;
+            font-weight: 700;
+            color: #f59e0b;
+            margin-bottom: 16px;
+        }
+
+        .subtitle {
+            font-size: 18px;
+            color: #ccc;
+            margin-bottom: 32px;
+        }
+
+        .section {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 32px;
+        }
+
+        .section-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #22c55e;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .access-links {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+
+        .link-card {
+            background: linear-gradient(135deg, #22c55e15, #16a34a10);
+            border: 2px solid #22c55e40;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .link-card:hover {
+            border-color: #22c55e;
+            background: linear-gradient(135deg, #22c55e25, #16a34a20);
+        }
+
+        .link-card h3 {
+            color: #22c55e;
+            margin: 0 0 12px 0;
+            font-size: 18px;
+        }
+
+        .link-card a {
+            display: inline-block;
+            background: #22c55e;
+            color: #000;
+            padding: 12px 24px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            margin-top: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .link-card a:hover {
+            background: #16a34a;
+            transform: translateY(-2px);
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .feature-card {
+            background: #0f1419;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .feature-card h4 {
+            color: #f59e0b;
+            margin: 0 0 12px 0;
+            font-size: 16px;
+        }
+
+        .feature-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .feature-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid #2a2a2a;
+            color: #ccc;
+            font-size: 14px;
+        }
+
+        .feature-list li:last-child {
+            border-bottom: none;
+        }
+
+        .test-steps {
+            counter-reset: step-counter;
+        }
+
+        .test-step {
+            counter-increment: step-counter;
+            background: #0f1419;
+            border-left: 4px solid #f59e0b;
+            padding: 20px;
+            margin-bottom: 16px;
+            position: relative;
+        }
+
+        .test-step::before {
+            content: counter(step-counter);
+            position: absolute;
+            left: -12px;
+            top: 20px;
+            background: #f59e0b;
+            color: #000;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 12px;
+        }
+
+        .test-step h4 {
+            color: #f59e0b;
+            margin: 0 0 12px 0;
+            font-size: 16px;
+        }
+
+        .highlight {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            padding: 12px;
+            border-radius: 8px;
+            margin: 12px 0;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-live {
+            background: #22c55e;
+            color: #000;
+        }
+
+        .status-enhanced {
+            background: #f59e0b;
+            color: #000;
+        }
+
+        .code-block {
+            background: #0a0a0a;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 16px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 13px;
+            color: #22c55e;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">🚀 Enhanced Portfolio System</h1>
+            <p class="subtitle">Visual Testing & Demo Guide</p>
+            <div class="highlight">
+                <strong>Status:</strong>
+                <span class="status-indicator status-live">LIVE</span>
+                <span class="status-indicator status-enhanced">ENHANCED</span>
+                <br><br>
+                Your portfolio system now has advanced AI features while keeping your original system completely safe and unchanged.
+            </div>
+        </div>
+
+        <!-- Quick Access Links -->
+        <div class="section">
+            <h2 class="section-title">🎯 Quick Access - Open These Now</h2>
+            <div class="access-links">
+                <div class="link-card">
+                    <h3>🚀 Enhanced Portfolio</h3>
+                    <p>The new AI-powered portfolio with learning intelligence and unified decisions</p>
+                    <a href="http://localhost:5173/portfolio-enhanced" target="_blank">Open Enhanced Portfolio</a>
+                </div>
+                <div class="link-card">
+                    <h3>📊 Original Portfolio</h3>
+                    <p>Your unchanged, safe original portfolio system (for comparison)</p>
+                    <a href="http://localhost:5173/portfolio" target="_blank">Open Original Portfolio</a>
+                </div>
+                <div class="link-card">
+                    <h3>🏠 Main Dashboard</h3>
+                    <p>Trading discovery and market overview dashboard</p>
+                    <a href="http://localhost:5173/" target="_blank">Open Main Dashboard</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Visual Differences Guide -->
+        <div class="section">
+            <h2 class="section-title">👀 What's Different - Visual Guide</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h4>🧠 Learning Intelligence Panel</h4>
+                    <ul class="feature-list">
+                        <li>Tracked Trades: Shows learning progress</li>
+                        <li>Win Rate: Performance tracking</li>
+                        <li>Learning Accuracy: AI recommendation quality</li>
+                        <li>Green gradient background when active</li>
+                    </ul>
+                </div>
+                <div class="feature-card">
+                    <h4>🛡️ System Status Panel</h4>
+                    <ul class="feature-list">
+                        <li>Circuit State: CLOSED (operational)</li>
+                        <li>System Health: Green indicators</li>
+                        <li>Failure tracking and auto-recovery</li>
+                        <li>Red alerts if fallback mode activated</li>
+                    </ul>
+                </div>
+                <div class="feature-card">
+                    <h4>🎯 Enhanced Action Buttons</h4>
+                    <ul class="feature-list">
+                        <li>Source badges: 🧠 Learning, 🎯 Pattern, 📊 Rules</li>
+                        <li>Confidence percentages in button text</li>
+                        <li>Color coding by recommendation strength</li>
+                        <li>Single clear action (no conflicts)</li>
+                    </ul>
+                </div>
+                <div class="feature-card">
+                    <h4>📈 Enhanced Thesis Display</h4>
+                    <ul class="feature-list">
+                        <li>Evolution badges showing adaptation count</li>
+                        <li>Confidence trend indicators (📈📉➡️)</li>
+                        <li>Dynamic thesis updates</li>
+                        <li>Decision logic explanations</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step-by-Step Testing -->
+        <div class="section">
+            <h2 class="section-title">🧪 Step-by-Step Testing Guide</h2>
+            <div class="test-steps">
+                <div class="test-step">
+                    <h4>First Look - Enhanced vs Original</h4>
+                    <p>Open both portfolio pages in separate tabs. Notice the enhanced version has:</p>
+                    <ul>
+                        <li>🟢 Green "Learning Intelligence Metrics" panel at the top</li>
+                        <li>🟢 Green "System Status" panel showing circuit breaker health</li>
+                        <li>🟡 Orange "Enhanced Portfolio Intelligence" section at bottom</li>
+                        <li>Advanced filtering buttons with emoji icons</li>
+                    </ul>
+                </div>
+
+                <div class="test-step">
+                    <h4>Learning Metrics Panel</h4>
+                    <p>Look for the green panel with 4 metrics:</p>
+                    <div class="code-block">
+🧠 Learning Intelligence Metrics
+[0] Tracked Trades  |  [0.0%] Win Rate  |  [0.0%] Avg Return  |  [0.0%] Learning Accuracy</div>
+                    <p>These will populate as you make trades and the system learns from outcomes.</p>
+                </div>
+
+                <div class="test-step">
+                    <h4>System Status Monitoring</h4>
+                    <p>Find the circuit breaker panel showing:</p>
+                    <div class="code-block">
+🛡️ System Status: ✅ OPERATIONAL
+[CLOSED] Circuit State  |  [0] Consecutive Failures  |  [🟢] System Health</div>
+                    <p>Green = All advanced features working. Red = Fallback mode active.</p>
+                </div>
+
+                <div class="test-step">
+                    <h4>Enhanced Filtering Controls</h4>
+                    <p>Try the new toggle buttons:</p>
+                    <ul>
+                        <li>💰 $ P&L - Sort by dollar gains/losses</li>
+                        <li>📊 % P&L - Sort by percentage returns</li>
+                        <li>🎯 AI Score - Sort by confidence levels</li>
+                        <li>Filter: 📈 Winners, 📉 Losers, ⚡ Action Needed</li>
+                    </ul>
+                </div>
+
+                <div class="test-step">
+                    <h4>Smart Recommendation System</h4>
+                    <p>Look at each stock position card for:</p>
+                    <ul>
+                        <li><strong>Action Badge:</strong> HOLD, TRIM, LIQUIDATE, or BUY MORE</li>
+                        <li><strong>Source Badge:</strong> 🧠 Learning, 🎯 Pattern, 📊 Rules, or 📋 Review</li>
+                        <li><strong>Confidence %:</strong> Shows how confident the AI is</li>
+                        <li><strong>Detailed Reasoning:</strong> Explains why this recommendation</li>
+                    </ul>
+                </div>
+
+                <div class="test-step">
+                    <h4>Enhanced Thesis Evolution</h4>
+                    <p>In each position's thesis section, look for:</p>
+                    <ul>
+                        <li><strong>Evolution badges:</strong> "📈 EVOLVED (1x)" if thesis has adapted</li>
+                        <li><strong>Confidence trends:</strong> 📈 improving, 📉 declining, ➡️ stable</li>
+                        <li><strong>Market conditions:</strong> Volatility and volume insights</li>
+                        <li><strong>Decision logic:</strong> Explanation of recommendation reasoning</li>
+                    </ul>
+                </div>
+
+                <div class="test-step">
+                    <h4>Test the Circuit Breaker</h4>
+                    <p>The system automatically handles errors. To simulate:</p>
+                    <div class="code-block">
+// The circuit breaker protects against:
+// - API failures (network timeouts)
+// - Invalid data responses
+// - Learning system errors
+// - Any advanced feature malfunction
+</div>
+                    <p>If anything breaks, the system shows red status and falls back to safe rules.</p>
+                </div>
+
+                <div class="test-step">
+                    <h4>Compare Side-by-Side</h4>
+                    <p>Open both versions and compare:</p>
+                    <ul>
+                        <li><strong>Original:</strong> Basic P&L, simple hold/sell buttons</li>
+                        <li><strong>Enhanced:</strong> AI insights, confidence scores, learning metrics</li>
+                        <li><strong>Data Safety:</strong> Both show identical portfolio values</li>
+                        <li><strong>Reliability:</strong> Enhanced version never corrupts original data</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Real Data Preview -->
+        <div class="section">
+            <h2 class="section-title">📊 Your Live Data Preview</h2>
+            <div class="highlight">
+                <p><strong>Current Portfolio Status:</strong></p>
+                <div class="code-block">
+📈 19 Active Positions | 💰 $3,414.92 Total Value
+🏆 15 Winners (>5% gains) | ⚠️ 0 Significant Losers (<-5%)
+🎯 Live P&L Updates Every 45 Seconds
+🧠 Learning System: Ready to Track Outcomes
+</div>
+                <p>Your actual positions will show real recommendations based on their current performance and the AI's analysis.</p>
+            </div>
+        </div>
+
+        <!-- Troubleshooting -->
+        <div class="section">
+            <h2 class="section-title">🔧 Troubleshooting</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h4>❌ Enhanced Page Won't Load</h4>
+                    <ul class="feature-list">
+                        <li>Check dev server is running (npm run dev)</li>
+                        <li>Try refreshing the page</li>
+                        <li>Original portfolio always works as backup</li>
+                    </ul>
+                </div>
+                <div class="feature-card">
+                    <h4>🔴 Red System Status</h4>
+                    <ul class="feature-list">
+                        <li>Advanced features temporarily disabled</li>
+                        <li>System using safe fallback logic</li>
+                        <li>Portfolio data still accurate</li>
+                        <li>Will auto-recover when possible</li>
+                    </ul>
+                </div>
+                <div class="feature-card">
+                    <h4>📊 No Learning Data</h4>
+                    <ul class="feature-list">
+                        <li>Start by making some trades</li>
+                        <li>System learns from each outcome</li>
+                        <li>Mock insights available for demo</li>
+                        <li>Learning improves over time</li>
+                    </ul>
+                </div>
+                <div class="feature-card">
+                    <h4>🐛 Something Looks Wrong</h4>
+                    <ul class="feature-list">
+                        <li>Hard refresh (Cmd+Shift+R)</li>
+                        <li>Check browser console for errors</li>
+                        <li>Fall back to original portfolio</li>
+                        <li>Enhanced system is purely additive</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Success Indicators -->
+        <div class="section">
+            <h2 class="section-title">✅ Success Indicators</h2>
+            <div class="highlight">
+                <p><strong>You'll know the enhanced system is working when you see:</strong></p>
+                <ul>
+                    <li>🟢 Green "Learning Intelligence Metrics" panel</li>
+                    <li>🟢 Green "System Status: ✅ OPERATIONAL"</li>
+                    <li>🎯 Smart action buttons with confidence percentages</li>
+                    <li>🧠 Source badges (Learning/Pattern/Rules) on recommendations</li>
+                    <li>📈 Evolution badges on thesis sections</li>
+                    <li>⚡ Enhanced filtering and sorting controls</li>
+                    <li>📊 Identical portfolio values to original system</li>
+                </ul>
+            </div>
+        </div>
+
+        <footer style="text-align: center; margin-top: 40px; padding: 20px; border-top: 1px solid #333;">
+            <p style="color: #888;">Enhanced Portfolio System - Production Ready with Circuit Breaker Protection</p>
+            <p style="color: #666; font-size: 12px;">Your original portfolio system remains completely unchanged and safe</p>
+        </footer>
+    </div>
+
+    <script>
+        // Add click tracking for testing
+        document.addEventListener('click', function(e) {
+            if (e.target.tagName === 'A') {
+                console.log('🔗 Opening:', e.target.href);
+            }
+        });
+
+        // Auto-refresh status indicators
+        setInterval(() => {
+            const statusElements = document.querySelectorAll('.status-live');
+            statusElements.forEach(el => {
+                el.style.animation = 'pulse 1s ease-in-out';
+                setTimeout(() => el.style.animation = '', 1000);
+            });
+        }, 30000);
+    </script>
+</body>
+</html>

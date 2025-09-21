@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AMC-TRADER Final System Test</title>
+    <style>
+        body {
+            font-family: 'SF Pro Display', system-ui, sans-serif;
+            background: #000;
+            color: #fff;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .status {
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        .success { background: #0f2320; border-color: #22c55e; }
+        .error { background: #2d1b1b; border-color: #ef4444; }
+        .warning { background: #2d2416; border-color: #f59e0b; }
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #111;
+            border-radius: 8px;
+        }
+        .test-button {
+            background: #22c55e;
+            color: black;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px 10px 10px 0;
+            font-weight: 600;
+        }
+        .test-button:hover {
+            background: #16a34a;
+        }
+        #results {
+            background: #0a0a0a;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 15px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .candidate-card {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px;
+            display: inline-block;
+            width: 250px;
+            vertical-align: top;
+        }
+        .candidate-symbol {
+            font-size: 18px;
+            font-weight: 700;
+            color: #22c55e;
+        }
+        .candidate-score {
+            color: #f59e0b;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 AMC-TRADER Final System Test</h1>
+
+        <div class="status success">
+            <h3>✅ System Validation</h3>
+            <p>Backend: <span id="backend-status">Testing...</span></p>
+            <p>Discovery: <span id="discovery-status">Testing...</span></p>
+            <p>Data Quality: <span id="data-status">Testing...</span></p>
+        </div>
+
+        <div class="test-section">
+            <h3>🎯 Complete System Test</h3>
+            <p>Testing the full discovery pipeline end-to-end</p>
+
+            <button class="test-button" onclick="runCompleteTest()">Run Complete System Test</button>
+            <button class="test-button" onclick="testDiscoveryPerformance()">Test Discovery Performance</button>
+            <button class="test-button" onclick="simulateSqueezeMonitorUI()">Simulate Frontend</button>
+
+            <div id="results"></div>
+        </div>
+
+        <div id="candidates-display" style="margin-top: 30px;"></div>
+    </div>
+
+    <script>
+        const CONFIG = {
+            backend: 'https://amc-trader.onrender.com'
+        };
+
+        function log(message, type = 'info') {
+            const results = document.getElementById('results');
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : type === 'warning' ? '⚠️' : 'ℹ️';
+            results.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            results.scrollTop = results.scrollHeight;
+        }
+
+        async function runCompleteTest() {
+            log('=== COMPLETE AMC-TRADER SYSTEM TEST ===', 'info');
+
+            // Step 1: Backend Health
+            try {
+                const healthResponse = await fetch(`${CONFIG.backend}/health`);
+                if (healthResponse.ok) {
+                    const healthData = await healthResponse.json();
+                    log(`Backend Health: ${healthData.status}`, 'success');
+                    log(`Commit: ${healthData.commit.substring(0, 8)}`, 'info');
+                    document.getElementById('backend-status').textContent = '✅ Healthy';
+                } else {
+                    throw new Error(`Health check failed: ${healthResponse.status}`);
+                }
+            } catch (error) {
+                log(`Backend health failed: ${error.message}`, 'error');
+                document.getElementById('backend-status').textContent = '❌ Failed';
+                return;
+            }
+
+            // Step 2: Discovery System
+            try {
+                const startTime = Date.now();
+                const discoveryResponse = await fetch(`${CONFIG.backend}/discovery/contenders?limit=10`);
+                const responseTime = Date.now() - startTime;
+
+                if (discoveryResponse.ok) {
+                    const discoveryData = await discoveryResponse.json();
+                    log(`Discovery Response Time: ${responseTime}ms`, responseTime < 5000 ? 'success' : 'warning');
+                    log(`Candidates Found: ${discoveryData.count}`, 'success');
+                    log(`Data Source: ${discoveryData.source}`, 'info');
+                    log(`Engine: ${discoveryData.engine}`, 'info');
+
+                    document.getElementById('discovery-status').textContent = '✅ Working';
+
+                    // Show sample candidates
+                    if (discoveryData.data && discoveryData.data.length > 0) {
+                        log(`Sample Stocks: ${discoveryData.data.slice(0, 5).map(c => c.symbol).join(', ')}`, 'success');
+
+                        // Test data quality
+                        const hasValidPrices = discoveryData.data.every(c => c.price > 0);
+                        const hasValidScores = discoveryData.data.every(c => c.score >= 0 && c.score <= 100);
+                        const hasActionTags = discoveryData.data.every(c => c.action_tag);
+
+                        if (hasValidPrices && hasValidScores && hasActionTags) {
+                            log('Data Quality: All candidates have valid data', 'success');
+                            document.getElementById('data-status').textContent = '✅ Valid';
+                        } else {
+                            log('Data Quality: Some candidates have invalid data', 'warning');
+                            document.getElementById('data-status').textContent = '⚠️ Issues';
+                        }
+
+                        // Display candidates visually
+                        displayCandidates(discoveryData.data.slice(0, 6));
+
+                    } else {
+                        log('No candidates returned (market may be quiet)', 'warning');
+                        document.getElementById('data-status').textContent = '⚠️ No Data';
+                    }
+                } else {
+                    throw new Error(`Discovery failed: ${discoveryResponse.status}`);
+                }
+            } catch (error) {
+                log(`Discovery test failed: ${error.message}`, 'error');
+                document.getElementById('discovery-status').textContent = '❌ Failed';
+                return;
+            }
+
+            log('=== SYSTEM TEST COMPLETE ===', 'success');
+            log('All core components working correctly', 'success');
+        }
+
+        async function testDiscoveryPerformance() {
+            log('=== DISCOVERY PERFORMANCE TEST ===', 'info');
+
+            const tests = [
+                { limit: 5, name: 'Small Request' },
+                { limit: 20, name: 'Medium Request' },
+                { limit: 50, name: 'Large Request' }
+            ];
+
+            for (const test of tests) {
+                try {
+                    log(`Testing ${test.name} (limit=${test.limit})...`, 'info');
+                    const startTime = Date.now();
+
+                    const response = await fetch(`${CONFIG.backend}/discovery/contenders?limit=${test.limit}`);
+                    const responseTime = Date.now() - startTime;
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        log(`${test.name}: ${responseTime}ms, ${data.count} candidates`,
+                            responseTime < 3000 ? 'success' : 'warning');
+                    } else {
+                        log(`${test.name}: Failed (${response.status})`, 'error');
+                    }
+                } catch (error) {
+                    log(`${test.name}: Error - ${error.message}`, 'error');
+                }
+
+                // Small delay between tests
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+
+        async function simulateSqueezeMonitorUI() {
+            log('=== FRONTEND SIMULATION ===', 'info');
+
+            try {
+                // Simulate SqueezeMonitor.tsx behavior
+                log('Simulating SqueezeMonitor component...', 'info');
+
+                const WS_URL = 'wss://amc-trader.onrender.com/v1/stream';
+                const discoveryURL = `${WS_URL.replace('wss', 'https').replace('/v1/stream', '')}/discovery/contenders?limit=50`;
+
+                log(`Frontend would call: ${discoveryURL}`, 'info');
+
+                const response = await fetch(discoveryURL);
+
+                if (response.ok) {
+                    const discoveryData = await response.json();
+                    log('Frontend API call successful', 'success');
+
+                    if (discoveryData.success && discoveryData.data) {
+                        // Simulate the mapping logic from SqueezeMonitor
+                        const candidates = discoveryData.data.map(candidate => ({
+                            symbol: candidate.symbol,
+                            ticker: candidate.symbol,
+                            total_score: candidate.score / 100, // Convert to 0-1 range
+                            score: candidate.score / 100,
+                            action_tag: candidate.action_tag === 'explosive' ? 'trade_ready' :
+                                       candidate.action_tag === 'momentum' ? 'watchlist' : 'monitor',
+                            price: candidate.price,
+                            snapshot: {
+                                price: candidate.price,
+                                intraday_relvol: candidate.volume_surge_ratio || 1.0,
+                                volume: candidate.volume,
+                                change_percent: candidate.price_change_pct || 0
+                            }
+                        }));
+
+                        log(`Frontend would display ${candidates.length} candidates`, 'success');
+
+                        // Categorize like the frontend does
+                        const tradeReady = candidates.filter(c => c.action_tag === 'trade_ready');
+                        const watchlist = candidates.filter(c => c.action_tag === 'watchlist');
+                        const others = candidates.filter(c => c.action_tag !== 'trade_ready' && c.action_tag !== 'watchlist');
+
+                        log(`Categories: ${tradeReady.length} trade ready, ${watchlist.length} watchlist, ${others.length} monitoring`, 'success');
+
+                        // Simulate telemetry
+                        const telemetry = {
+                            schema_version: "alphastack_v4_discovery",
+                            system_health: { system_ready: true },
+                            production_health: { stale_data_detected: false }
+                        };
+
+                        log('System Status: Live (Green)', 'success');
+                        log('Frontend would show working discovery data instead of errors', 'success');
+
+                    } else {
+                        log('Frontend would show "No candidates" message', 'warning');
+                    }
+                } else {
+                    log(`Frontend would show error: ${response.status}`, 'error');
+                }
+
+            } catch (error) {
+                log(`Frontend simulation failed: ${error.message}`, 'error');
+            }
+        }
+
+        function displayCandidates(candidates) {
+            const display = document.getElementById('candidates-display');
+            display.innerHTML = '<h3>📊 Live Discovery Results</h3>';
+
+            candidates.forEach(candidate => {
+                const card = document.createElement('div');
+                card.className = 'candidate-card';
+                card.innerHTML = `
+                    <div class="candidate-symbol">${candidate.symbol}</div>
+                    <div class="candidate-score">Score: ${candidate.score.toFixed(1)}%</div>
+                    <div>Price: $${candidate.price?.toFixed(2) || 'N/A'}</div>
+                    <div>Volume: ${candidate.volume?.toLocaleString() || 'N/A'}</div>
+                    <div>Action: ${candidate.action_tag}</div>
+                `;
+                display.appendChild(card);
+            });
+        }
+
+        // Auto-run test on load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                runCompleteTest();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

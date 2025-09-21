@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Direct API Test</title>
+</head>
+<body>
+    <h1>Direct API Test</h1>
+    <button onclick="testAPI()">Test Portfolio API</button>
+    <div id="results"></div>
+
+    <script>
+        async function testAPI() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<p>Testing...</p>';
+
+            try {
+                const response = await fetch('https://amc-trader.onrender.com/portfolio/holdings', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', [...response.headers.entries()]);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log('Full response data:', data);
+
+                results.innerHTML = `
+                    <h3>✅ API Test Results:</h3>
+                    <p><strong>Status:</strong> ${response.status}</p>
+                    <p><strong>Data structure:</strong> ${JSON.stringify(Object.keys(data), null, 2)}</p>
+                    <p><strong>Positions found:</strong> ${data?.data?.positions?.length || 0}</p>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+
+                // Test the exact same logic as the frontend
+                const positions = data?.data?.positions || data?.positions || [];
+                const holdingsArray = Array.isArray(positions) ? positions : [];
+
+                results.innerHTML += `
+                    <h3>🔍 Frontend Logic Test:</h3>
+                    <p><strong>positions variable:</strong> ${positions.length} items</p>
+                    <p><strong>holdingsArray:</strong> ${holdingsArray.length} items</p>
+                    <p><strong>Array.isArray(positions):</strong> ${Array.isArray(positions)}</p>
+                `;
+
+            } catch (error) {
+                console.error('API test error:', error);
+                results.innerHTML = `
+                    <h3>❌ API Test Error:</h3>
+                    <p style="color: red;"><strong>Error:</strong> ${error.message}</p>
+                    <p><strong>Stack:</strong> ${error.stack}</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

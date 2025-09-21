@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Portfolio Connection</title>
+</head>
+<body>
+    <h1>Portfolio Connection Debug</h1>
+    <div id="results"></div>
+
+    <script>
+        const API_BASE = "https://amc-trader.onrender.com";
+
+        async function testConnection() {
+            const results = document.getElementById('results');
+
+            try {
+                // Test 1: Health check
+                results.innerHTML += '<h3>Testing Health...</h3>';
+                const healthResponse = await fetch(`${API_BASE}/health`);
+                const healthData = await healthResponse.json();
+                results.innerHTML += `<p>Health: ${JSON.stringify(healthData, null, 2)}</p>`;
+
+                // Test 2: Portfolio holdings
+                results.innerHTML += '<h3>Testing Portfolio Holdings...</h3>';
+                const portfolioResponse = await fetch(`${API_BASE}/portfolio/holdings`);
+                const portfolioData = await portfolioResponse.json();
+
+                results.innerHTML += `<p>Portfolio Status: ${portfolioResponse.status}</p>`;
+                results.innerHTML += `<p>Portfolio Data: <pre>${JSON.stringify(portfolioData, null, 2)}</pre></p>`;
+
+                if (portfolioData?.data?.positions) {
+                    results.innerHTML += `<h4>Found ${portfolioData.data.positions.length} positions:</h4>`;
+                    portfolioData.data.positions.forEach(pos => {
+                        results.innerHTML += `<p>- ${pos.symbol}: ${pos.unrealized_pl_pct.toFixed(1)}% (${pos.suggestion})</p>`;
+                    });
+
+                    // Test critical cases
+                    const ptnm = portfolioData.data.positions.find(p => p.symbol === 'PTNM');
+                    if (ptnm) {
+                        results.innerHTML += `<h4>🔍 PTNM Test Case:</h4>`;
+                        results.innerHTML += `<p>P&L: ${ptnm.unrealized_pl_pct.toFixed(1)}% (should be 243%)</p>`;
+                        results.innerHTML += `<p>Suggestion: ${ptnm.suggestion} (should be TRIM, not BUY MORE)</p>`;
+                        results.innerHTML += `<p>Thesis: ${ptnm.thesis}</p>`;
+                    }
+                }
+
+            } catch (error) {
+                results.innerHTML += `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        testConnection();
+    </script>
+</body>
+</html>

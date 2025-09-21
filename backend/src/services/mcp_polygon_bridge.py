@@ -72,8 +72,9 @@ class MCPPolygonBridge:
         Call real MCP function (only works in Claude Code environment)
         """
         # MCP functions are not available in backend environment
-        # This will always fail and fall back to API
-        raise NameError("MCP functions not available in backend environment")
+        # Fall back to API immediately
+        logger.info("MCP functions not available, using API fallback")
+        return await self._api_fallback(tickers)
 
     async def _api_fallback(self, tickers: List[str]) -> Dict[str, Any]:
         """

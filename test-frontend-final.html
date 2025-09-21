@@ -3,96 +3,278 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AMC-TRADER Frontend API Test</title>
+    <title>AMC-TRADER Frontend Test - Final</title>
     <style>
-        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; }
-        .test { margin: 20px 0; padding: 10px; border: 1px solid #0f0; }
-        .pass { background: #002200; }
-        .fail { background: #220000; color: #f00; }
-        pre { overflow-x: auto; }
+        body {
+            font-family: 'SF Pro Display', system-ui, sans-serif;
+            background: #000;
+            color: #fff;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .status {
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        .success { background: #0f2320; border-color: #22c55e; }
+        .error { background: #2d1b1b; border-color: #ef4444; }
+        .warning { background: #2d2416; border-color: #f59e0b; }
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #111;
+            border-radius: 8px;
+        }
+        .test-button {
+            background: #22c55e;
+            color: black;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px 10px 10px 0;
+            font-weight: 600;
+        }
+        .test-button:hover {
+            background: #16a34a;
+        }
+        #results {
+            background: #0a0a0a;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 15px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
-    <h1>AMC-TRADER Frontend API Test</h1>
-    <div id="results"></div>
+    <div class="container">
+        <h1>🔧 AMC-TRADER Frontend Test - Final Validation</h1>
+
+        <div class="status success">
+            <h3>✅ System Status</h3>
+            <p>Frontend: <span id="frontend-status">Checking...</span></p>
+            <p>Backend: <span id="backend-status">Checking...</span></p>
+            <p>Discovery: <span id="discovery-status">Checking...</span></p>
+        </div>
+
+        <div class="test-section">
+            <h3>🔍 Discovery System Tests</h3>
+            <p>Testing the working discovery endpoints and frontend integration</p>
+
+            <button class="test-button" onclick="testBackendHealth()">Test Backend Health</button>
+            <button class="test-button" onclick="testDiscoveryStatus()">Test Discovery Status</button>
+            <button class="test-button" onclick="testFrontendConfig()">Test Frontend Config</button>
+            <button class="test-button" onclick="testLocalDiscovery()">Test Local Discovery Call</button>
+            <button class="test-button" onclick="simulateSqueezeMonitor()">Simulate Squeeze Monitor</button>
+
+            <div id="results"></div>
+        </div>
+    </div>
 
     <script>
-        const API_BASE = "https://amc-trader.onrender.com";
-        const results = document.getElementById('results');
+        // Configuration
+        const CONFIG = {
+            backend: 'https://amc-trader.onrender.com',
+            local: 'http://localhost:5173'
+        };
 
-        function log(message, data, isError = false) {
-            const div = document.createElement('div');
-            div.className = isError ? 'test fail' : 'test pass';
-            div.innerHTML = `<strong>${message}</strong>`;
-            if (data) {
-                div.innerHTML += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
-            }
-            results.appendChild(div);
+        function log(message, type = 'info') {
+            const results = document.getElementById('results');
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : type === 'warning' ? '⚠️' : 'ℹ️';
+            results.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            results.scrollTop = results.scrollHeight;
         }
 
-        async function runTests() {
-            // Test 1: Backend health
+        async function testBackendHealth() {
+            log('Testing backend health...', 'info');
             try {
-                const healthRes = await fetch(`${API_BASE}/health`);
-                const health = await healthRes.json();
-                log('✅ Backend Health Check', health);
-            } catch (e) {
-                log('❌ Backend Health Check Failed', e.message, true);
-            }
-
-            // Test 2: Discovery contenders
-            try {
-                const contendersRes = await fetch(`${API_BASE}/discovery/contenders`);
-                const contenders = await contendersRes.json();
-                log(`✅ Discovery Contenders: ${contenders.count || contenders.length} candidates`, {
-                    count: contenders.count || contenders.length,
-                    first: contenders.data?.[0] || contenders[0],
-                    source: contenders.source,
-                    engine: contenders.engine
+                const response = await fetch(`${CONFIG.backend}/health`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
                 });
-            } catch (e) {
-                log('❌ Discovery Contenders Failed', e.message, true);
-            }
 
-            // Test 3: Simulate frontend fetchContenders
-            try {
-                const response = await fetch(`${API_BASE}/discovery/contenders`);
-                const json = await response.json();
-                const data = json.data || json; // Handle both formats
-                const candidates = Array.isArray(data) ? data : [];
-
-                log(`✅ Frontend fetchContenders Simulation: ${candidates.length} candidates`, {
-                    totalCount: candidates.length,
-                    topThree: candidates.slice(0, 3).map(c => ({
-                        symbol: c.symbol || c.ticker,
-                        score: c.score,
-                        action: c.action_tag
-                    }))
-                });
-            } catch (e) {
-                log('❌ Frontend Simulation Failed', e.message, true);
-            }
-
-            // Test 4: Check score distribution
-            try {
-                const response = await fetch(`${API_BASE}/discovery/contenders`);
-                const json = await response.json();
-                const data = json.data || json;
-                const candidates = Array.isArray(data) ? data : [];
-
-                const scoreRanges = {
-                    'Trade-ready (≥75)': candidates.filter(c => c.score >= 75).length,
-                    'Watchlist (70-75)': candidates.filter(c => c.score >= 70 && c.score < 75).length,
-                    'Monitoring (<70)': candidates.filter(c => c.score < 70).length
-                };
-
-                log('✅ Score Distribution Analysis', scoreRanges);
-            } catch (e) {
-                log('❌ Score Analysis Failed', e.message, true);
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`Backend healthy: ${data.status}`, 'success');
+                    log(`Components: ${Object.keys(data.components).length} checked`, 'info');
+                    document.getElementById('backend-status').textContent = '✅ Healthy';
+                } else {
+                    log(`Backend health check failed: ${response.status}`, 'error');
+                    document.getElementById('backend-status').textContent = '❌ Failed';
+                }
+            } catch (error) {
+                log(`Backend error: ${error.message}`, 'error');
+                document.getElementById('backend-status').textContent = '❌ Error';
             }
         }
 
-        runTests();
+        async function testDiscoveryStatus() {
+            log('Testing discovery system status...', 'info');
+            try {
+                const response = await fetch(`${CONFIG.backend}/discovery/emergency/status`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`Discovery status: ${data.status}`, 'success');
+                    log(`System: ${data.discovery_system}`, 'info');
+                    log(`Redis: ${data.redis_connected ? 'Connected' : 'Disconnected'}`, data.redis_connected ? 'success' : 'error');
+                    document.getElementById('discovery-status').textContent = data.status === 'operational' ? '✅ Operational' : '⚠️ Issues';
+                } else {
+                    log(`Discovery status failed: ${response.status}`, 'error');
+                    document.getElementById('discovery-status').textContent = '❌ Failed';
+                }
+            } catch (error) {
+                log(`Discovery error: ${error.message}`, 'error');
+                document.getElementById('discovery-status').textContent = '❌ Error';
+            }
+        }
+
+        function testFrontendConfig() {
+            log('Testing frontend configuration...', 'info');
+
+            // Test configuration values
+            const hostname = window.location.hostname;
+            const isLocal = hostname === 'localhost';
+
+            log(`Hostname: ${hostname}`, 'info');
+            log(`Is Local: ${isLocal}`, 'info');
+
+            // Simulate frontend config logic
+            const API_BASE = isLocal ? '/api' : 'https://amc-trader.onrender.com';
+            const WS_URL = 'wss://amc-trader.onrender.com/v1/stream';
+
+            log(`API_BASE would be: ${API_BASE}`, 'info');
+            log(`WS_URL would be: ${WS_URL}`, 'info');
+
+            document.getElementById('frontend-status').textContent = '✅ Config OK';
+        }
+
+        async function testLocalDiscovery() {
+            log('Testing discovery endpoint directly...', 'info');
+
+            // Use a timeout to avoid hanging
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+            try {
+                log('Calling /discovery/contenders?limit=5 with 10s timeout...', 'info');
+                const response = await fetch(`${CONFIG.backend}/discovery/contenders?limit=5`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`Discovery response received: ${data.count || 0} candidates`, 'success');
+                    if (data.data && data.data.length > 0) {
+                        log(`Sample candidates: ${data.data.slice(0, 3).map(c => c.symbol).join(', ')}`, 'info');
+                    } else {
+                        log('No candidates returned (may be normal if market is quiet)', 'warning');
+                    }
+                } else {
+                    log(`Discovery call failed: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                clearTimeout(timeoutId);
+                if (error.name === 'AbortError') {
+                    log('Discovery call timed out after 10 seconds', 'error');
+                } else {
+                    log(`Discovery call error: ${error.message}`, 'error');
+                }
+            }
+        }
+
+        async function simulateSqueezeMonitor() {
+            log('Simulating SqueezeMonitor component behavior...', 'info');
+
+            // Simulate what SqueezeMonitor.tsx does
+            const WS_URL = 'wss://amc-trader.onrender.com/v1/stream';
+            const API_URL = WS_URL.replace('ws', 'http').replace('wss', 'https');
+            const discoveryURL = `${API_URL.replace('/v1/stream', '')}/discovery/contenders?limit=50`;
+
+            log(`Would call: ${discoveryURL}`, 'info');
+
+            // Test with timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout like frontend
+
+            try {
+                log('Simulating frontend discovery call...', 'info');
+                const response = await fetch(discoveryURL, {
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`Frontend simulation success: ${data.count || 0} candidates`, 'success');
+
+                    if (data.success && data.data) {
+                        // Simulate mapping logic
+                        const candidates = data.data.map(candidate => ({
+                            symbol: candidate.symbol,
+                            score: candidate.score / 100,
+                            action_tag: candidate.action_tag === 'explosive' ? 'trade_ready' :
+                                       candidate.action_tag === 'momentum' ? 'watchlist' : 'monitor',
+                            price: candidate.price
+                        }));
+
+                        log(`Mapped ${candidates.length} candidates for display`, 'success');
+
+                        const tradeReady = candidates.filter(c => c.action_tag === 'trade_ready');
+                        const watchlist = candidates.filter(c => c.action_tag === 'watchlist');
+                        const others = candidates.filter(c => c.action_tag !== 'trade_ready' && c.action_tag !== 'watchlist');
+
+                        log(`Categories: ${tradeReady.length} trade ready, ${watchlist.length} watchlist, ${others.length} monitoring`, 'info');
+
+                        if (candidates.length > 0) {
+                            log(`Sample: ${candidates.slice(0, 3).map(c => `${c.symbol}: ${(c.score * 100).toFixed(1)}%`).join(', ')}`, 'info');
+                        }
+                    } else {
+                        log('No valid data in response', 'warning');
+                    }
+                } else {
+                    log(`Frontend simulation failed: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                clearTimeout(timeoutId);
+                if (error.name === 'AbortError') {
+                    log('Frontend simulation timed out (this would show error in UI)', 'error');
+                } else {
+                    log(`Frontend simulation error: ${error.message}`, 'error');
+                }
+            }
+        }
+
+        // Auto-run initial tests
+        window.addEventListener('load', () => {
+            log('=== AMC-TRADER Frontend Test Started ===', 'info');
+            setTimeout(() => {
+                testBackendHealth();
+                setTimeout(() => testDiscoveryStatus(), 1000);
+                setTimeout(() => testFrontendConfig(), 2000);
+            }, 500);
+        });
     </script>
 </body>
 </html>
