@@ -84,24 +84,9 @@ export default function SqueezeMonitor() {
 
       console.log('🔄 Using existing discovery system...');
 
-      // Try the main discovery system first, then fallback to quick discovery
+      // Call the discovery system directly - no fake fallbacks
       const discoveryURL = WS_URL.replace('wss', 'https').replace('ws', 'http').replace('/v1/stream', '');
-
-      let discoveryResponse;
-      try {
-        discoveryResponse = await fetch(`${discoveryURL}/discovery/contenders?limit=50`);
-        if (!discoveryResponse.ok) {
-          throw new Error(`Main discovery failed: ${discoveryResponse.status}`);
-        }
-        const testData = await discoveryResponse.json();
-        if (!testData.success || !testData.data || testData.data.length === 0) {
-          throw new Error('No data from main discovery, trying quick discovery');
-        }
-        discoveryResponse = new Response(JSON.stringify(testData), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      } catch (error) {
-        console.log('Main discovery failed, using quick discovery:', error.message);
-        discoveryResponse = await fetch(`${discoveryURL}/api/discovery/quick`);
-      }
+      const discoveryResponse = await fetch(`${discoveryURL}/discovery/contenders?limit=50`);
 
       if (!discoveryResponse.ok) {
         throw new Error(`Discovery system failed: ${discoveryResponse.status}`);
