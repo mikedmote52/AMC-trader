@@ -389,6 +389,7 @@ async def quick_discovery():
         return {"success": False, "error": str(e), "count": 0, "data": []}
 
 # Optional buy-now alias if the UI ever posts here:
+from fastapi import Body as FastAPIBody
 @app.post("/api/buy")
 async def compat_buy(payload: dict = FastAPIBody(...)):
     # forward to the actual executor
