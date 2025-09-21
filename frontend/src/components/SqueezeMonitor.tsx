@@ -76,68 +76,57 @@ export default function SqueezeMonitor() {
   const safeToTrade = telemetry?.system_health?.system_ready === true &&
                       telemetry?.production_health?.stale_data_detected === false;
 
-  // Use real Polygon MCP data via proxy
+  // Use the existing working discovery system
   const fetchData = async () => {
     try {
       setLoading(true);
       setError("");
 
-      console.log('🔄 Fetching real Polygon MCP data...');
+      console.log('🔄 Using existing discovery system...');
 
-      // Call the working MCP proxy to get real stock universe
-      const mcpResponse = await fetch(`${WS_URL.replace('ws', 'http')}/api/mcp/proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          function: 'mcp__polygon__list_tickers',
-          params: { limit: 50, active: true, type: 'CS' }
-        })
-      });
+      // Call the WORKING discovery system that's already built
+      const discoveryResponse = await fetch(`${WS_URL.replace('ws', 'http')}/discovery/contenders?limit=50`);
 
-      if (!mcpResponse.ok) {
-        throw new Error(`MCP Proxy failed: ${mcpResponse.status}`);
+      if (!discoveryResponse.ok) {
+        throw new Error(`Discovery system failed: ${discoveryResponse.status}`);
       }
 
-      const mcpData = await mcpResponse.json();
-      console.log('✅ Real Polygon data received:', mcpData.results?.length || 0, 'stocks');
+      const discoveryData = await discoveryResponse.json();
+      console.log('✅ Discovery data received:', discoveryData.count || 0, 'candidates');
 
-      if (!mcpData.results || mcpData.results.length === 0) {
-        throw new Error('No stock data returned from Polygon MCP');
+      if (!discoveryData.success || !discoveryData.data) {
+        throw new Error('No candidates returned from discovery system');
       }
 
-      // Convert real stock data to candidate format with basic scoring
-      const candidates = mcpData.results.slice(0, 20).map((stock: any, index: number) => {
-        const baseScore = 0.3 + (Math.random() * 0.4); // 30-70% range
-        const price = 10 + Math.random() * 200; // $10-$210 range
-        const volume = Math.floor(100000 + Math.random() * 5000000); // 100K-5M volume
-        const changePercent = (Math.random() - 0.5) * 10; // ±5% change
-
+      // Use the real discovery results directly - no fake data generation
+      const candidates = discoveryData.data.map((candidate: any) => {
         return {
-          symbol: stock.ticker,
-          ticker: stock.ticker,
-          total_score: baseScore,
-          score: baseScore,
-          action_tag: baseScore > 0.6 ? 'trade_ready' : baseScore > 0.4 ? 'watchlist' : 'monitor',
-          price: price,
+          symbol: candidate.symbol,
+          ticker: candidate.symbol,
+          total_score: candidate.score / 100, // Convert to 0-1 range
+          score: candidate.score / 100,
+          action_tag: candidate.action_tag === 'explosive' ? 'trade_ready' :
+                      candidate.action_tag === 'momentum' ? 'watchlist' : 'monitor',
+          price: candidate.price,
           snapshot: {
-            price: price,
-            intraday_relvol: 1 + Math.random() * 2, // 1-3x relative volume
-            volume: volume,
-            change_percent: changePercent
+            price: candidate.price,
+            intraday_relvol: candidate.rel_vol || 1.0,
+            volume: candidate.volume,
+            change_percent: candidate.price_change_pct || 0
           },
-          entry: price,
-          stop: price * (changePercent > 0 ? 0.95 : 1.05),
-          tp1: price * (changePercent > 0 ? 1.15 : 0.85),
-          tp2: price * (changePercent > 0 ? 1.30 : 0.70)
+          entry: candidate.price,
+          stop: candidate.price * 0.95, // 5% stop loss
+          tp1: candidate.price * 1.10,  // 10% target
+          tp2: candidate.price * 1.20   // 20% target
         };
       });
 
-      console.log('✅ Generated candidates from real stocks:', candidates.slice(0, 5).map(c => c.symbol));
+      console.log('✅ Using real discovery candidates:', candidates.slice(0, 5).map(c => `${c.symbol}: ${(c.score * 100).toFixed(1)}%`));
 
       setCandidates(candidates);
       setExplosive([]);
       setTelemetry({
-        schema_version: "polygon_mcp_real",
+        schema_version: "alphastack_v4_discovery",
         system_health: { system_ready: true },
         production_health: { stale_data_detected: false }
       });
