@@ -84,9 +84,9 @@ export default function SqueezeMonitor() {
 
       console.log('🔄 Using existing discovery system...');
 
-      // Call the discovery system directly - no fake fallbacks
+      // Call the explosive discovery system that has MCP-enhanced data
       const discoveryURL = WS_URL.replace('wss', 'https').replace('ws', 'http').replace('/v1/stream', '');
-      const discoveryResponse = await fetch(`${discoveryURL}/discovery/contenders?limit=50`);
+      const discoveryResponse = await fetch(`${discoveryURL}/discovery/discovery/explosive?limit=50`);
 
       if (!discoveryResponse.ok) {
         throw new Error(`Discovery system failed: ${discoveryResponse.status}`);
@@ -99,26 +99,29 @@ export default function SqueezeMonitor() {
         throw new Error('No candidates returned from discovery system');
       }
 
-      // Use the real discovery results directly - no fake data generation
+      // Map the MCP-enhanced explosive discovery data
       const candidates = discoveryData.data.map((candidate: any) => {
         return {
           symbol: candidate.symbol,
           ticker: candidate.symbol,
           total_score: candidate.score / 100, // Convert to 0-1 range
           score: candidate.score / 100,
-          action_tag: candidate.action_tag === 'explosive' ? 'trade_ready' :
-                      candidate.action_tag === 'momentum' ? 'watchlist' : 'monitor',
+          action_tag: candidate.action_tag || 'monitor',
           price: candidate.price,
           snapshot: {
             price: candidate.price,
-            intraday_relvol: candidate.rel_vol || 1.0,
+            intraday_relvol: candidate.volume_surge_ratio || 1.0,
             volume: candidate.volume,
             change_percent: candidate.price_change_pct || 0
           },
           entry: candidate.price,
           stop: candidate.price * 0.95, // 5% stop loss
           tp1: candidate.price * 1.10,  // 10% target
-          tp2: candidate.price * 1.20   // 20% target
+          tp2: candidate.price * 1.20,  // 20% target
+          // Include MCP-enhanced subscores
+          subscores: candidate.subscores || {},
+          confidence: candidate.confidence || 0,
+          news_count: candidate.news_count_24h || 0
         };
       });
 
