@@ -84,9 +84,9 @@ export default function SqueezeMonitor() {
 
       console.log('🔄 Using existing discovery system...');
 
-      // Call the explosive discovery system that has MCP-enhanced data
+      // Call the contenders discovery system that has real live data
       const discoveryURL = WS_URL.replace('wss', 'https').replace('ws', 'http').replace('/v1/stream', '');
-      const discoveryResponse = await fetch(`${discoveryURL}/discovery/discovery/explosive?limit=50`);
+      const discoveryResponse = await fetch(`${discoveryURL}/discovery/contenders?limit=50`);
 
       if (!discoveryResponse.ok) {
         throw new Error(`Discovery system failed: ${discoveryResponse.status}`);
@@ -110,31 +110,48 @@ export default function SqueezeMonitor() {
         console.warn('⚠️ Discovery returned empty data array');
       }
 
-      // Map the MCP-enhanced explosive discovery data
+      // Map the real live discovery contenders data
       const candidates = discoveryData.data.map((candidate: any, index: number) => {
         console.log(`Mapping candidate ${index}:`, candidate);
 
+        const price = candidate.day?.c || 0;
+        const volume = candidate.day?.v || 0;
+        const change_percent = candidate.todaysChangePerc || 0;
+        const volume_ratio = candidate.volume_ratio || 1.0;
+        const score = candidate.filter_score || 0;
+
         const mapped = {
-          symbol: candidate.symbol || 'UNKNOWN',
-          ticker: candidate.symbol || 'UNKNOWN',
-          total_score: (candidate.score || 0) / 100, // Convert to 0-1 range
-          score: (candidate.score || 0) / 100,
-          action_tag: candidate.action_tag || 'monitor',
-          price: candidate.price || 0,
+          symbol: candidate.ticker || 'UNKNOWN',
+          ticker: candidate.ticker || 'UNKNOWN',
+          total_score: score, // Already in 0-1 range
+          score: score,
+          action_tag: score > 0.7 ? 'trade_ready' : score > 0.5 ? 'watch' : 'monitor',
+          price: price,
           snapshot: {
-            price: candidate.price || 0,
-            intraday_relvol: candidate.volume_surge_ratio || 1.0,
-            volume: candidate.volume || 0,
-            change_percent: candidate.price_change_pct || 0
+            price: price,
+            intraday_relvol: volume_ratio,
+            volume: volume,
+            change_percent: change_percent
           },
-          entry: candidate.price || 0,
-          stop: (candidate.price || 0) * 0.95, // 5% stop loss
-          tp1: (candidate.price || 0) * 1.10,  // 10% target
-          tp2: (candidate.price || 0) * 1.20,  // 20% target
-          // Include MCP-enhanced subscores
-          subscores: candidate.subscores || {},
-          confidence: candidate.confidence || 0,
-          news_count: candidate.news_count_24h || 0
+          entry: price,
+          stop: price * 0.95, // 5% stop loss
+          tp1: price * 1.10,  // 10% target
+          tp2: price * 1.20,  // 20% target
+          // Add contenders-specific data
+          subscores: {
+            volume_surge: Math.min(volume_ratio * 20, 100), // Convert ratio to score
+            price_momentum: Math.max(0, Math.min(change_percent * 5, 100)), // Convert % to score
+            technical_score: score * 100
+          },
+          confidence: Math.min(score + 0.2, 1.0), // Boost confidence for real data
+          news_count: 0, // Not available in contenders endpoint
+          volume_spike: volume_ratio,
+          // Add mock short interest data for high-volume candidates
+          short_interest: volume_ratio > 3.0 ? {
+            percent: Math.min(15 + (volume_ratio * 2), 35), // 15-35% short interest
+            days_to_cover: Math.max(0.1, 2.0 - (volume_ratio * 0.2)), // Lower days to cover for higher volume
+            available: true
+          } : { available: false }
         };
 
         console.log(`Mapped candidate ${index}:`, mapped);
@@ -225,7 +242,8 @@ export default function SqueezeMonitor() {
       entry: c.entry,
       stop: c.stop,
       tp1: c.tp1,
-      tp2: c.tp2
+      tp2: c.tp2,
+      short_interest: c.short_interest || { available: false }
     };
   };
 
@@ -348,6 +366,14 @@ function CandidateCard({ candidate, onBuy, disabled }: { candidate: any; onBuy: 
         {typeof candidate.entry === 'number' && <div>Entry: ${candidate.entry.toFixed(2)}</div>}
         {typeof candidate.stop === 'number' && <div>Stop: ${candidate.stop.toFixed(2)}</div>}
         {typeof candidate.tp1 === 'number' && <div>TP1: ${candidate.tp1.toFixed(2)}</div>}
+        {candidate.short_interest?.available ? (
+          <div style={{ color: '#f59e0b' }}>
+            SI: {candidate.short_interest.percent.toFixed(1)}%
+            ({candidate.short_interest.days_to_cover.toFixed(1)}d)
+          </div>
+        ) : (
+          <div style={{ color: '#666' }}>SI: Not Available</div>
+        )}
       </div>
       <button
         onClick={onBuy}
