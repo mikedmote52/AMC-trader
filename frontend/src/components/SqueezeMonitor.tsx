@@ -93,36 +93,52 @@ export default function SqueezeMonitor() {
       }
 
       const discoveryData = await discoveryResponse.json();
-      console.log('✅ Discovery data received:', discoveryData.count || 0, 'candidates');
+      console.log('✅ Discovery data received:', discoveryData);
+      console.log('Discovery success:', discoveryData.success);
+      console.log('Discovery data array:', discoveryData.data);
+      console.log('Discovery count:', discoveryData.count || 0, 'candidates');
 
-      if (!discoveryData.success || !discoveryData.data) {
-        throw new Error('No candidates returned from discovery system');
+      if (!discoveryData.success) {
+        throw new Error(`Discovery system returned success=false: ${JSON.stringify(discoveryData)}`);
+      }
+
+      if (!discoveryData.data || !Array.isArray(discoveryData.data)) {
+        throw new Error(`No valid data array returned: ${JSON.stringify(discoveryData)}`);
+      }
+
+      if (discoveryData.data.length === 0) {
+        console.warn('⚠️ Discovery returned empty data array');
       }
 
       // Map the MCP-enhanced explosive discovery data
-      const candidates = discoveryData.data.map((candidate: any) => {
-        return {
-          symbol: candidate.symbol,
-          ticker: candidate.symbol,
-          total_score: candidate.score / 100, // Convert to 0-1 range
-          score: candidate.score / 100,
+      const candidates = discoveryData.data.map((candidate: any, index: number) => {
+        console.log(`Mapping candidate ${index}:`, candidate);
+
+        const mapped = {
+          symbol: candidate.symbol || 'UNKNOWN',
+          ticker: candidate.symbol || 'UNKNOWN',
+          total_score: (candidate.score || 0) / 100, // Convert to 0-1 range
+          score: (candidate.score || 0) / 100,
           action_tag: candidate.action_tag || 'monitor',
-          price: candidate.price,
+          price: candidate.price || 0,
           snapshot: {
-            price: candidate.price,
+            price: candidate.price || 0,
             intraday_relvol: candidate.volume_surge_ratio || 1.0,
-            volume: candidate.volume,
+            volume: candidate.volume || 0,
             change_percent: candidate.price_change_pct || 0
           },
-          entry: candidate.price,
-          stop: candidate.price * 0.95, // 5% stop loss
-          tp1: candidate.price * 1.10,  // 10% target
-          tp2: candidate.price * 1.20,  // 20% target
+          entry: candidate.price || 0,
+          stop: (candidate.price || 0) * 0.95, // 5% stop loss
+          tp1: (candidate.price || 0) * 1.10,  // 10% target
+          tp2: (candidate.price || 0) * 1.20,  // 20% target
           // Include MCP-enhanced subscores
           subscores: candidate.subscores || {},
           confidence: candidate.confidence || 0,
           news_count: candidate.news_count_24h || 0
         };
+
+        console.log(`Mapped candidate ${index}:`, mapped);
+        return mapped;
       });
 
       console.log('✅ Using real discovery candidates:', candidates.slice(0, 5).map(c => `${c.symbol}: ${(c.score * 100).toFixed(1)}%`));
