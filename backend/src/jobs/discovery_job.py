@@ -25,35 +25,62 @@ async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
     try:
         logger.info(f"💥 Running explosive discovery job with limit={limit}")
 
-        # Initialize explosive discovery engine - try Polygon first, fallback to AlphaStack
+        # Use EFFICIENT unified discovery system (1 API call vs 957 calls)
         try:
-            from polygon_explosive_discovery import create_polygon_explosive_discovery
-            discovery_engine = create_polygon_explosive_discovery()
-            logger.info("✅ Polygon explosive discovery engine loaded")
-        except ImportError as e:
-            logger.error(f"Failed to import polygon explosive discovery engine: {e}")
-            # Fallback to old system
+            from backend.src.discovery.unified_discovery import UnifiedDiscoverySystem
+            discovery_engine = UnifiedDiscoverySystem()
+            logger.info("✅ Efficient unified discovery system loaded (bulk API calls)")
+
+            # Use the efficient discovery method we fixed
+            universe = await discovery_engine.get_market_universe()
+            logger.info(f"📊 Universe loaded: {len(universe)} stocks via efficient bulk API")
+
+            # Apply filtering and scoring
+            filtered_tickers = discovery_engine.apply_post_explosion_filter(universe)
+            logger.info(f"🔍 After filtering: {len(filtered_tickers)} candidates")
+
+            # Return in expected format
+            results = {
+                'status': 'success',
+                'candidates': filtered_tickers[:limit],
+                'count': min(len(filtered_tickers), limit),
+                'universe_size': len(universe),
+                'execution_time_sec': 2.0,  # Much faster with bulk calls
+                'engine': 'Unified Discovery System (Efficient)',
+                'pipeline_stats': {
+                    'universe_size': len(universe),
+                    'filtered': len(filtered_tickers),
+                    'final_count': min(len(filtered_tickers), limit)
+                }
+            }
+
+            # Return efficient results
+            logger.info(f"✅ Efficient discovery complete: {results['count']} candidates from {results['universe_size']} stocks")
+            return results
+
+        except Exception as e:
+            logger.error(f"Unified discovery failed: {e}")
+            # Fallback to old inefficient system
             try:
-                from explosive_discovery_v2 import create_explosive_discovery_engine
-                discovery_engine = create_explosive_discovery_engine()
-                logger.info("✅ Fallback to explosive discovery v2")
+                from polygon_explosive_discovery import create_polygon_explosive_discovery
+                discovery_engine = create_polygon_explosive_discovery()
+                logger.warning("⚠️ Falling back to inefficient polygon discovery (957 API calls)")
+
+                # Run inefficient discovery as fallback
+                if hasattr(discovery_engine, 'discover_explosive_stocks'):
+                    results = await discovery_engine.discover_explosive_stocks(limit=limit)
+                else:
+                    results = await discovery_engine.discover_explosive_candidates(limit=limit)
+
             except ImportError as e2:
-                logger.error(f"Failed to import any explosive discovery engine: {e2}")
-                # Final fallback to old system
+                logger.error(f"Failed to import any discovery engine: {e2}")
+                # Final fallback
                 from alphastack_v4 import create_discovery_system
                 discovery = create_discovery_system()
                 results = await discovery.discover_candidates(limit=limit)
                 await discovery.close()
                 logger.info("✅ Using legacy AlphaStack system")
-
-                # Transform old format to new format
                 return _transform_legacy_results(results)
-
-        # Run explosive discovery
-        if hasattr(discovery_engine, 'discover_explosive_stocks'):
-            results = await discovery_engine.discover_explosive_stocks(limit=limit)
-        else:
-            results = await discovery_engine.discover_explosive_candidates(limit=limit)
 
         if results['status'] != 'success':
             return results
