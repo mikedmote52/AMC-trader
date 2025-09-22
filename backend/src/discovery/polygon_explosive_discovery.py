@@ -13,6 +13,33 @@ import math
 
 logger = logging.getLogger(__name__)
 
+# --- Scoring Utils (No External Dependencies) ---
+def _combine_subscores(weighted_parts):
+    """
+    weighted_parts: list of tuples (name, weight, value_or_none)
+    Returns (total_score_0_100, subscores_dict, meta_dict)
+    - Omits parts with value is None
+    - Reweights remaining parts to sum to 100
+    """
+    active = [(n, w, v) for (n, w, v) in weighted_parts if v is not None]
+    missing = [n for (n, w, v) in weighted_parts if v is None]
+
+    if not active:
+        return 0.0, {n: None for (n, _, _) in weighted_parts}, {"missing": missing, "active_weights": {}}
+
+    total_w = sum(w for (_, w, _) in active)
+    scale = 100.0 / total_w if total_w > 0 else 0.0
+
+    score = 0.0
+    subs = {}
+    active_weights = {}
+    for (n, w, v) in active:
+        subs[n] = v
+        active_weights[n] = round(w * scale, 4)
+        score += (w * scale) * (v / 100.0)
+
+    return round(score, 2), subs | {n: None for n in missing}, {"missing": missing, "active_weights": active_weights}
+
 @dataclass
 class ExplosiveStock:
     symbol: str
@@ -45,6 +72,23 @@ class PolygonExplosiveDiscovery:
     """
 
     def __init__(self):
+        # Use environment-adaptive weights from deployment config
+        try:
+            from backend.src.config.mcp_deployment import mcp_config
+            self.ALPHASTACK_WEIGHTS = mcp_config.get_scoring_weights_for_environment()
+        except:
+            # Fallback to full 8-pillar system
+            self.ALPHASTACK_WEIGHTS = {
+                "price_momentum": 20,
+                "volume_surge": 20,
+                "float_short": 15,
+                "catalyst": 15,
+                "sentiment": 10,
+                "technical": 10,
+                "options_flow": 5,
+                "realtime_momentum": 5,
+            }
+
         self.EXPLOSIVE_THRESHOLDS = {
             'min_price_move': 5.0,        # 5% minimum price move
             'strong_price_move': 10.0,    # 10% strong move
@@ -54,13 +98,6 @@ class PolygonExplosiveDiscovery:
             'min_dollar_volume': 1_000_000, # $1M minimum daily volume
             'min_price': 0.50,            # No penny stocks below $0.50
             'max_price': 500.00           # Avoid expensive stocks
-        }
-
-        self.SCORING_WEIGHTS = {
-            'price_momentum': 0.40,  # Price move is primary signal
-            'volume_surge': 0.35,    # Volume confirmation
-            'catalyst': 0.15,        # News catalyst
-            'technical': 0.10        # Technical position
         }
 
     async def discover_explosive_stocks(self, limit: int = 50) -> Dict[str, Any]:
@@ -312,19 +349,55 @@ class PolygonExplosiveDiscovery:
             # Get news data for catalyst analysis
             news_data = await self._get_news_data(symbol)
 
-            # Calculate component scores
-            momentum_score = self._calculate_momentum_score(stock_data, historical_data)
-            volume_score = self._calculate_volume_score(stock_data, historical_data)
-            catalyst_score = self._calculate_catalyst_score(news_data)
-            technical_score = self._calculate_technical_score(stock_data, historical_data)
+            # Get enhanced data sources concurrently for better performance
+            short_interest_task = asyncio.create_task(self._get_short_interest_data(symbol))
+            sentiment_task = asyncio.create_task(self._get_sentiment_data(symbol))
 
-            # Calculate composite score
-            explosive_score = (
-                momentum_score * self.SCORING_WEIGHTS['price_momentum'] +
-                volume_score * self.SCORING_WEIGHTS['volume_surge'] +
-                catalyst_score * self.SCORING_WEIGHTS['catalyst'] +
-                technical_score * self.SCORING_WEIGHTS['technical']
+            # Add new enhanced data sources using official Polygon MCP
+            options_task = asyncio.create_task(self._get_options_activity_data(symbol))
+            trades_task = asyncio.create_task(self._get_realtime_trades_data(symbol))
+
+            # Wait for all data to arrive
+            short_interest_data, sentiment_data, options_data, trades_data = await asyncio.gather(
+                short_interest_task, sentiment_task, options_task, trades_task, return_exceptions=True
             )
+
+            # Handle exceptions from concurrent tasks
+            if isinstance(short_interest_data, Exception):
+                logger.warning(f"Short interest task failed for {symbol}: {short_interest_data}")
+                short_interest_data = {'available': False}
+            if isinstance(sentiment_data, Exception):
+                logger.warning(f"Sentiment task failed for {symbol}: {sentiment_data}")
+                sentiment_data = {'available': False}
+            if isinstance(options_data, Exception):
+                logger.warning(f"Options data task failed for {symbol}: {options_data}")
+                options_data = {'available': False}
+            if isinstance(trades_data, Exception):
+                logger.warning(f"Trades data task failed for {symbol}: {trades_data}")
+                trades_data = {'available': False}
+
+            # Calculate component scores with enhanced AlphaStack approach
+            sub_price = self._calculate_momentum_score(stock_data, historical_data)
+            sub_volume = self._calculate_volume_score(stock_data, historical_data)
+            sub_float = self._calculate_float_short_score(symbol, short_interest_data)
+            sub_cat = self._calculate_catalyst_score(news_data)  # Basic catalyst without enhancement
+            sub_sent = self._calculate_sentiment_score(symbol, sentiment_data)
+            sub_tech = self._calculate_technical_score(stock_data, historical_data)
+            sub_options = self._calculate_options_flow_score(symbol, options_data)
+            sub_realtime = self._calculate_realtime_momentum_score(symbol, trades_data)
+
+            # Apply Enhanced AlphaStack 8-pillar weighted scoring with dynamic reweighting
+            weighted = [
+                ("price_momentum", self.ALPHASTACK_WEIGHTS["price_momentum"], sub_price),
+                ("volume_surge", self.ALPHASTACK_WEIGHTS["volume_surge"], sub_volume),
+                ("float_short", self.ALPHASTACK_WEIGHTS["float_short"], sub_float),
+                ("catalyst", self.ALPHASTACK_WEIGHTS["catalyst"], sub_cat),
+                ("sentiment", self.ALPHASTACK_WEIGHTS["sentiment"], sub_sent),
+                ("technical", self.ALPHASTACK_WEIGHTS["technical"], sub_tech),
+                ("options_flow", self.ALPHASTACK_WEIGHTS["options_flow"], sub_options),
+                ("realtime_momentum", self.ALPHASTACK_WEIGHTS["realtime_momentum"], sub_realtime),
+            ]
+            explosive_score, subscores, meta = _combine_subscores(weighted)
 
             # Determine action tag
             if explosive_score >= 80:
@@ -351,10 +424,10 @@ class PolygonExplosiveDiscovery:
                 price_change_pct=stock_data['price_change_pct'],
                 volume=stock_data['current_volume'],
                 volume_surge_ratio=stock_data['volume_ratio'],
-                momentum_score=momentum_score,
-                volume_score=volume_score,
-                catalyst_score=catalyst_score,
-                technical_score=technical_score,
+                momentum_score=subscores.get("price_momentum", 0) or 0,
+                volume_score=subscores.get("volume_surge", 0) or 0,
+                catalyst_score=subscores.get("catalyst", 0) or 0,
+                technical_score=subscores.get("technical", 0) or 0,
                 volatility_risk=volatility_risk,
                 liquidity_score=liquidity_score,
                 news_count=len(news_data) if news_data else 0,
@@ -393,135 +466,151 @@ class PolygonExplosiveDiscovery:
             logger.warning(f"Failed to get news for {symbol}: {e}")
             return []
 
-    def _calculate_momentum_score(self, stock_data: Dict[str, Any], historical_data: List[Dict[str, Any]]) -> float:
+    def _calculate_momentum_score(self, stock_data: Dict[str, Any], historical_data: List[Dict[str, Any]]) -> Optional[float]:
         """Calculate price momentum score (0-100)"""
-        price_change = abs(stock_data['price_change_pct'])
+        try:
+            price_change = abs(stock_data['price_change_pct'])
 
-        # Base score from price movement
-        if price_change >= self.EXPLOSIVE_THRESHOLDS['explosive_price_move']:
-            base_score = 100
-        elif price_change >= self.EXPLOSIVE_THRESHOLDS['strong_price_move']:
-            base_score = 70 + (price_change - self.EXPLOSIVE_THRESHOLDS['strong_price_move']) * 3
-        elif price_change >= self.EXPLOSIVE_THRESHOLDS['min_price_move']:
-            base_score = 40 + (price_change - self.EXPLOSIVE_THRESHOLDS['min_price_move']) * 6
-        else:
-            base_score = price_change * 8
-
-        # Direction bonus (we prefer up moves)
-        direction_bonus = 1.2 if stock_data['price_change_pct'] > 0 else 0.9
-
-        # Multi-day momentum bonus
-        momentum_bonus = 1.0
-        if len(historical_data) >= 3:
-            recent_closes = [bar.get('c', 0) for bar in historical_data[-3:]]
-            if len(recent_closes) == 3:
-                if recent_closes[2] > recent_closes[1] > recent_closes[0]:
-                    momentum_bonus = 1.3  # 3-day uptrend
-                elif recent_closes[2] > recent_closes[0]:
-                    momentum_bonus = 1.1  # Net positive
-
-        return min(100, base_score * direction_bonus * momentum_bonus)
-
-    def _calculate_volume_score(self, stock_data: Dict[str, Any], historical_data: List[Dict[str, Any]]) -> float:
-        """Calculate volume surge score (0-100)"""
-        volume_ratio = stock_data['volume_ratio']
-
-        # Enhanced volume ratio with historical context
-        if historical_data:
-            historical_volumes = [bar.get('v', 0) for bar in historical_data[-10:]]
-            if historical_volumes:
-                avg_volume = statistics.mean(historical_volumes)
-                if avg_volume > 0:
-                    volume_ratio = stock_data['current_volume'] / avg_volume
-
-        # Score based on volume surge
-        if volume_ratio >= 10:
-            return 100  # Extreme volume
-        elif volume_ratio >= self.EXPLOSIVE_THRESHOLDS['strong_volume_surge']:
-            return 80 + (volume_ratio - 5) * 4
-        elif volume_ratio >= self.EXPLOSIVE_THRESHOLDS['min_volume_surge']:
-            return 50 + (volume_ratio - 2) * 10
-        else:
-            return volume_ratio * 25
-
-    def _calculate_catalyst_score(self, news_data: List[Dict[str, Any]]) -> float:
-        """Calculate news catalyst score (0-100)"""
-        if not news_data:
-            return 20  # Low baseline for no news
-
-        score = 0
-        total_weight = 0
-
-        for article in news_data:
-            # Calculate recency weight
-            published_utc = article.get('published_utc', '')
-            hours_ago = self._hours_since_published(published_utc)
-
-            if hours_ago > 48:  # Skip old news
-                continue
-
-            # Recency weight
-            if hours_ago <= 2:
-                weight = 1.0
-            elif hours_ago <= 6:
-                weight = 0.8
-            elif hours_ago <= 24:
-                weight = 0.6
+            # Base score from price movement
+            if price_change >= self.EXPLOSIVE_THRESHOLDS['explosive_price_move']:
+                base_score = 100
+            elif price_change >= self.EXPLOSIVE_THRESHOLDS['strong_price_move']:
+                base_score = 70 + (price_change - self.EXPLOSIVE_THRESHOLDS['strong_price_move']) * 3
+            elif price_change >= self.EXPLOSIVE_THRESHOLDS['min_price_move']:
+                base_score = 40 + (price_change - self.EXPLOSIVE_THRESHOLDS['min_price_move']) * 6
             else:
-                weight = 0.3
+                base_score = price_change * 8
 
-            # Sentiment analysis
-            article_score = 50  # Neutral baseline
-            insights = article.get('insights', [])
+            # Direction bonus (we prefer up moves)
+            direction_bonus = 1.2 if stock_data['price_change_pct'] > 0 else 0.9
 
-            for insight in insights:
-                sentiment = insight.get('sentiment', 'neutral')
-                if sentiment == 'positive':
-                    article_score = 80
-                elif sentiment == 'negative':
-                    article_score = 70  # Negative news can still drive volume
+            # Multi-day momentum bonus
+            momentum_bonus = 1.0
+            if len(historical_data) >= 3:
+                recent_closes = [bar.get('c', 0) for bar in historical_data[-3:]]
+                if len(recent_closes) == 3:
+                    if recent_closes[2] > recent_closes[1] > recent_closes[0]:
+                        momentum_bonus = 1.3  # 3-day uptrend
+                    elif recent_closes[2] > recent_closes[0]:
+                        momentum_bonus = 1.1  # Net positive
 
-            score += article_score * weight
-            total_weight += weight
+            return min(100, base_score * direction_bonus * momentum_bonus)
+        except Exception as e:
+            logger.warning(f"Momentum score calculation failed: {e}")
+            return None
 
-        if total_weight > 0:
-            final_score = score / total_weight
-            # Bonus for multiple recent articles
-            article_count_bonus = min(20, len(news_data) * 3)
-            return min(100, final_score + article_count_bonus)
+    def _calculate_volume_score(self, stock_data: Dict[str, Any], historical_data: List[Dict[str, Any]]) -> Optional[float]:
+        """Calculate volume surge score (0-100)"""
+        try:
+            volume_ratio = stock_data['volume_ratio']
 
-        return 20
+            # Enhanced volume ratio with historical context
+            if historical_data:
+                historical_volumes = [bar.get('v', 0) for bar in historical_data[-10:]]
+                if historical_volumes:
+                    avg_volume = statistics.mean(historical_volumes)
+                    if avg_volume > 0:
+                        volume_ratio = stock_data['current_volume'] / avg_volume
 
-    def _calculate_technical_score(self, stock_data: Dict[str, Any], historical_data: List[Dict[str, Any]]) -> float:
-        """Calculate technical breakout score (0-100)"""
-        if len(historical_data) < 10:
-            return 50  # Neutral if insufficient data
+            # Score based on volume surge
+            if volume_ratio >= 10:
+                return 100  # Extreme volume
+            elif volume_ratio >= self.EXPLOSIVE_THRESHOLDS['strong_volume_surge']:
+                return 80 + (volume_ratio - 5) * 4
+            elif volume_ratio >= self.EXPLOSIVE_THRESHOLDS['min_volume_surge']:
+                return 50 + (volume_ratio - 2) * 10
+            else:
+                return volume_ratio * 25
+        except Exception as e:
+            logger.warning(f"Volume score calculation failed: {e}")
+            return None
 
-        current_price = stock_data['current_price']
+    def _calculate_catalyst_score(self, news_data: List[Dict[str, Any]]) -> Optional[float]:
+        """Calculate news catalyst score (0-100)"""
+        try:
+            if not news_data:
+                return None  # No news data available
 
-        # Calculate resistance levels
-        recent_highs = [bar.get('h', 0) for bar in historical_data[-20:]]
-        recent_lows = [bar.get('l', 0) for bar in historical_data[-20:]]
+            score = 0
+            total_weight = 0
 
-        if not recent_highs or not recent_lows:
-            return 50
+            for article in news_data:
+                # Calculate recency weight
+                published_utc = article.get('published_utc', '')
+                hours_ago = self._hours_since_published(published_utc)
 
-        max_high = max(recent_highs[:-1])  # Exclude today
-        min_low = min(recent_lows[:-1])
+                if hours_ago > 48:  # Skip old news
+                    continue
 
-        # Breakout detection
-        if current_price > max_high * 1.02:  # 2% above resistance
-            breakout_strength = ((current_price - max_high) / max_high) * 100
-            return min(100, 80 + breakout_strength * 2)
-        elif current_price < min_low * 0.98:  # Breakdown
+                # Recency weight
+                if hours_ago <= 2:
+                    weight = 1.0
+                elif hours_ago <= 6:
+                    weight = 0.8
+                elif hours_ago <= 24:
+                    weight = 0.6
+                else:
+                    weight = 0.3
+
+                # Sentiment analysis
+                article_score = 50  # Neutral baseline
+                insights = article.get('insights', [])
+
+                for insight in insights:
+                    sentiment = insight.get('sentiment', 'neutral')
+                    if sentiment == 'positive':
+                        article_score = 80
+                    elif sentiment == 'negative':
+                        article_score = 70  # Negative news can still drive volume
+
+                score += article_score * weight
+                total_weight += weight
+
+            if total_weight > 0:
+                final_score = score / total_weight
+                # Bonus for multiple recent articles
+                article_count_bonus = min(20, len(news_data) * 3)
+                return min(100, final_score + article_count_bonus)
+
             return 20
-        else:
-            # Position in range
-            if max_high > min_low:
-                position = (current_price - min_low) / (max_high - min_low)
-                return 30 + position * 40  # 30-70 based on position
+        except Exception as e:
+            logger.warning(f"Catalyst score calculation failed: {e}")
+            return None
 
-        return 50
+    def _calculate_technical_score(self, stock_data: Dict[str, Any], historical_data: List[Dict[str, Any]]) -> Optional[float]:
+        """Calculate technical breakout score (0-100)"""
+        try:
+            if len(historical_data) < 10:
+                return None  # Insufficient data
+
+            current_price = stock_data['current_price']
+
+            # Calculate resistance levels
+            recent_highs = [bar.get('h', 0) for bar in historical_data[-20:]]
+            recent_lows = [bar.get('l', 0) for bar in historical_data[-20:]]
+
+            if not recent_highs or not recent_lows:
+                return None
+
+            max_high = max(recent_highs[:-1])  # Exclude today
+            min_low = min(recent_lows[:-1])
+
+            # Breakout detection
+            if current_price > max_high * 1.02:  # 2% above resistance
+                breakout_strength = ((current_price - max_high) / max_high) * 100
+                return min(100, 80 + breakout_strength * 2)
+            elif current_price < min_low * 0.98:  # Breakdown
+                return 20
+            else:
+                # Position in range
+                if max_high > min_low:
+                    position = (current_price - min_low) / (max_high - min_low)
+                    return 30 + position * 40  # 30-70 based on position
+
+                return 50
+        except Exception as e:
+            logger.warning(f"Technical score calculation failed: {e}")
+            return None
 
     def _calculate_confidence(self, stock_data: Dict[str, Any], historical_data: List[Dict[str, Any]], news_data: List[Dict[str, Any]]) -> float:
         """Calculate confidence score (0-1)"""
@@ -669,6 +758,259 @@ class PolygonExplosiveDiscovery:
             'engine': 'Polygon MCP Explosive Discovery',
             'error_reason': reason
         }
+
+    async def _get_short_interest_data(self, symbol: str) -> Dict[str, Any]:
+        """Get short interest data using enhanced MCP client"""
+        try:
+            from backend.src.mcp_client_enhanced import mcp_client
+            return await mcp_client.get_short_interest(symbol)
+        except Exception as e:
+            logger.warning(f"Failed to get short interest for {symbol}: {e}")
+            return {'available': False}
+
+    async def _get_sentiment_data(self, symbol: str) -> Dict[str, Any]:
+        """Get news sentiment data using enhanced MCP client"""
+        try:
+            from backend.src.mcp_client_enhanced import mcp_client
+            return await mcp_client.get_news_sentiment(symbol, hours_back=24)
+        except Exception as e:
+            logger.warning(f"Failed to get sentiment for {symbol}: {e}")
+            return {'available': False}
+
+    async def _get_options_activity_data(self, symbol: str) -> Dict[str, Any]:
+        """Get options activity data using enhanced MCP client"""
+        try:
+            from backend.src.mcp_client_enhanced import mcp_client
+            return await mcp_client.get_options_activity(symbol)
+        except Exception as e:
+            logger.warning(f"Failed to get options activity for {symbol}: {e}")
+            return {'available': False}
+
+    async def _get_realtime_trades_data(self, symbol: str) -> Dict[str, Any]:
+        """Get real-time trade data using enhanced MCP client"""
+        try:
+            from backend.src.mcp_client_enhanced import mcp_client
+            return await mcp_client.get_realtime_trades(symbol, limit=20)
+        except Exception as e:
+            logger.warning(f"Failed to get realtime trades for {symbol}: {e}")
+            return {'available': False}
+
+    def _calculate_enhanced_catalyst_score(self, news_data: List[Dict], short_interest_data: Dict, sentiment_data: Dict) -> float:
+        """Enhanced catalyst scoring with short interest and sentiment"""
+        base_score = self._calculate_catalyst_score(news_data)  # Keep existing news scoring
+
+        # Add short interest boost for squeeze potential
+        short_boost = 0
+        if short_interest_data.get('available') and short_interest_data.get('days_to_cover', 0) > 1:
+            days_to_cover = short_interest_data['days_to_cover']
+            if days_to_cover >= 3:
+                short_boost = 25  # High squeeze potential
+            elif days_to_cover >= 2:
+                short_boost = 15  # Medium squeeze potential
+            else:
+                short_boost = 5   # Low squeeze potential
+
+        # Add sentiment boost
+        sentiment_boost = 0
+        if sentiment_data.get('available'):
+            sentiment_score = sentiment_data.get('sentiment_score', 0)
+            news_count = sentiment_data.get('news_count', 0)
+
+            if news_count >= 3:  # Significant news volume
+                if sentiment_score > 0.5:
+                    sentiment_boost = 20  # Very positive
+                elif sentiment_score > 0.2:
+                    sentiment_boost = 10  # Positive
+                elif sentiment_score < -0.2:
+                    sentiment_boost = -10  # Negative news can also drive moves
+            elif news_count >= 1:
+                sentiment_boost = sentiment_score * 10  # Proportional boost
+
+        # Combine scores (max 100)
+        enhanced_score = base_score + short_boost + sentiment_boost
+        return min(100, max(0, enhanced_score))
+
+    def _calculate_enhanced_technical_score(self, stock_data: Dict[str, Any], historical_data: List[Dict]) -> float:
+        """Enhanced technical scoring with better analysis"""
+        base_score = self._calculate_technical_score(stock_data, historical_data)
+
+        # Add VWAP analysis if available
+        vwap_boost = 0
+        current_price = stock_data['current_price']
+
+        if historical_data:
+            # Calculate simple VWAP from available data
+            total_pv = sum(bar.get('c', 0) * bar.get('v', 0) for bar in historical_data)
+            total_v = sum(bar.get('v', 0) for bar in historical_data)
+
+            if total_v > 0:
+                vwap = total_pv / total_v
+                price_vs_vwap = ((current_price - vwap) / vwap) * 100
+
+                if price_vs_vwap > 2:  # Above VWAP
+                    vwap_boost = 15
+                elif price_vs_vwap > 0:
+                    vwap_boost = 5
+                elif price_vs_vwap < -5:  # Potential bounce candidate
+                    vwap_boost = 10
+
+        return min(100, base_score + vwap_boost)
+
+    def _calculate_float_short_score(self, symbol: str, short_interest_data: Dict) -> Optional[float]:
+        """Calculate float/short squeeze potential score (0-100)"""
+        try:
+            if not short_interest_data.get('available'):
+                return None  # Data not available, will be omitted from scoring
+
+            score = 0
+
+            # Days to cover is primary signal for squeeze potential
+            days_to_cover = short_interest_data.get('days_to_cover', 0)
+            if days_to_cover >= 5:
+                score += 50  # Very high squeeze potential
+            elif days_to_cover >= 3:
+                score += 35  # High squeeze potential
+            elif days_to_cover >= 2:
+                score += 20  # Medium squeeze potential
+            elif days_to_cover >= 1:
+                score += 10  # Low squeeze potential
+
+            # Short interest percentage
+            short_interest = short_interest_data.get('short_interest', 0)
+            avg_daily_volume = short_interest_data.get('avg_daily_volume', 1)
+            if avg_daily_volume > 0:
+                short_pct_float = (short_interest / avg_daily_volume) * 100
+                if short_pct_float >= 25:
+                    score += 30  # Very high short interest
+                elif short_pct_float >= 15:
+                    score += 20  # High short interest
+                elif short_pct_float >= 10:
+                    score += 10  # Medium short interest
+
+            # Volume surge can amplify squeeze
+            volume_bonus = min(20, short_interest_data.get('volume_surge_ratio', 1) * 5)
+            score += volume_bonus
+
+            return min(100, score)
+
+        except Exception as e:
+            logger.warning(f"Float/short score calculation failed for {symbol}: {e}")
+            return None
+
+    def _calculate_sentiment_score(self, symbol: str, sentiment_data: Dict) -> Optional[float]:
+        """Calculate sentiment score from news and social data (0-100)"""
+        try:
+            if not sentiment_data.get('available'):
+                return None  # Data not available, will be omitted from scoring
+
+            sentiment_score = sentiment_data.get('sentiment_score', 0)
+            news_count = sentiment_data.get('news_count', 0)
+
+            if news_count == 0:
+                return None  # No news to analyze
+
+            # Base score from sentiment
+            base_score = ((sentiment_score + 1) / 2) * 100  # Convert -1,1 to 0,100
+
+            # News volume multiplier
+            volume_multiplier = min(1.5, 1 + (news_count / 10))
+
+            # Recent news gets higher weight
+            final_score = base_score * volume_multiplier
+
+            return min(100, max(0, final_score))
+
+        except Exception as e:
+            logger.warning(f"Sentiment score calculation failed for {symbol}: {e}")
+            return None
+
+    def _calculate_options_flow_score(self, symbol: str, options_data: Dict) -> Optional[float]:
+        """Calculate options flow unusual activity score (0-100)"""
+        try:
+            if not options_data.get('available'):
+                return None  # Options data not available
+
+            call_put_ratio = options_data.get('call_put_ratio', 1.0)
+            total_volume = options_data.get('total_options_volume', 0)
+            contracts_count = options_data.get('contracts_count', 0)
+
+            score = 0
+
+            # Call/Put ratio analysis
+            if call_put_ratio >= 3.0:
+                score += 40  # Very bullish options flow
+            elif call_put_ratio >= 2.0:
+                score += 25  # Bullish options flow
+            elif call_put_ratio >= 1.5:
+                score += 15  # Moderately bullish
+            elif call_put_ratio <= 0.3:
+                score += 30  # Heavy put buying (potential squeeze setup)
+            elif call_put_ratio <= 0.5:
+                score += 20  # Moderate put buying
+
+            # Volume intensity
+            if total_volume >= 50000:
+                score += 30  # Very high options volume
+            elif total_volume >= 20000:
+                score += 20  # High options volume
+            elif total_volume >= 5000:
+                score += 10  # Moderate options volume
+
+            # Contract diversity (more contracts = more interest)
+            if contracts_count >= 20:
+                score += 20  # Wide options interest
+            elif contracts_count >= 10:
+                score += 10  # Moderate options interest
+
+            return min(100, score)
+
+        except Exception as e:
+            logger.warning(f"Options flow score calculation failed for {symbol}: {e}")
+            return None
+
+    def _calculate_realtime_momentum_score(self, symbol: str, trades_data: Dict) -> Optional[float]:
+        """Calculate real-time momentum from recent trades (0-100)"""
+        try:
+            if not trades_data.get('available'):
+                return None  # Trade data not available
+
+            momentum_pct = trades_data.get('recent_momentum_pct', 0)
+            avg_trade_size = trades_data.get('avg_trade_size', 0)
+            trade_count = trades_data.get('trade_count', 0)
+
+            score = 0
+
+            # Price momentum
+            if momentum_pct >= 2.0:
+                score += 40  # Strong upward momentum
+            elif momentum_pct >= 1.0:
+                score += 25  # Moderate upward momentum
+            elif momentum_pct >= 0.5:
+                score += 15  # Weak upward momentum
+            elif momentum_pct <= -1.0:
+                score += 10  # Downward momentum (potential reversal setup)
+
+            # Trade size analysis
+            if avg_trade_size >= 10000:
+                score += 30  # Large institutional trades
+            elif avg_trade_size >= 5000:
+                score += 20  # Medium institutional trades
+            elif avg_trade_size >= 1000:
+                score += 10  # Small institutional trades
+
+            # Trade frequency
+            if trade_count >= 100:
+                score += 20  # High trading activity
+            elif trade_count >= 50:
+                score += 15  # Moderate trading activity
+            elif trade_count >= 20:
+                score += 10  # Some trading activity
+
+            return min(100, score)
+
+        except Exception as e:
+            logger.warning(f"Realtime momentum score calculation failed for {symbol}: {e}")
+            return None
 
 # Factory function
 def create_polygon_explosive_discovery():
