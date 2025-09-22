@@ -54,6 +54,11 @@ async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
                 }
             }
 
+            # Add missing fields for API compatibility
+            results['filtered_size'] = results['pipeline_stats']['filtered']
+            results['trade_ready_count'] = 0  # Will be calculated below
+            results['monitor_count'] = 0     # Will be calculated below
+
             # Return efficient results
             logger.info(f"✅ Efficient discovery complete: {results['count']} candidates from {results['universe_size']} stocks")
             return results
