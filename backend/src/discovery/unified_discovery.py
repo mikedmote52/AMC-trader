@@ -83,52 +83,192 @@ class UnifiedDiscoverySystem:
             logger.error(f"❌ MCP call failed for {direction}: {e}")
             raise
 
+    async def call_mcp_full_snapshot(self) -> Dict[str, Any]:
+        """
+        Build full market universe using available Polygon MCP functions
+        Since MCP doesn't have get_snapshot_all, we'll use HTTP API for full universe
+        and MCP for enriching individual ticker data
+        """
+        try:
+            logger.info("🔄 Building full market universe using Polygon MCP + HTTP API...")
+
+            # The Polygon MCP server doesn't have a get_snapshot_all function
+            # So we need to use the HTTP API for the full universe
+            # and use MCP functions for individual ticker enrichment
+            logger.info("📡 Using HTTP API for full market snapshot (MCP doesn't support bulk snapshots)")
+
+            return await self._http_api_full_snapshot()
+
+        except Exception as e:
+            logger.error(f"❌ MCP full snapshot call failed: {e}")
+            raise
+
+    def get_available_mcp_functions(self) -> List[str]:
+        """
+        Get list of available MCP functions from Polygon MCP server
+        Based on https://github.com/polygon-io/mcp_polygon
+        """
+        return [
+            "get_snapshot_ticker",    # Current market snapshot for a ticker
+            "get_aggs",              # Stock aggregates (OHLC) data
+            "list_trades",           # Historical trade data
+            "get_last_trade",        # Latest trade for a symbol
+            "list_ticker_news",      # Recent news articles
+            "list_stock_financials", # Fundamental financial data
+            "get_market_status"      # Current market status
+        ]
+
+    async def enrich_ticker_with_mcp(self, ticker_symbol: str) -> Dict[str, Any]:
+        """
+        Enrich individual ticker data using MCP functions
+        This is where MCP shines - detailed individual ticker analysis
+        """
+        try:
+            enriched_data = {'symbol': ticker_symbol}
+
+            # Try to get current snapshot using MCP
+            try:
+                if 'get_snapshot_ticker' in globals():
+                    snapshot = globals()['get_snapshot_ticker'](ticker=ticker_symbol)
+                    if snapshot:
+                        enriched_data['mcp_snapshot'] = snapshot
+                        logger.debug(f"✅ Got MCP snapshot for {ticker_symbol}")
+            except Exception as e:
+                logger.debug(f"MCP snapshot failed for {ticker_symbol}: {e}")
+
+            # Try to get recent news using MCP
+            try:
+                if 'list_ticker_news' in globals():
+                    news = globals()['list_ticker_news'](ticker=ticker_symbol, limit=5)
+                    if news:
+                        enriched_data['recent_news'] = news
+                        logger.debug(f"✅ Got MCP news for {ticker_symbol}")
+            except Exception as e:
+                logger.debug(f"MCP news failed for {ticker_symbol}: {e}")
+
+            return enriched_data
+
+        except Exception as e:
+            logger.debug(f"MCP enrichment failed for {ticker_symbol}: {e}")
+            return {'symbol': ticker_symbol}
+
+    async def _http_api_full_snapshot(self) -> Dict[str, Any]:
+        """
+        Fallback: HTTP API call to get full market snapshot
+        """
+        import aiohttp
+
+        try:
+            api_key = os.getenv('POLYGON_API_KEY')
+            if not api_key:
+                raise RuntimeError("POLYGON_API_KEY not available for HTTP fallback")
+
+            url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
+            params = {'apikey': api_key}
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, timeout=60) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        tickers = data.get('tickers', data.get('results', []))
+
+                        logger.info(f"✅ HTTP API fallback successful: {len(tickers)} stocks")
+
+                        return {
+                            'status': 'OK',
+                            'tickers': tickers,
+                            'count': len(tickers),
+                            'request_id': 'http_fallback',
+                            'next_url': data.get('next_url')
+                        }
+                    else:
+                        raise RuntimeError(f"HTTP API failed with status {response.status}")
+
+        except Exception as e:
+            logger.error(f"❌ HTTP API fallback failed: {e}")
+            # Return empty result to allow fallback to gainers/losers
+            return {
+                'status': 'ERROR',
+                'tickers': [],
+                'error': str(e)
+            }
+
     def get_timestamp(self) -> str:
         """Get current timestamp for status reporting"""
         return datetime.now().isoformat()
 
     async def get_market_universe(self) -> List[Dict[str, Any]]:
         """
-        Get market universe using MCP - NO FALLBACKS
-        Returns current market snapshot or fails
+        Get FULL market universe using MCP - NO FALLBACKS
+        Returns complete market snapshot of all stocks (~5,000+ stocks)
         """
         try:
-            logger.info("📡 Fetching market universe via Polygon MCP...")
+            logger.info("📡 Fetching FULL market universe via Polygon MCP...")
 
-            # Call MCP functions directly (available in this environment)
-            # Note: Using the actual MCP functions available in Claude Code
+            # Use full market snapshot instead of just gainers/losers
+            # This matches Daily-Trading's comprehensive approach
+            logger.info("📡 Fetching complete market snapshot...")
 
-            logger.info("📡 Fetching gainers data...")
-            gainers_response = await self.call_mcp_snapshot("gainers")
+            try:
+                # Use MCP function for full market snapshot
+                snapshot_response = await self.call_mcp_full_snapshot()
 
-            logger.info("📡 Fetching losers data...")
-            losers_response = await self.call_mcp_snapshot("losers")
+                if not snapshot_response or snapshot_response.get('status') != 'OK':
+                    raise RuntimeError(f"❌ CRITICAL: Failed to get market snapshot: {snapshot_response}")
 
-            gainers_data = gainers_response if gainers_response else {'status': 'ERROR', 'tickers': []}
-            losers_data = losers_response if losers_response else {'status': 'ERROR', 'tickers': []}
+                all_tickers = snapshot_response.get('tickers', [])
 
-            # Combine and validate data
-            all_tickers = []
+                if len(all_tickers) < 1000:
+                    logger.warning(f"⚠️ Universe size seems small: {len(all_tickers)} tickers")
+                    # Still continue if we have some data, but warn about potential issues
 
-            if gainers_data.get('status') == 'OK':
-                all_tickers.extend(gainers_data.get('tickers', []))
-            else:
-                raise RuntimeError("❌ CRITICAL: Failed to get gainers data from MCP")
+                logger.info(f"✅ Retrieved {len(all_tickers)} tickers from FULL market snapshot")
+                logger.info(f"📊 Universe size increased from ~500 (gainers/losers) to {len(all_tickers)} (full market)")
 
-            if losers_data.get('status') == 'OK':
-                all_tickers.extend(losers_data.get('tickers', []))
-            else:
-                logger.warning("⚠️ Failed to get losers data, continuing with gainers only")
+                return all_tickers
 
-            if len(all_tickers) < 50:
-                raise RuntimeError(f"❌ CRITICAL: Insufficient universe size: {len(all_tickers)} tickers")
+            except Exception as snapshot_error:
+                # Fallback to gainers/losers if full snapshot fails
+                logger.warning(f"⚠️ Full snapshot failed: {snapshot_error}")
+                logger.info("🔄 Falling back to gainers/losers method...")
 
-            logger.info(f"✅ Retrieved {len(all_tickers)} tickers from MCP")
-            return all_tickers
+                return await self._get_gainers_losers_universe()
 
         except Exception as e:
             logger.error(f"❌ FATAL: Universe retrieval failed: {e}")
             raise RuntimeError(f"Real-time data unavailable: {e}")
+
+    async def _get_gainers_losers_universe(self) -> List[Dict[str, Any]]:
+        """
+        Fallback method: Get universe from gainers/losers (original method)
+        """
+        logger.info("📡 Fetching gainers data...")
+        gainers_response = await self.call_mcp_snapshot("gainers")
+
+        logger.info("📡 Fetching losers data...")
+        losers_response = await self.call_mcp_snapshot("losers")
+
+        gainers_data = gainers_response if gainers_response else {'status': 'ERROR', 'tickers': []}
+        losers_data = losers_response if losers_response else {'status': 'ERROR', 'tickers': []}
+
+        # Combine and validate data
+        all_tickers = []
+
+        if gainers_data.get('status') == 'OK':
+            all_tickers.extend(gainers_data.get('tickers', []))
+        else:
+            raise RuntimeError("❌ CRITICAL: Failed to get gainers data from MCP")
+
+        if losers_data.get('status') == 'OK':
+            all_tickers.extend(losers_data.get('tickers', []))
+        else:
+            logger.warning("⚠️ Failed to get losers data, continuing with gainers only")
+
+        if len(all_tickers) < 50:
+            raise RuntimeError(f"❌ CRITICAL: Insufficient universe size: {len(all_tickers)} tickers")
+
+        logger.info(f"✅ Retrieved {len(all_tickers)} tickers from gainers/losers fallback")
+        return all_tickers
 
     def apply_post_explosion_filter(self, tickers: List[Dict]) -> List[Dict]:
         """

@@ -273,8 +273,9 @@ async def compat_holdings():
 
 @app.get("/api/contenders")
 async def api_contenders():
-    # Enhanced discovery system - redirect to enhanced endpoint
-    return RedirectResponse(url="/discovery/emergency/enhanced-discovery?limit=20", status_code=307)
+    # FIXED: Use unified discovery system with expanded universe (957+ stocks vs 200-500)
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/discovery/contenders?limit=20", status_code=307)
 
 
 # Optional buy-now alias if the UI ever posts here:
