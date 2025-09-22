@@ -13,6 +13,68 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+@router.get("/squeeze-candidates")
+async def get_squeeze_candidates(limit: int = Query(20, le=100, ge=1)):
+    """
+    Squeeze Candidates endpoint for frontend compatibility
+    Returns explosive candidates in squeeze monitoring format
+    """
+    try:
+        from backend.src.discovery.polygon_explosive_discovery import create_polygon_explosive_discovery
+
+        logger.info(f"🎯 Squeeze candidates request with limit={limit}")
+
+        # Create discovery engine
+        discovery_engine = create_polygon_explosive_discovery()
+
+        # Run explosive discovery
+        result = await discovery_engine.discover_explosive_stocks(limit=limit)
+
+        if result['status'] == 'success':
+            candidates = result['candidates']
+
+            # Format for frontend squeeze monitor
+            squeeze_candidates = []
+            for candidate in candidates:
+                squeeze_candidates.append({
+                    "symbol": candidate.get('symbol', 'N/A'),
+                    "price": candidate.get('price', 0.0),
+                    "score": candidate.get('score', 0.0),
+                    "change_pct": candidate.get('price_change_pct', 0.0),
+                    "volume": candidate.get('volume', 0),
+                    "volume_ratio": candidate.get('volume_surge_ratio', 1.0),
+                    "action_tag": candidate.get('action_tag', 'unknown'),
+                    "confidence": candidate.get('confidence', 0.0),
+                    "subscores": candidate.get('subscores', {}),
+                    "available": True
+                })
+
+            return {
+                "success": True,
+                "candidates": squeeze_candidates,
+                "count": len(squeeze_candidates),
+                "timestamp": datetime.now().isoformat(),
+                "source": "explosive_discovery"
+            }
+        else:
+            return {
+                "success": False,
+                "candidates": [],
+                "count": 0,
+                "error": result.get('error', 'Discovery failed'),
+                "timestamp": datetime.now().isoformat()
+            }
+
+    except Exception as e:
+        logger.error(f"Squeeze candidates error: {e}")
+        return {
+            "success": False,
+            "candidates": [],
+            "count": 0,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.get("/discovery/explosive")
 async def get_explosive_candidates(limit: int = Query(20, le=100, ge=1)):
     """
