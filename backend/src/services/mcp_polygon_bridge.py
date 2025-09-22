@@ -69,60 +69,66 @@ class MCPPolygonBridge:
 
     async def _mcp_snapshot(self, tickers: List[str], market_type: str, include_otc: bool) -> Dict[str, Any]:
         """
-        Use real explosive data from MCP bridge
+        Use real explosive data from HTTP MCP bridge
         """
-        logger.info("🎯 Using real explosive data from MCP bridge")
+        logger.info("🎯 Using real explosive data from HTTP MCP bridge")
         return await self._explosive_data_bridge(tickers)
 
     async def _explosive_data_bridge(self, tickers: List[str]) -> Dict[str, Any]:
         """
-        Real explosive data from MCP environment
+        Get real explosive data using HTTP MCP client
         """
-        # Real explosive candidates data from MCP
-        explosive_data = {
-            "QUBT": {
-                "ticker": "QUBT",
-                "todaysChangePerc": 26.212534059945497,
-                "todaysChange": 4.809999999999999,
-                "day": {"o": 18.19, "h": 23.98, "l": 18.1751, "c": 23.27, "v": 98555890.0, "vw": 22.3923},
-                "prevDay": {"o": 18.48, "h": 19.25, "l": 17.78, "c": 18.35, "v": 42934199.0, "vw": 18.5144}
-            },
-            "RGTI": {
-                "ticker": "RGTI",
-                "todaysChangePerc": 15.155214227970903,
-                "todaysChange": 3.7494000000000014,
-                "day": {"o": 24.78, "h": 29.09, "l": 24.725, "c": 28.52, "v": 127848830.0, "vw": 27.4734},
-                "prevDay": {"o": 22.875, "h": 26.21, "l": 22.4, "c": 24.74, "v": 113907973.0, "vw": 24.6625}
-            },
-            "BBAI": {
-                "ticker": "BBAI",
-                "todaysChangePerc": 11.146496815286627,
-                "todaysChange": 0.7000000000000002,
-                "day": {"o": 6.31, "h": 6.94, "l": 6.275, "c": 6.85, "v": 156952634.0, "vw": 6.6775},
-                "prevDay": {"o": 6.24, "h": 6.43, "l": 6.02, "c": 6.28, "v": 121507945.0, "vw": 6.2363}
-            },
-            "IONQ": {
-                "ticker": "IONQ",
-                "todaysChangePerc": 5.4033827271366555,
-                "todaysChange": 3.6099999999999994,
-                "day": {"o": 65.98, "h": 71.3, "l": 65.64, "c": 70.41, "v": 50957982.0, "vw": 69.7193},
-                "prevDay": {"o": 68.57, "h": 70.43, "l": 65.42, "c": 66.81, "v": 45892863.0, "vw": 68.2585}
-            },
-            "SOUN": {
-                "ticker": "SOUN",
-                "todaysChangePerc": 3.6468330134356908,
-                "todaysChange": 0.5699999999999985,
-                "day": {"o": 15.66, "h": 16.62, "l": 15.61, "c": 16.25, "v": 91707590.0, "vw": 16.1142},
-                "prevDay": {"o": 15.6, "h": 16.25, "l": 14.77, "c": 15.63, "v": 84564865.0, "vw": 15.5629}
-            },
-            "SOFI": {
-                "ticker": "SOFI",
-                "todaysChangePerc": 5.122732123799365,
-                "todaysChange": 1.4400000000000013,
-                "day": {"o": 28.265, "h": 29.6299, "l": 28.24, "c": 29.51, "v": 74756079.0, "vw": 29.2262},
-                "prevDay": {"o": 27.59, "h": 28.576876, "l": 27.08, "c": 28.11, "v": 71508277.0, "vw": 27.9814}
-            }
-        }
+        try:
+            from backend.src.mcp_http_client import mcp_http_client
+
+            # First try to get market movers for explosive candidates
+            movers_data = await mcp_http_client.get_market_movers(direction="gainers")
+
+            if movers_data.get('available') and movers_data.get('movers'):
+                # Convert movers data to ticker format
+                tickers_data = []
+                for mover in movers_data['movers']:
+                    symbol = mover.get('symbol', '')
+                    if symbol and (not tickers or symbol in tickers):
+                        # Convert mover data to expected ticker format
+                        ticker_data = {
+                            'ticker': symbol,
+                            'todaysChangePerc': mover.get('change_pct', 0),
+                            'todaysChange': mover.get('change_pct', 0) * mover.get('price', 0) / 100,
+                            'day': {
+                                'c': mover.get('price', 0),
+                                'v': mover.get('volume', 0),
+                                'vw': mover.get('vwap', mover.get('price', 0))
+                            },
+                            'prevDay': {
+                                'c': mover.get('price', 0) / (1 + mover.get('change_pct', 0) / 100)
+                            }
+                        }
+                        tickers_data.append(ticker_data)
+
+                logger.info(f"✅ Got {len(tickers_data)} explosive candidates from HTTP MCP")
+                return {
+                    'status': 'OK',
+                    'tickers': tickers_data,
+                    'count': len(tickers_data)
+                }
+
+            # Fallback to market snapshots if movers not available
+            snapshot_data = await mcp_http_client.get_market_snapshots(tickers=tickers[:20])
+            if snapshot_data.get('tickers'):
+                logger.info(f"✅ Got {len(snapshot_data['tickers'])} tickers from HTTP MCP snapshots")
+                return {
+                    'status': 'OK',
+                    'tickers': snapshot_data['tickers'],
+                    'count': len(snapshot_data['tickers'])
+                }
+
+            logger.warning("No data available from HTTP MCP client")
+            return {'status': 'error', 'error': 'No data from HTTP MCP', 'tickers': []}
+
+        except Exception as e:
+            logger.error(f"HTTP MCP bridge failed: {e}")
+            return {'status': 'error', 'error': str(e), 'tickers': []}
 
         # Filter for requested tickers and format as expected by discovery system
         result_tickers = []

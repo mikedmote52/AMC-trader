@@ -760,37 +760,60 @@ class PolygonExplosiveDiscovery:
         }
 
     async def _get_short_interest_data(self, symbol: str) -> Dict[str, Any]:
-        """Get short interest data using enhanced MCP client"""
+        """Get short interest data using HTTP MCP client"""
         try:
-            from backend.src.mcp_client_enhanced import mcp_client
-            return await mcp_client.get_short_interest(symbol)
+            from backend.src.mcp_http_client import mcp_http_client
+            return await mcp_http_client.get_short_interest(symbol)
         except Exception as e:
             logger.warning(f"Failed to get short interest for {symbol}: {e}")
             return {'available': False}
 
     async def _get_sentiment_data(self, symbol: str) -> Dict[str, Any]:
-        """Get news sentiment data using enhanced MCP client"""
+        """Get news sentiment data using HTTP MCP client"""
         try:
-            from backend.src.mcp_client_enhanced import mcp_client
-            return await mcp_client.get_news_sentiment(symbol, hours_back=24)
+            from backend.src.mcp_http_client import mcp_http_client
+            return await mcp_http_client.get_news_sentiment(symbol, hours_back=24)
         except Exception as e:
             logger.warning(f"Failed to get sentiment for {symbol}: {e}")
             return {'available': False}
 
     async def _get_options_activity_data(self, symbol: str) -> Dict[str, Any]:
-        """Get options activity data using enhanced MCP client"""
+        """Get options activity data using HTTP MCP client"""
         try:
-            from backend.src.mcp_client_enhanced import mcp_client
-            return await mcp_client.get_options_activity(symbol)
+            from backend.src.mcp_http_client import mcp_http_client
+            # Note: HTTP MCP client doesn't have options_activity method yet
+            # Return unavailable for now until we implement it
+            logger.info(f"Options activity not available in HTTP MCP client for {symbol}")
+            return {'available': False}
         except Exception as e:
             logger.warning(f"Failed to get options activity for {symbol}: {e}")
             return {'available': False}
 
     async def _get_realtime_trades_data(self, symbol: str) -> Dict[str, Any]:
-        """Get real-time trade data using enhanced MCP client"""
+        """Get real-time trade data using HTTP MCP client"""
         try:
-            from backend.src.mcp_client_enhanced import mcp_client
-            return await mcp_client.get_realtime_trades(symbol, limit=20)
+            from backend.src.mcp_http_client import mcp_http_client
+            # Use detailed aggregates for real-time momentum analysis
+            agg_data = await mcp_http_client.get_detailed_aggregates(symbol, days_back=2)
+            if agg_data.get('available') and agg_data.get('data'):
+                # Calculate momentum from recent price data
+                data_points = agg_data['data']
+                if len(data_points) >= 2:
+                    latest = data_points[-1]
+                    previous = data_points[-2]
+
+                    momentum = ((latest.get('c', 0) - previous.get('c', 0)) / previous.get('c', 1)) * 100
+                    volume_surge = latest.get('v', 0) / max(previous.get('v', 1), 1)
+
+                    return {
+                        'available': True,
+                        'momentum_pct': momentum,
+                        'volume_surge': volume_surge,
+                        'latest_price': latest.get('c', 0),
+                        'latest_volume': latest.get('v', 0)
+                    }
+
+            return {'available': False}
         except Exception as e:
             logger.warning(f"Failed to get realtime trades for {symbol}: {e}")
             return {'available': False}

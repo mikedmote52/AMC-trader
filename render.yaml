@@ -34,7 +34,7 @@ services:
       - key: ALPACA_BASE_URL
         sync: false
         
-      # Additional configuration  
+      # Additional configuration
       - key: ENVIRONMENT
         value: production
       - key: ENV
@@ -45,6 +45,12 @@ services:
         value: "60"
       - key: ADMIN_TOKEN
         sync: false
+
+      # Polygon MCP HTTP service configuration
+      - key: POLYGON_MCP_URL
+        value: https://amc-polygon-mcp.onrender.com/mcp
+      - key: POLYGON_MCP_BASE_URL
+        value: https://amc-polygon-mcp.onrender.com
     
     healthCheckPath: /health
     autoDeploy: true
@@ -98,6 +104,12 @@ services:
       - key: BMS_UNIVERSE_MIN_EXPECTED
         value: "4500"
 
+      # Polygon MCP HTTP service configuration
+      - key: POLYGON_MCP_URL
+        value: https://amc-polygon-mcp.onrender.com/mcp
+      - key: POLYGON_MCP_BASE_URL
+        value: https://amc-polygon-mcp.onrender.com
+
   # Frontend Static Site
   - type: web
     name: amc-frontend
@@ -132,6 +144,26 @@ services:
         sync: false
       - key: ADMIN_TOKEN
         sync: false
+
+  # Polygon MCP Server - HTTP Transport
+  - type: web
+    name: amc-polygon-mcp
+    env: python
+    plan: starter
+    repo: https://github.com/polygon-io/mcp_polygon
+    buildCommand: pip install uv && uv pip install --system -e .
+    startCommand: uv run entrypoint.py
+    envVars:
+      - key: POLYGON_API_KEY
+        sync: false
+      - key: MCP_TRANSPORT
+        value: streamable-http
+      - key: FASTMCP_HOST
+        value: 0.0.0.0
+      - key: FASTMCP_PORT
+        value: ${PORT}
+    healthCheckPath: /
+    autoDeploy: true
 
   # Redis service (moved from databases section)
   - type: redis
