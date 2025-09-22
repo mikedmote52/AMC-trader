@@ -152,7 +152,7 @@ services:
     plan: starter
     repo: https://github.com/polygon-io/mcp_polygon
     buildCommand: pip install uv && uv pip install --system -e .
-    startCommand: uv run entrypoint.py
+    startCommand: uv run mcp_polygon
     envVars:
       - key: POLYGON_API_KEY
         sync: false
