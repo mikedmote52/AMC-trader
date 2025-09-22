@@ -295,8 +295,18 @@ class UnifiedDiscoverySystem:
             volume = ticker.get('day', {}).get('v', 0)
             prev_volume = ticker.get('prevDay', {}).get('v', 1)  # Avoid division by zero
 
-            # Calculate volume ratio
-            volume_ratio = volume / max(prev_volume, 1)
+            # Handle market-closed scenario: use prevDay price if current day price is 0
+            if price <= 0:
+                price = ticker.get('prevDay', {}).get('c', 0)
+                # Also use prevDay volume for ratio calculation when market is closed
+                if volume <= 0:
+                    volume = prev_volume  # Use previous day as baseline
+                    volume_ratio = 1.0    # Neutral ratio when no current data
+                else:
+                    volume_ratio = volume / max(prev_volume, 1)
+            else:
+                # Normal market hours: use current data
+                volume_ratio = volume / max(prev_volume, 1)
 
             # Filter criteria
             if abs(daily_change_pct) > self.max_daily_move_pct:
@@ -319,7 +329,9 @@ class UnifiedDiscoverySystem:
                 logger.debug(f"❌ {symbol}: Price too low ${price:.2f}")
                 continue
 
-            if volume_ratio < self.min_volume_ratio:
+            # Skip volume ratio check if market is closed (volume_ratio = 1.0)
+            # Only apply volume filter during active trading hours
+            if volume_ratio != 1.0 and volume_ratio < self.min_volume_ratio:
                 filter_stats['insufficient_volume'] += 1
                 logger.debug(f"❌ {symbol}: Insufficient volume {volume_ratio:.1f}x")
                 continue

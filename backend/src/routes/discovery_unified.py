@@ -233,7 +233,7 @@ async def get_contenders(limit: int = Query(50, le=500)):
                     "count": len(candidates),
                     "data": candidates,
                     "source": "fresh",
-                    "engine": "AlphaStack 4.0 Direct",
+                    "engine": result.get('engine', 'Unified Discovery System (MCP Enhanced)'),
                     "timestamp": datetime.now().isoformat()
                 }
         except Exception as e:

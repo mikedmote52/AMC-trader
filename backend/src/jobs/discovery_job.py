@@ -59,28 +59,23 @@ async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
             return results
 
         except Exception as e:
-            logger.error(f"Unified discovery failed: {e}")
-            # Fallback to old inefficient system
-            try:
-                from polygon_explosive_discovery import create_polygon_explosive_discovery
-                discovery_engine = create_polygon_explosive_discovery()
-                logger.warning("⚠️ Falling back to inefficient polygon discovery (957 API calls)")
+            logger.error(f"❌ CRITICAL: Unified discovery system failed: {e}")
+            logger.error("🚫 NO FALLBACKS - Production requires reliable unified discovery with MCP")
 
-                # Run inefficient discovery as fallback
-                if hasattr(discovery_engine, 'discover_explosive_stocks'):
-                    results = await discovery_engine.discover_explosive_stocks(limit=limit)
-                else:
-                    results = await discovery_engine.discover_explosive_candidates(limit=limit)
-
-            except ImportError as e2:
-                logger.error(f"Failed to import any discovery engine: {e2}")
-                # Final fallback
-                from alphastack_v4 import create_discovery_system
-                discovery = create_discovery_system()
-                results = await discovery.discover_candidates(limit=limit)
-                await discovery.close()
-                logger.info("✅ Using legacy AlphaStack system")
-                return _transform_legacy_results(results)
+            # Return clean error response instead of using inefficient fallbacks
+            return {
+                'status': 'error',
+                'error': f'Unified discovery system failure: {str(e)}',
+                'universe_size': 0,
+                'filtered_size': 0,
+                'count': 0,
+                'trade_ready_count': 0,
+                'monitor_count': 0,
+                'candidates': [],
+                'engine': 'Unified Discovery System (Failed)',
+                'execution_time_sec': 0.0,
+                'note': 'Production system requires unified discovery - no fallbacks enabled'
+            }
 
         if results['status'] != 'success':
             return results
