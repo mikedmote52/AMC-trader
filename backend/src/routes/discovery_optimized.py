@@ -251,7 +251,8 @@ class ExplosiveDiscoveryEngine:
 
     def add_trading_levels(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
         """Add entry, stop, target levels, and thesis"""
-        price = candidate.get('prevDay', {}).get('c') or candidate.get('day', {}).get('c') or 0
+        # Use current day close price first, fallback to previous day
+        price = candidate.get('day', {}).get('c') or candidate.get('prevDay', {}).get('c') or 0
 
         if price > 0:
             candidate['price'] = price
