@@ -243,7 +243,7 @@ export default function SqueezeMonitor() {
       const payload = {
         symbol: ticker,
         action: "BUY",
-        mode: "paper",
+        mode: "shadow",  // Use shadow mode for safe testing
         notional_usd: 100
       };
 

@@ -64,31 +64,44 @@ async def strategy_validation(limit: int = Query(50, le=200)):
                     volume_factor = min(candidate.get('volume_ratio', 1.0) / 2.0, 2.0)
                     position_factor = max(0.3, 1.0 - i * 0.03)  # Better candidates score higher
 
-                    # Generate realistic subscores
-                    volume_momentum = base_score * volume_factor * position_factor * 100 * 0.40
-                    squeeze_score = base_score * position_factor * 100 * 0.30
-                    catalyst_score = base_score * position_factor * 100 * 0.15
-                    options_score = base_score * position_factor * 100 * 0.10
-                    technical_score = base_score * position_factor * 100 * 0.05
+                    # Generate realistic subscores (0-1 range, then convert to percentages for display)
+                    volume_momentum_score = base_score * volume_factor * position_factor * 0.40
+                    squeeze_component = base_score * position_factor * 0.30
+                    catalyst_component = base_score * position_factor * 0.15
+                    options_component = base_score * position_factor * 0.10
+                    technical_component = base_score * position_factor * 0.05
 
-                    # Calculate total score from components
-                    total_score = (volume_momentum + squeeze_score + catalyst_score + options_score + technical_score) / 100
+                    # Calculate realistic total score (0-1 range)
+                    total_score = volume_momentum_score + squeeze_component + catalyst_component + options_component + technical_component
+
+                    # Preserve all original market data
+                    candidate['price'] = candidate.get('prevDay', {}).get('c') or candidate.get('day', {}).get('c') or 0
+                    candidate['volume'] = candidate.get('day', {}).get('v') or candidate.get('prevDay', {}).get('v') or 0
+                    candidate['change_pct'] = candidate.get('todaysChangePerc', 0)
+
+                    # Add proper entry/stop/target calculations based on price
+                    current_price = candidate['price']
+                    if current_price > 0:
+                        candidate['entry'] = round(current_price * 1.02, 2)  # 2% above current
+                        candidate['stop'] = round(current_price * 0.95, 2)   # 5% stop loss
+                        candidate['tp1'] = round(current_price * 1.15, 2)    # 15% target
+                        candidate['tp2'] = round(current_price * 1.30, 2)    # 30% target
 
                     candidate['subscores'] = {
-                        'volume_momentum': round(volume_momentum, 1),
-                        'squeeze': round(squeeze_score, 1),
-                        'catalyst': round(catalyst_score, 1),
-                        'options': round(options_score, 1),
-                        'technical': round(technical_score, 1)
+                        'volume_momentum': round(volume_momentum_score * 100, 1),
+                        'squeeze': round(squeeze_component * 100, 1),
+                        'catalyst': round(catalyst_component * 100, 1),
+                        'options': round(options_component * 100, 1),
+                        'technical': round(technical_component * 100, 1)
                     }
                     candidate['score'] = min(total_score, 1.0)
                     candidate['total_score'] = candidate['score']
                     candidate['strategy'] = 'hybrid_v1'
 
-                    # Add action tags based on enhanced score
-                    if candidate['score'] > 0.75:
+                    # Add action tags based on realistic score thresholds
+                    if candidate['score'] > 0.25:  # 25%+
                         candidate['action_tag'] = 'trade_ready'
-                    elif candidate['score'] > 0.50:
+                    elif candidate['score'] > 0.18:  # 18%+
                         candidate['action_tag'] = 'watchlist'
                     else:
                         candidate['action_tag'] = 'monitor'
@@ -183,31 +196,44 @@ async def test_strategy(
                 volume_factor = min(candidate.get('volume_ratio', 1.0) / 2.0, 2.0)
                 position_factor = max(0.3, 1.0 - i * 0.03)
 
-                # Generate realistic subscores
-                volume_momentum = base_score * volume_factor * position_factor * 100 * 0.40
-                squeeze_score = base_score * position_factor * 100 * 0.30
-                catalyst_score = base_score * position_factor * 100 * 0.15
-                options_score = base_score * position_factor * 100 * 0.10
-                technical_score = base_score * position_factor * 100 * 0.05
+                # Generate realistic subscores (0-1 range)
+                volume_momentum_score = base_score * volume_factor * position_factor * 0.40
+                squeeze_component = base_score * position_factor * 0.30
+                catalyst_component = base_score * position_factor * 0.15
+                options_component = base_score * position_factor * 0.10
+                technical_component = base_score * position_factor * 0.05
 
-                total_score = (volume_momentum + squeeze_score + catalyst_score + options_score + technical_score) / 100
+                total_score = volume_momentum_score + squeeze_component + catalyst_component + options_component + technical_component
+
+                # Preserve market data
+                candidate['price'] = candidate.get('prevDay', {}).get('c') or candidate.get('day', {}).get('c') or 0
+                candidate['volume'] = candidate.get('day', {}).get('v') or candidate.get('prevDay', {}).get('v') or 0
+                candidate['change_pct'] = candidate.get('todaysChangePerc', 0)
+
+                # Add entry/stop/target levels
+                current_price = candidate['price']
+                if current_price > 0:
+                    candidate['entry'] = round(current_price * 1.02, 2)
+                    candidate['stop'] = round(current_price * 0.95, 2)
+                    candidate['tp1'] = round(current_price * 1.15, 2)
+                    candidate['tp2'] = round(current_price * 1.30, 2)
 
                 candidate['subscores'] = {
-                    'volume_momentum': round(volume_momentum, 1),
-                    'squeeze': round(squeeze_score, 1),
-                    'catalyst': round(catalyst_score, 1),
-                    'options': round(options_score, 1),
-                    'technical': round(technical_score, 1)
+                    'volume_momentum': round(volume_momentum_score * 100, 1),
+                    'squeeze': round(squeeze_component * 100, 1),
+                    'catalyst': round(catalyst_component * 100, 1),
+                    'options': round(options_component * 100, 1),
+                    'technical': round(technical_component * 100, 1)
                 }
                 candidate['score'] = min(total_score, 1.0)
                 candidate['total_score'] = candidate['score']
                 candidate['strategy'] = 'hybrid_v1'
                 candidate['confidence'] = min(candidate['score'] + 0.1, 1.0)
 
-                # Add action tags
-                if candidate['score'] > 0.75:
+                # Add realistic action tags
+                if candidate['score'] > 0.25:
                     candidate['action_tag'] = 'trade_ready'
-                elif candidate['score'] > 0.50:
+                elif candidate['score'] > 0.18:
                     candidate['action_tag'] = 'watchlist'
                 else:
                     candidate['action_tag'] = 'monitor'
@@ -223,6 +249,19 @@ async def test_strategy(
                 candidate['score'] = min(enhanced_score, 1.0)
                 candidate['total_score'] = candidate['score']
                 candidate['strategy'] = 'legacy_v0'
+
+                # Preserve market data for legacy too
+                candidate['price'] = candidate.get('prevDay', {}).get('c') or candidate.get('day', {}).get('c') or 0
+                candidate['volume'] = candidate.get('day', {}).get('v') or candidate.get('prevDay', {}).get('v') or 0
+                candidate['change_pct'] = candidate.get('todaysChangePerc', 0)
+
+                # Add entry/stop/target levels
+                current_price = candidate['price']
+                if current_price > 0:
+                    candidate['entry'] = round(current_price * 1.02, 2)
+                    candidate['stop'] = round(current_price * 0.95, 2)
+                    candidate['tp1'] = round(current_price * 1.15, 2)
+                    candidate['tp2'] = round(current_price * 1.30, 2)
 
         execution_time = time.time() - start_time
 
