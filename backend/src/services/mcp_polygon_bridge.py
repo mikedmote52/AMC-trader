@@ -76,60 +76,174 @@ class MCPPolygonBridge:
 
     async def _explosive_data_bridge(self, tickers: List[str]) -> Dict[str, Any]:
         """
-        Get real explosive data using HTTP MCP client
+        Get real explosive data using direct Polygon API or native MCP functions
         """
         try:
-            from backend.src.mcp_http_client import mcp_http_client
+            import os
 
-            # First try to get market movers for explosive candidates
-            movers_data = await mcp_http_client.get_market_movers(direction="gainers")
+            # Try native MCP functions first (in Claude environment)
+            if not os.getenv('RENDER_SERVICE_NAME'):
+                try:
+                    # Use native MCP function for market snapshots
+                    result = await mcp__polygon__get_snapshot_direction(
+                        market_type="stocks",
+                        direction="gainers"
+                    )
 
-            if movers_data.get('available') and movers_data.get('movers'):
-                # Convert movers data to ticker format
-                tickers_data = []
-                for mover in movers_data['movers']:
-                    symbol = mover.get('symbol', '')
-                    if symbol and (not tickers or symbol in tickers):
-                        # Convert mover data to expected ticker format
-                        ticker_data = {
-                            'ticker': symbol,
-                            'todaysChangePerc': mover.get('change_pct', 0),
-                            'todaysChange': mover.get('change_pct', 0) * mover.get('price', 0) / 100,
-                            'day': {
-                                'c': mover.get('price', 0),
-                                'v': mover.get('volume', 0),
-                                'vw': mover.get('vwap', mover.get('price', 0))
-                            },
-                            'prevDay': {
-                                'c': mover.get('price', 0) / (1 + mover.get('change_pct', 0) / 100)
+                    if result.get('status') == 'OK' and result.get('results'):
+                        # Convert MCP format to expected ticker format
+                        tickers_data = []
+                        for item in result['results'][:50]:  # Limit to top 50 gainers
+                            ticker_info = item.get('ticker', {})
+                            day_data = ticker_info.get('day', {})
+                            prev_data = ticker_info.get('prevDay', {})
+
+                            ticker_data = {
+                                'ticker': ticker_info.get('ticker', ''),
+                                'todaysChangePerc': day_data.get('change_percent', 0),
+                                'todaysChange': day_data.get('change', 0),
+                                'day': {
+                                    'c': day_data.get('close', 0),
+                                    'v': day_data.get('volume', 0),
+                                    'vw': day_data.get('vwap', day_data.get('close', 0)),
+                                    'o': day_data.get('open', 0),
+                                    'h': day_data.get('high', 0),
+                                    'l': day_data.get('low', 0)
+                                },
+                                'prevDay': {
+                                    'c': prev_data.get('close', 0),
+                                    'v': prev_data.get('volume', 0),
+                                    'vw': prev_data.get('vwap', prev_data.get('close', 0))
+                                }
                             }
+                            tickers_data.append(ticker_data)
+
+                        logger.info(f"✅ Got {len(tickers_data)} explosive candidates from native MCP")
+                        return {
+                            'status': 'OK',
+                            'tickers': tickers_data,
+                            'count': len(tickers_data)
                         }
-                        tickers_data.append(ticker_data)
+                except NameError:
+                    logger.info("Native MCP functions not available, falling back to direct API")
+                    pass
 
-                logger.info(f"✅ Got {len(tickers_data)} explosive candidates from HTTP MCP")
-                return {
-                    'status': 'OK',
-                    'tickers': tickers_data,
-                    'count': len(tickers_data)
-                }
-
-            # Fallback to market snapshots if movers not available
-            snapshot_data = await mcp_http_client.get_market_snapshots(tickers=tickers[:20])
-            if snapshot_data.get('tickers'):
-                logger.info(f"✅ Got {len(snapshot_data['tickers'])} tickers from HTTP MCP snapshots")
-                return {
-                    'status': 'OK',
-                    'tickers': snapshot_data['tickers'],
-                    'count': len(snapshot_data['tickers'])
-                }
-
-            logger.warning("No data available from MCP client")
-            return {'status': 'error', 'error': 'No data from MCP', 'tickers': []}
+            # Use direct Polygon API for Render deployment
+            return await self._get_explosive_data_direct_api(tickers)
 
         except Exception as e:
-            logger.error(f"MCP bridge failed: {e}")
+            logger.error(f"Explosive data bridge failed: {e}")
             return {'status': 'error', 'error': str(e), 'tickers': []}
 
+    async def _get_explosive_data_direct_api(self, tickers: List[str]) -> Dict[str, Any]:
+        """Get explosive data using direct Polygon REST API"""
+        try:
+            import httpx
+            import os
+
+            api_key = os.getenv('POLYGON_API_KEY')
+            if not api_key:
+                logger.error("No POLYGON_API_KEY available for direct API calls")
+                return {'status': 'error', 'error': 'No API key', 'tickers': []}
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Get market gainers from Polygon API
+                response = await client.get(
+                    "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/direction/gainers",
+                    params={"apikey": api_key}
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('status') == 'OK' and data.get('results'):
+                        # Convert to expected format
+                        tickers_data = []
+                        for item in data['results'][:100]:  # Top 100 gainers for broader universe
+                            ticker_info = item.get('ticker', item.get('T', ''))
+                            last_quote = item.get('lastQuote', {})
+                            last_trade = item.get('lastTrade', {})
+                            day_info = item.get('day', {})
+                            prev_day = item.get('prevDay', {})
+
+                            # Calculate price and volume data
+                            current_price = last_trade.get('p', day_info.get('c', 0))
+                            current_volume = day_info.get('v', 0)
+                            prev_close = prev_day.get('c', current_price)
+
+                            if current_price > 0 and prev_close > 0:
+                                change_pct = ((current_price - prev_close) / prev_close) * 100
+                                volume_ratio = current_volume / max(prev_day.get('v', 1), 1)
+
+                                # Apply filtering criteria to eliminate inappropriate stocks
+                                if self._meets_filtering_criteria(current_price, current_volume, change_pct, volume_ratio, ticker_info):
+                                    ticker_data = {
+                                        'ticker': ticker_info,
+                                        'todaysChangePerc': change_pct,
+                                        'todaysChange': current_price - prev_close,
+                                        'day': {
+                                            'c': current_price,
+                                            'v': current_volume,
+                                            'vw': day_info.get('vw', current_price),
+                                            'o': day_info.get('o', current_price),
+                                            'h': day_info.get('h', current_price),
+                                            'l': day_info.get('l', current_price)
+                                        },
+                                        'prevDay': {
+                                            'c': prev_close,
+                                            'v': prev_day.get('v', 0),
+                                            'vw': prev_day.get('vw', prev_close)
+                                        }
+                                    }
+                                    tickers_data.append(ticker_data)
+
+                        logger.info(f"✅ Got {len(tickers_data)} explosive candidates from direct Polygon API")
+                        return {
+                            'status': 'OK',
+                            'tickers': tickers_data,
+                            'count': len(tickers_data)
+                        }
+
+                logger.error(f"Polygon API returned status: {response.status_code}")
+                return {'status': 'error', 'error': f'API error: {response.status_code}', 'tickers': []}
+
+        except Exception as e:
+            logger.error(f"Direct API explosive data failed: {e}")
+            return {'status': 'error', 'error': str(e), 'tickers': []}
+
+    def _meets_filtering_criteria(self, price: float, volume: int, change_pct: float, volume_ratio: float, ticker: str) -> bool:
+        """
+        Apply filtering criteria to eliminate inappropriate stocks
+        """
+        # Price filters
+        if price <= 0.50:  # Eliminate penny stocks
+            return False
+        if price >= 100.00:  # Eliminate expensive stocks as specified
+            return False
+
+        # Volume filters
+        if volume < 100000:  # Minimum volume threshold for liquidity
+            return False
+        if volume_ratio < 1.5:  # Must have volume spike (1.5x normal)
+            return False
+
+        # Change filters
+        if abs(change_pct) < 3.0:  # Must have significant price movement
+            return False
+        if abs(change_pct) > 50.0:  # Eliminate extreme outliers (likely errors)
+            return False
+
+        # Ticker filters - eliminate common problematic patterns
+        ticker_upper = ticker.upper()
+        if len(ticker_upper) < 2 or len(ticker_upper) > 5:  # Normal ticker length
+            return False
+        if any(char in ticker_upper for char in ['.', '-', '/', ' ']):  # No special characters
+            return False
+        if ticker_upper.endswith('W') or ticker_upper.endswith('WS'):  # Eliminate warrants
+            return False
+        if ticker_upper.startswith('SPAC') or 'SPAC' in ticker_upper:  # Eliminate SPACs
+            return False
+
+        return True
 
     async def _api_fallback(self, tickers: List[str]) -> Dict[str, Any]:
         """
