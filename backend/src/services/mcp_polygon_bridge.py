@@ -81,17 +81,26 @@ class MCPPolygonBridge:
         try:
             import os
 
-            # Always use direct Polygon API for Render deployment
-            # Check multiple environment indicators
+            # Force direct API for production - no MCP fallback on Render
+            # Always use direct API if any production indicators are present
             render_env = os.getenv('RENDER_SERVICE_NAME')
             env_prod = os.getenv('ENV') == 'prod'
             env_production = os.getenv('ENVIRONMENT') == 'production'
 
-            if render_env or env_prod or env_production:
-                logger.info(f"🚀 Render environment detected (RENDER_SERVICE_NAME={render_env}, ENV={os.getenv('ENV')}, ENVIRONMENT={os.getenv('ENVIRONMENT')}) - using direct Polygon API")
-                return await self._get_explosive_data_direct_api(tickers)
+            # Default to direct API unless explicitly in Claude environment
+            use_mcp = not (render_env or env_prod or env_production or os.getenv('PRODUCTION'))
+
+            if not use_mcp:
+                logger.info(f"🚀 Production environment - forcing direct Polygon API (RENDER_SERVICE_NAME={render_env}, ENV={os.getenv('ENV')}, ENVIRONMENT={os.getenv('ENVIRONMENT')})")
+                result = await self._get_explosive_data_direct_api(tickers)
+                # If direct API fails in production, return error rather than fallback
+                if result.get('status') != 'OK':
+                    logger.error(f"Direct API failed in production: {result.get('error', 'Unknown error')}")
+                    return result
+                return result
 
             # Try native MCP functions only in Claude environment
+            logger.info("🔬 Claude environment detected - trying native MCP functions")
             try:
                 # Use native MCP function for market snapshots
                 result = await mcp__polygon__get_snapshot_direction(
@@ -231,12 +240,22 @@ class MCPPolygonBridge:
                                     }
                                     tickers_data.append(ticker_data)
 
-                        logger.info(f"✅ Got {len(tickers_data)} explosive candidates from direct Polygon API")
-                        return {
-                            'status': 'OK',
-                            'tickers': tickers_data,
-                            'count': len(tickers_data)
-                        }
+                        # Final validation - ensure we have real price data
+                        valid_tickers = [t for t in tickers_data if t['day']['c'] > 0 and t['day']['v'] > 0]
+                        if valid_tickers:
+                            logger.info(f"✅ Got {len(valid_tickers)} valid explosive candidates from direct Polygon API (filtered from {len(tickers_data)} total)")
+                            return {
+                                'status': 'OK',
+                                'tickers': valid_tickers,
+                                'count': len(valid_tickers)
+                            }
+                        else:
+                            logger.warning(f"⚠️ Direct API returned {len(tickers_data)} candidates but none had valid price/volume data")
+                            return {
+                                'status': 'error',
+                                'error': 'No valid price/volume data from API',
+                                'tickers': []
+                            }
 
                 logger.error(f"Polygon API returned status: {response.status_code}")
                 return {'status': 'error', 'error': f'API error: {response.status_code}', 'tickers': []}
