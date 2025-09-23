@@ -82,8 +82,13 @@ class MCPPolygonBridge:
             import os
 
             # Always use direct Polygon API for Render deployment
-            if os.getenv('RENDER_SERVICE_NAME') or os.getenv('ENV') == 'prod':
-                logger.info("🚀 Render environment detected - using direct Polygon API")
+            # Check multiple environment indicators
+            render_env = os.getenv('RENDER_SERVICE_NAME')
+            env_prod = os.getenv('ENV') == 'prod'
+            env_production = os.getenv('ENVIRONMENT') == 'production'
+
+            if render_env or env_prod or env_production:
+                logger.info(f"🚀 Render environment detected (RENDER_SERVICE_NAME={render_env}, ENV={os.getenv('ENV')}, ENVIRONMENT={os.getenv('ENVIRONMENT')}) - using direct Polygon API")
                 return await self._get_explosive_data_direct_api(tickers)
 
             # Try native MCP functions only in Claude environment
@@ -169,10 +174,10 @@ class MCPPolygonBridge:
                 if response.status_code == 200:
                     data = response.json()
                     if data.get('status') == 'OK' and data.get('results'):
-                        # Convert to expected format
+                        # Convert to expected format - match MCP structure exactly
                         tickers_data = []
                         for item in data['results'][:100]:  # Top 100 gainers for broader universe
-                            ticker_info = item.get('ticker', item.get('T', ''))
+                            ticker_symbol = item.get('ticker', item.get('T', ''))
                             last_quote = item.get('lastQuote', {})
                             last_trade = item.get('lastTrade', {})
                             day_info = item.get('day', {})
@@ -181,18 +186,20 @@ class MCPPolygonBridge:
                             # Calculate price and volume data
                             current_price = last_trade.get('p', day_info.get('c', 0))
                             current_volume = day_info.get('v', 0)
-                            prev_close = prev_day.get('c', current_price)
+                            prev_close = prev_day.get('c', 0)
 
-                            if current_price > 0 and prev_close > 0:
+                            # Ensure we have valid data
+                            if current_price > 0 and prev_close > 0 and current_volume > 0:
                                 change_pct = ((current_price - prev_close) / prev_close) * 100
+                                change_abs = current_price - prev_close
                                 volume_ratio = current_volume / max(prev_day.get('v', 1), 1)
 
                                 # Apply filtering criteria to eliminate inappropriate stocks
-                                if self._meets_filtering_criteria(current_price, current_volume, change_pct, volume_ratio, ticker_info):
+                                if self._meets_filtering_criteria(current_price, current_volume, change_pct, volume_ratio, ticker_symbol):
                                     ticker_data = {
-                                        'ticker': ticker_info,
+                                        'ticker': ticker_symbol,
                                         'todaysChangePerc': change_pct,
-                                        'todaysChange': current_price - prev_close,
+                                        'todaysChange': change_abs,
                                         'day': {
                                             'c': current_price,
                                             'v': current_volume,
