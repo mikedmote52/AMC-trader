@@ -81,49 +81,53 @@ class MCPPolygonBridge:
         try:
             import os
 
-            # Try native MCP functions first (in Claude environment)
-            if not os.getenv('RENDER_SERVICE_NAME'):
-                try:
-                    # Use native MCP function for market snapshots
-                    result = await mcp__polygon__get_snapshot_direction(
-                        market_type="stocks",
-                        direction="gainers"
-                    )
+            # Always use direct Polygon API for Render deployment
+            if os.getenv('RENDER_SERVICE_NAME') or os.getenv('ENV') == 'prod':
+                logger.info("🚀 Render environment detected - using direct Polygon API")
+                return await self._get_explosive_data_direct_api(tickers)
 
-                    if result.get('status') == 'OK' and result.get('results'):
-                        # Convert MCP format to expected ticker format
-                        tickers_data = []
-                        for item in result['results'][:50]:  # Limit to top 50 gainers
-                            ticker_info = item.get('ticker', {})
-                            day_data = ticker_info.get('day', {})
-                            prev_data = ticker_info.get('prevDay', {})
+            # Try native MCP functions only in Claude environment
+            try:
+                # Use native MCP function for market snapshots
+                result = await mcp__polygon__get_snapshot_direction(
+                    market_type="stocks",
+                    direction="gainers"
+                )
 
-                            ticker_data = {
-                                'ticker': ticker_info.get('ticker', ''),
-                                'todaysChangePerc': day_data.get('change_percent', 0),
-                                'todaysChange': day_data.get('change', 0),
-                                'day': {
-                                    'c': day_data.get('close', 0),
-                                    'v': day_data.get('volume', 0),
-                                    'vw': day_data.get('vwap', day_data.get('close', 0)),
-                                    'o': day_data.get('open', 0),
-                                    'h': day_data.get('high', 0),
-                                    'l': day_data.get('low', 0)
-                                },
-                                'prevDay': {
-                                    'c': prev_data.get('close', 0),
-                                    'v': prev_data.get('volume', 0),
-                                    'vw': prev_data.get('vwap', prev_data.get('close', 0))
-                                }
+                if result.get('status') == 'OK' and result.get('results'):
+                    # Convert MCP format to expected ticker format
+                    tickers_data = []
+                    for item in result['results'][:50]:  # Limit to top 50 gainers
+                        ticker_info = item.get('ticker', {})
+                        day_data = ticker_info.get('day', {})
+                        prev_data = ticker_info.get('prevDay', {})
+
+                        ticker_data = {
+                            'ticker': ticker_info.get('ticker', ''),
+                            'todaysChangePerc': day_data.get('change_percent', 0),
+                            'todaysChange': day_data.get('change', 0),
+                            'day': {
+                                'c': day_data.get('close', 0),
+                                'v': day_data.get('volume', 0),
+                                'vw': day_data.get('vwap', day_data.get('close', 0)),
+                                'o': day_data.get('open', 0),
+                                'h': day_data.get('high', 0),
+                                'l': day_data.get('low', 0)
+                            },
+                            'prevDay': {
+                                'c': prev_data.get('close', 0),
+                                'v': prev_data.get('volume', 0),
+                                'vw': prev_data.get('vwap', prev_data.get('close', 0))
                             }
-                            tickers_data.append(ticker_data)
-
-                        logger.info(f"✅ Got {len(tickers_data)} explosive candidates from native MCP")
-                        return {
-                            'status': 'OK',
-                            'tickers': tickers_data,
-                            'count': len(tickers_data)
                         }
+                        tickers_data.append(ticker_data)
+
+                    logger.info(f"✅ Got {len(tickers_data)} explosive candidates from native MCP")
+                    return {
+                        'status': 'OK',
+                        'tickers': tickers_data,
+                        'count': len(tickers_data)
+                    }
                 except NameError:
                     logger.info("Native MCP functions not available, falling back to direct API")
                     pass
