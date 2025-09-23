@@ -26,6 +26,8 @@ class ExplosiveDiscoveryEngine:
         self.min_price = 0.50
         self.max_price = 100.0
         self.min_volume_ratio = 1.5  # At least 1.5x average volume
+        self.max_daily_change = 15.0  # Max 15% daily move - catch BEFORE explosion
+        self.min_daily_change = -20.0  # Allow some losers for reversal plays
         self.max_candidates = 100
 
     async def get_market_universe(self) -> List[Dict[str, Any]]:
@@ -40,9 +42,11 @@ class ExplosiveDiscoveryEngine:
 
             logger.info("📡 Fetching market universe via direct Polygon API...")
 
-            # Get both gainers and losers for a broader universe
+            # Get broader market universe (not just extreme movers)
             async with httpx.AsyncClient(timeout=30.0) as client:
-                # Get gainers
+                universe = []
+
+                # Get modest gainers (not extreme)
                 gainers_url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/gainers"
                 gainers_params = {'apikey': api_key}
 
@@ -52,14 +56,13 @@ class ExplosiveDiscoveryEngine:
                         gainers_data = gainers_response.json()
                         gainers = gainers_data.get('tickers', [])
                         logger.info(f"✅ Retrieved {len(gainers)} gainers")
+                        universe.extend(gainers)
                     else:
                         logger.error(f"Gainers API failed: {gainers_response.status_code}")
-                        gainers = []
                 except Exception as e:
                     logger.error(f"Error fetching gainers: {e}")
-                    gainers = []
 
-                # Get losers (to catch reversal opportunities)
+                # Get losers (potential reversal plays)
                 losers_url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/losers"
                 losers_params = {'apikey': api_key}
 
@@ -69,16 +72,29 @@ class ExplosiveDiscoveryEngine:
                         losers_data = losers_response.json()
                         losers = losers_data.get('tickers', [])
                         logger.info(f"✅ Retrieved {len(losers)} losers")
+                        universe.extend(losers)
                     else:
                         logger.error(f"Losers API failed: {losers_response.status_code}")
-                        losers = []
                 except Exception as e:
                     logger.error(f"Error fetching losers: {e}")
-                    losers = []
 
-            # Combine both datasets
-            universe = gainers + losers
-            logger.info(f"📊 Total universe: {len(gainers)} gainers + {len(losers)} losers = {len(universe)} stocks")
+                # Try to get broader market snapshot if available
+                try:
+                    all_tickers_url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
+                    all_params = {'apikey': api_key}
+
+                    all_response = await client.get(all_tickers_url, params=all_params)
+                    if all_response.status_code == 200:
+                        all_data = all_response.json()
+                        all_tickers = all_data.get('tickers', [])
+                        logger.info(f"✅ Retrieved {len(all_tickers)} from full market snapshot")
+                        universe.extend(all_tickers)
+                    else:
+                        logger.info(f"Full snapshot not available: {all_response.status_code}")
+                except Exception as e:
+                    logger.info(f"Full snapshot failed (expected): {e}")
+
+            logger.info(f"📊 Total universe: {len(universe)} stocks from combined sources")
 
             if not universe:
                 logger.error("No market data retrieved from Polygon API")
@@ -108,6 +124,19 @@ class ExplosiveDiscoveryEngine:
 
                 # Add volume_ratio to stock data for scoring
                 stock['volume_ratio'] = volume_ratio
+
+                # Get daily change percentage
+                daily_change_pct = stock.get('todaysChangePerc', 0)
+
+                # CRITICAL: Skip stocks that already exploded (>15% move)
+                if daily_change_pct > self.max_daily_change:
+                    logger.debug(f"❌ {ticker}: Already exploded {daily_change_pct:.1f}%")
+                    continue
+
+                # Skip extreme losers (< -20%)
+                if daily_change_pct < self.min_daily_change:
+                    logger.debug(f"❌ {ticker}: Extreme loser {daily_change_pct:.1f}%")
+                    continue
 
                 # Filter for explosive potential
                 if price < self.min_price or price > self.max_price:
@@ -140,11 +169,22 @@ class ExplosiveDiscoveryEngine:
 
             # Component scores (each 0-1 range)
 
-            # Volume Momentum (40% weight)
-            volume_score = min(max(volume_ratio - 1.0, 0) / 10.0, 1.0)  # Cap at 11x volume
+            # Volume Momentum (40% weight) - favor 2-8x volume (pre-breakout surge)
+            if 2 <= volume_ratio <= 8:
+                volume_score = 1.0  # Sweet spot for pre-breakout
+            elif volume_ratio < 2:
+                volume_score = volume_ratio / 2.0
+            else:  # >8x might be post-explosion
+                volume_score = max(0.3, 1.0 - ((volume_ratio - 8) / 20.0))
 
-            # Squeeze Potential (30% weight) - simplified until we get real short data
-            price_momentum = min(abs(change_pct) / 20.0, 1.0)  # Cap at 20% move
+            # Pre-Breakout Momentum (30% weight) - favor 3-12% moves, not 50%+
+            abs_change = abs(change_pct)
+            if 3 <= abs_change <= 12:
+                price_momentum = 1.0  # Pre-breakout sweet spot
+            elif abs_change < 3:
+                price_momentum = abs_change / 3.0  # Building momentum
+            else:  # >12% might be post-explosion
+                price_momentum = max(0.2, 1.0 - ((abs_change - 12) / 15.0))
 
             # Activity Level (15% weight)
             activity_score = min(volume / 1000000, 1.0)  # Cap at 1M volume
