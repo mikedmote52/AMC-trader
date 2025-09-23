@@ -29,30 +29,50 @@ class ExplosiveDiscoveryEngine:
         self.max_candidates = 100
 
     async def get_market_universe(self) -> List[Dict[str, Any]]:
-        """Get filtered market universe from Polygon MCP"""
+        """Get market universe using direct Polygon API calls"""
         try:
-            # Use MCP client directly for real data
-            try:
-                from backend.src.mcp_client import get_polygon_snapshots
-                # Representative sample of explosive growth candidates
-                sample_tickers = [
-                    'SPFX', 'FFA', 'XBJA', 'PSMJ', 'TpA', 'IBMR', 'UXJA', 'CQIW',
-                    'FAT', 'NEWS', 'AACG', 'POET', 'EPRX', 'CHNR', 'YYAI',
-                    'NVDA', 'TSLA', 'AMD', 'AVGO', 'CRM', 'NFLX', 'META'
-                ]
+            import aiohttp
+            import os
 
-                # Get snapshots for all tickers at once
-                universe = await get_polygon_snapshots(sample_tickers)
-                logger.info(f"MCP universe: {len(universe)} stocks")
-            except Exception as e:
-                logger.warning(f"MCP client failed, using fallback: {e}")
-                # Fallback to unified system if MCP fails
-                from backend.src.discovery.unified_discovery import UnifiedDiscoverySystem
-                unified_system = UnifiedDiscoverySystem()
-                universe = await unified_system.get_market_universe()
-                logger.info(f"Fallback universe: {len(universe)} stocks")
+            api_key = os.getenv('POLYGON_API_KEY')
+            if not api_key:
+                raise RuntimeError("POLYGON_API_KEY not available")
 
-            # Filter and transform Polygon snapshot data
+            logger.info("📡 Fetching market universe via direct Polygon API...")
+
+            # Get both gainers and losers for a broader universe
+            async with aiohttp.ClientSession() as session:
+                # Get gainers
+                gainers_url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/gainers"
+                gainers_params = {'apikey': api_key}
+
+                async with session.get(gainers_url, params=gainers_params, timeout=30) as response:
+                    if response.status == 200:
+                        gainers_data = await response.json()
+                        gainers = gainers_data.get('tickers', [])
+                    else:
+                        gainers = []
+
+                # Get losers (to catch reversal opportunities)
+                losers_url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/losers"
+                losers_params = {'apikey': api_key}
+
+                async with session.get(losers_url, params=losers_params, timeout=30) as response:
+                    if response.status == 200:
+                        losers_data = await response.json()
+                        losers = losers_data.get('tickers', [])
+                    else:
+                        losers = []
+
+            # Combine both datasets
+            universe = gainers + losers
+            logger.info(f"✅ Retrieved {len(gainers)} gainers + {len(losers)} losers = {len(universe)} total stocks")
+
+            if not universe:
+                logger.error("No market data retrieved from Polygon API")
+                return []
+
+            # Filter for explosive growth potential
             common_stocks = []
             for stock in universe:
                 ticker = stock.get('ticker', '')
@@ -61,38 +81,31 @@ class ExplosiveDiscoveryEngine:
                 if any(suffix in ticker for suffix in ['.WS', '.WT', '.U', '.RT', '.PR']):
                     continue
 
-                # Skip ETFs and funds (common patterns)
-                if any(pattern in ticker for pattern in ['ETF', 'FUND', 'INDEX']):
-                    continue
+                # Get price and volume data from Polygon API response format
+                # Check both day and prevDay for pricing
+                day_data = stock.get('day', {})
+                prev_day_data = stock.get('prevDay', {})
 
-                # Extract price from Polygon format
-                price = (stock.get('day', {}).get('c') or
-                        stock.get('prevDay', {}).get('c') or
-                        stock.get('last_quote', {}).get('p') or 0)
+                # Use current day close price, fallback to previous day
+                price = day_data.get('c') or prev_day_data.get('c') or 0
 
-                if not (self.min_price <= price <= self.max_price):
-                    continue
-
-                # Calculate volume ratio from Polygon data
-                current_volume = stock.get('day', {}).get('v', 0)
-                prev_volume = stock.get('prevDay', {}).get('v', 1)
+                # Calculate volume ratio if volume data is available
+                current_volume = day_data.get('v', 0)
+                prev_volume = prev_day_data.get('v', 1)
                 volume_ratio = current_volume / max(prev_volume, 1) if prev_volume > 0 else 1.0
+
+                # Add volume_ratio to stock data for scoring
+                stock['volume_ratio'] = volume_ratio
+
+                # Filter for explosive potential
+                if price < self.min_price or price > self.max_price:
+                    continue
 
                 if volume_ratio < self.min_volume_ratio:
                     continue
 
-                # Transform to consistent format
-                transformed_stock = {
-                    'ticker': ticker,
-                    'day': stock.get('day', {}),
-                    'prevDay': stock.get('prevDay', {}),
-                    'price': price,
-                    'volume_ratio': volume_ratio,
-                    'todaysChangePerc': stock.get('day', {}).get('c', 0) - stock.get('prevDay', {}).get('c', 0),
-                    'updated': stock.get('updated', 0)
-                }
-
-                common_stocks.append(transformed_stock)
+                # Stock passes all filters
+                common_stocks.append(stock)
 
             logger.info(f"Filtered universe: {len(common_stocks)} common stocks")
             return common_stocks
