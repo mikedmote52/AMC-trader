@@ -32,9 +32,8 @@ async def strategy_validation(limit: int = Query(50, le=200)):
         start_time = time.time()
 
         # Run discovery job and simulate strategy comparison for now
-        # TODO: Implement actual strategy switching when discovery job supports it
         try:
-            # Run current discovery system
+            # Run current discovery system (no strategy parameter supported)
             base_result = await run_discovery_job(limit)
 
             # For now, return the same results for both strategies with different weighting
@@ -141,8 +140,7 @@ async def test_strategy(
 
         start_time = time.time()
 
-        # Run the current discovery system
-        # TODO: Implement actual strategy parameter when discovery job supports it
+        # Run the current discovery system (no strategy parameter supported)
         result = await run_discovery_job(limit)
 
         # Apply strategy-specific post-processing
@@ -247,14 +245,8 @@ async def audit_symbol(
     try:
         logger.info(f"Symbol audit: {symbol} with strategy={strategy}")
 
-        # Import audit function
-        try:
-            from backend.src.jobs.discovery_job import audit_single_symbol
-        except ImportError:
-            # Fallback to basic symbol analysis if audit function not available
-            return await basic_symbol_analysis(symbol, strategy)
-
-        audit_result = await audit_single_symbol(symbol, strategy)
+        # Use basic symbol analysis since audit_single_symbol doesn't exist
+        audit_result = await basic_symbol_analysis(symbol, strategy)
 
         response = {
             "success": True,
@@ -367,7 +359,7 @@ async def basic_symbol_analysis(symbol: str, strategy: str) -> Dict[str, Any]:
     """Basic symbol analysis when full audit is not available"""
     try:
         # Use MCP to get basic symbol data
-        from backend.src.lib.mcp_client import get_polygon_snapshot
+        from backend.src.mcp_client import get_polygon_snapshot
 
         snapshot = await get_polygon_snapshot(symbol)
 
