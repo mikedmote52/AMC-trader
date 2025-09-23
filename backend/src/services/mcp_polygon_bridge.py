@@ -177,26 +177,36 @@ class MCPPolygonBridge:
                         # Convert to expected format - match MCP structure exactly
                         tickers_data = []
                         for item in data['results'][:100]:  # Top 100 gainers for broader universe
-                            ticker_symbol = item.get('ticker', item.get('T', ''))
-                            last_quote = item.get('lastQuote', {})
-                            last_trade = item.get('lastTrade', {})
-                            day_info = item.get('day', {})
-                            prev_day = item.get('prevDay', {})
+                            # Extract data from actual Polygon API structure
+                            ticker_symbol = item.get('ticker', '')
 
-                            # Calculate price and volume data
-                            current_price = last_trade.get('p', day_info.get('c', 0))
-                            current_volume = day_info.get('v', 0)
+                            # Polygon snapshot API structure - get current data from 'value' or top-level
+                            value = item.get('value', {})
+                            current_price = value.get('c', item.get('c', 0))  # close price
+                            current_volume = value.get('v', item.get('v', 0))  # volume
+
+                            # Previous day data
+                            prev_day = item.get('prevDay', {})
                             prev_close = prev_day.get('c', 0)
+
+                            # Use today's change if available
+                            change_pct = item.get('todaysChangePerc', 0)
+                            change_abs = item.get('todaysChange', 0)
+
+                            # If change not provided, calculate it
+                            if change_pct == 0 and current_price > 0 and prev_close > 0:
+                                change_pct = ((current_price - prev_close) / prev_close) * 100
+                                change_abs = current_price - prev_close
 
                             # Debug logging for first few items
                             if len(tickers_data) < 3:
-                                logger.info(f"DEBUG: Processing {ticker_symbol} - price={current_price}, volume={current_volume}, prev_close={prev_close}")
-                                logger.info(f"DEBUG: Raw item keys: {list(item.keys())}")
+                                logger.info(f"DEBUG API: Processing {ticker_symbol} - price={current_price}, volume={current_volume}, prev_close={prev_close}, change_pct={change_pct}")
+                                logger.info(f"DEBUG API: Raw keys: {list(item.keys())}")
+                                if value:
+                                    logger.info(f"DEBUG API: Value keys: {list(value.keys())}")
 
-                            # Ensure we have basic data (temporarily relaxed for debugging)
-                            if ticker_symbol and (current_price > 0 or prev_close > 0):
-                                change_pct = ((current_price - prev_close) / prev_close) * 100
-                                change_abs = current_price - prev_close
+                            # Ensure we have basic data
+                            if ticker_symbol and current_price > 0 and prev_close > 0:
                                 volume_ratio = current_volume / max(prev_day.get('v', 1), 1)
 
                                 # Apply filtering criteria to eliminate inappropriate stocks
@@ -208,10 +218,10 @@ class MCPPolygonBridge:
                                         'day': {
                                             'c': current_price,
                                             'v': current_volume,
-                                            'vw': day_info.get('vw', current_price),
-                                            'o': day_info.get('o', current_price),
-                                            'h': day_info.get('h', current_price),
-                                            'l': day_info.get('l', current_price)
+                                            'vw': value.get('vw', current_price),
+                                            'o': value.get('o', current_price),
+                                            'h': value.get('h', current_price),
+                                            'l': value.get('l', current_price)
                                         },
                                         'prevDay': {
                                             'c': prev_close,
