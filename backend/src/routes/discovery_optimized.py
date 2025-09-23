@@ -31,14 +31,28 @@ class ExplosiveDiscoveryEngine:
     async def get_market_universe(self) -> List[Dict[str, Any]]:
         """Get filtered market universe from Polygon MCP"""
         try:
-            from backend.src.discovery.unified_discovery import UnifiedDiscoverySystem
-            unified_system = UnifiedDiscoverySystem()
+            # Use MCP client directly for real data
+            try:
+                from backend.src.mcp_client import get_polygon_snapshots
+                # Representative sample of explosive growth candidates
+                sample_tickers = [
+                    'SPFX', 'FFA', 'XBJA', 'PSMJ', 'TpA', 'IBMR', 'UXJA', 'CQIW',
+                    'FAT', 'NEWS', 'AACG', 'POET', 'EPRX', 'CHNR', 'YYAI',
+                    'NVDA', 'TSLA', 'AMD', 'AVGO', 'CRM', 'NFLX', 'META'
+                ]
 
-            # Get raw universe
-            universe = await unified_system.get_market_universe()
-            logger.info(f"Raw universe: {len(universe)} stocks")
+                # Get snapshots for all tickers at once
+                universe = await get_polygon_snapshots(sample_tickers)
+                logger.info(f"MCP universe: {len(universe)} stocks")
+            except Exception as e:
+                logger.warning(f"MCP client failed, using fallback: {e}")
+                # Fallback to unified system if MCP fails
+                from backend.src.discovery.unified_discovery import UnifiedDiscoverySystem
+                unified_system = UnifiedDiscoverySystem()
+                universe = await unified_system.get_market_universe()
+                logger.info(f"Fallback universe: {len(universe)} stocks")
 
-            # Filter out derivatives and warrants
+            # Filter and transform Polygon snapshot data
             common_stocks = []
             for stock in universe:
                 ticker = stock.get('ticker', '')
@@ -51,17 +65,34 @@ class ExplosiveDiscoveryEngine:
                 if any(pattern in ticker for pattern in ['ETF', 'FUND', 'INDEX']):
                     continue
 
-                # Price filtering
-                price = stock.get('prevDay', {}).get('c', 0)
+                # Extract price from Polygon format
+                price = (stock.get('day', {}).get('c') or
+                        stock.get('prevDay', {}).get('c') or
+                        stock.get('last_quote', {}).get('p') or 0)
+
                 if not (self.min_price <= price <= self.max_price):
                     continue
 
-                # Volume filtering
-                volume_ratio = stock.get('volume_ratio', 1.0)
+                # Calculate volume ratio from Polygon data
+                current_volume = stock.get('day', {}).get('v', 0)
+                prev_volume = stock.get('prevDay', {}).get('v', 1)
+                volume_ratio = current_volume / max(prev_volume, 1) if prev_volume > 0 else 1.0
+
                 if volume_ratio < self.min_volume_ratio:
                     continue
 
-                common_stocks.append(stock)
+                # Transform to consistent format
+                transformed_stock = {
+                    'ticker': ticker,
+                    'day': stock.get('day', {}),
+                    'prevDay': stock.get('prevDay', {}),
+                    'price': price,
+                    'volume_ratio': volume_ratio,
+                    'todaysChangePerc': stock.get('day', {}).get('c', 0) - stock.get('prevDay', {}).get('c', 0),
+                    'updated': stock.get('updated', 0)
+                }
+
+                common_stocks.append(transformed_stock)
 
             logger.info(f"Filtered universe: {len(common_stocks)} common stocks")
             return common_stocks
