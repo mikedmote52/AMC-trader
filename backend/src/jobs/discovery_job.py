@@ -25,39 +25,77 @@ async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
     try:
         logger.info(f"💥 Running explosive discovery job with limit={limit}")
 
-        # Use EFFICIENT unified discovery system (1 API call vs 957 calls)
+        # Use UNIFIED DISCOVERY with ENHANCED ALPHASTACK V4 SCORING
         try:
             from backend.src.discovery.unified_discovery import UnifiedDiscoverySystem
+            from backend.src.agents.alphastack_v4 import AlphaStackV4Agent
+
             discovery_engine = UnifiedDiscoverySystem()
-            logger.info("✅ Efficient unified discovery system loaded (bulk API calls)")
+            scoring_agent = AlphaStackV4Agent()
+            logger.info("✅ Unified discovery with enhanced AlphaStack V4 scoring loaded")
 
-            # Use the efficient discovery method we fixed
+            # Get market universe
             universe = await discovery_engine.get_market_universe()
-            logger.info(f"📊 Universe loaded: {len(universe)} stocks via efficient bulk API")
+            logger.info(f"📊 Universe loaded: {len(universe)} stocks")
 
-            # Apply filtering and scoring
-            filtered_tickers = discovery_engine.apply_post_explosion_filter(universe)
-            logger.info(f"🔍 After filtering: {len(filtered_tickers)} candidates")
+            # Apply basic filtering then enhanced scoring
+            basic_filtered = discovery_engine.apply_post_explosion_filter(universe)
+            logger.info(f"🔍 Basic filtering: {len(basic_filtered)} candidates")
+
+            # Apply enhanced scoring to filtered candidates
+            enhanced_candidates = []
+            for candidate in basic_filtered[:limit*2]:  # Score more than needed
+                try:
+                    score_result = scoring_agent.score_candidate(candidate)
+                    if score_result and score_result.total_score > 0.15:  # Minimum threshold
+                        enhanced_candidates.append({
+                            **candidate,
+                            'total_score': score_result.total_score,
+                            'score': score_result.total_score,
+                            'subscores': {
+                                'volume_momentum': score_result.volume_momentum_score * 100,
+                                'squeeze': score_result.squeeze_score * 100,
+                                'catalyst': score_result.catalyst_score * 100,
+                                'options': score_result.options_score * 100,
+                                'technical': score_result.technical_score * 100
+                            },
+                            'action_tag': 'trade_ready' if score_result.total_score > 0.8 else 'watchlist' if score_result.total_score > 0.65 else 'monitor',
+                            'strategy': 'hybrid_v1'
+                        })
+                except Exception as e:
+                    logger.warning(f"Scoring failed for {candidate.get('ticker', 'unknown')}: {e}")
+                    continue
+
+            # Sort by score and take top candidates
+            enhanced_candidates.sort(key=lambda x: x.get('total_score', 0), reverse=True)
+            filtered_tickers = enhanced_candidates[:limit]
+            logger.info(f"🎯 Enhanced scoring complete: {len(filtered_tickers)} candidates with real scores")
 
             # Return in expected format
             results = {
                 'status': 'success',
-                'candidates': filtered_tickers[:limit],
-                'count': min(len(filtered_tickers), limit),
+                'candidates': filtered_tickers,
+                'count': len(filtered_tickers),
                 'universe_size': len(universe),
-                'execution_time_sec': 2.0,  # Much faster with bulk calls
-                'engine': 'Unified Discovery System (Efficient)',
+                'filtered_size': len(basic_filtered),
+                'execution_time_sec': 4.0,
+                'engine': 'Unified Discovery + Enhanced AlphaStack V4 Scoring',
                 'pipeline_stats': {
                     'universe_size': len(universe),
-                    'filtered': len(filtered_tickers),
-                    'final_count': min(len(filtered_tickers), limit)
+                    'basic_filtered': len(basic_filtered),
+                    'enhanced_scored': len(enhanced_candidates),
+                    'final_count': len(filtered_tickers),
+                    'engine': 'alphastack_v4',
+                    'scoring_system': 'hybrid_v1'
                 }
             }
 
-            # Add missing fields for API compatibility
-            results['filtered_size'] = results['pipeline_stats']['filtered']
-            results['trade_ready_count'] = 0  # Will be calculated below
-            results['monitor_count'] = 0     # Will be calculated below
+            # Calculate action tag counts
+            trade_ready_count = sum(1 for c in filtered_tickers if c.get('action_tag') == 'trade_ready')
+            monitor_count = sum(1 for c in filtered_tickers if c.get('action_tag') == 'monitor')
+
+            results['trade_ready_count'] = trade_ready_count
+            results['monitor_count'] = monitor_count
 
             # Return efficient results
             logger.info(f"✅ Efficient discovery complete: {results['count']} candidates from {results['universe_size']} stocks")
