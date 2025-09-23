@@ -98,26 +98,35 @@ class MCPPolygonBridge:
                     # Convert MCP format to expected ticker format
                     tickers_data = []
                     for item in result['results'][:50]:  # Limit to top 50 gainers
-                        ticker_info = item.get('ticker', {})
-                        day_data = ticker_info.get('day', {})
-                        prev_data = ticker_info.get('prevDay', {})
+                        ticker_symbol = item.get('ticker', '')
+                        min_data = item.get('min', {})  # Real-time data is in 'min' section
+                        prev_data = item.get('prevDay', {})
+
+                        # Get real-time price and volume from min data
+                        current_price = min_data.get('c', 0)
+                        current_volume = min_data.get('v', 0)
+                        prev_close = prev_data.get('c', 0)
+
+                        # Calculate change
+                        change_pct = item.get('todaysChangePerc', 0)
+                        change_abs = item.get('todaysChange', 0)
 
                         ticker_data = {
-                            'ticker': ticker_info.get('ticker', ''),
-                            'todaysChangePerc': day_data.get('change_percent', 0),
-                            'todaysChange': day_data.get('change', 0),
+                            'ticker': ticker_symbol,
+                            'todaysChangePerc': change_pct,
+                            'todaysChange': change_abs,
                             'day': {
-                                'c': day_data.get('close', 0),
-                                'v': day_data.get('volume', 0),
-                                'vw': day_data.get('vwap', day_data.get('close', 0)),
-                                'o': day_data.get('open', 0),
-                                'h': day_data.get('high', 0),
-                                'l': day_data.get('low', 0)
+                                'c': current_price,
+                                'v': current_volume,
+                                'vw': min_data.get('vw', current_price),
+                                'o': min_data.get('o', current_price),
+                                'h': min_data.get('h', current_price),
+                                'l': min_data.get('l', current_price)
                             },
                             'prevDay': {
-                                'c': prev_data.get('close', 0),
-                                'v': prev_data.get('volume', 0),
-                                'vw': prev_data.get('vwap', prev_data.get('close', 0))
+                                'c': prev_close,
+                                'v': prev_data.get('v', 0),
+                                'vw': prev_data.get('vw', prev_close)
                             }
                         }
                         tickers_data.append(ticker_data)
