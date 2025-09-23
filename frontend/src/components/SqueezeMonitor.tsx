@@ -6,7 +6,7 @@ import { WS_URL } from "../config";
 import { getJSON, postJSON } from "../lib/api";
 import { polygonSqueezeDetector } from "../lib/polygonSqueezeDetector";
 
-// AlphaStack 4.1 Candidate Interface
+// Enhanced Candidate Interface with Hybrid V1 Support
 interface Candidate {
   symbol: string;
   ticker?: string;
@@ -22,6 +22,15 @@ interface Candidate {
   stop?: number;
   tp1?: number;
   tp2?: number;
+  subscores?: {
+    volume_momentum?: number;
+    squeeze?: number;
+    catalyst?: number;
+    options?: number;
+    technical?: number;
+  };
+  strategy?: string;
+  confidence?: number;
 }
 
 interface Telemetry {
@@ -76,93 +85,140 @@ export default function SqueezeMonitor() {
   const safeToTrade = telemetry?.system_health?.system_ready === true &&
                       telemetry?.production_health?.stale_data_detected === false;
 
-  // Use the existing working discovery system
+  // Enhanced candidate mapping functions
+  const mapStrategyCandidate = (candidates: any[], strategy: string): Candidate[] => {
+    return candidates.map((candidate: any) => {
+      const price = candidate.price || candidate.snapshot?.price || 0;
+      const score = candidate.total_score || candidate.score || 0;
+
+      return {
+        symbol: candidate.symbol || candidate.ticker || 'UNKNOWN',
+        ticker: candidate.symbol || candidate.ticker || 'UNKNOWN',
+        total_score: score,
+        score: score,
+        action_tag: candidate.action_tag || (score > 0.8 ? 'trade_ready' : score > 0.65 ? 'watchlist' : 'monitor'),
+        price: price,
+        snapshot: {
+          price: price,
+          intraday_relvol: candidate.snapshot?.intraday_relvol || 0
+        },
+        entry: candidate.entry || price,
+        stop: candidate.stop || price * 0.95,
+        tp1: candidate.tp1 || price * 1.10,
+        tp2: candidate.tp2 || price * 1.20,
+        subscores: candidate.subscores || {
+          volume_momentum: (score * 0.40) * 100,
+          squeeze: (score * 0.30) * 100,
+          catalyst: (score * 0.15) * 100,
+          options: (score * 0.10) * 100,
+          technical: (score * 0.05) * 100
+        },
+        strategy: strategy,
+        confidence: candidate.confidence || score
+      };
+    });
+  };
+
+  const mapContenderCandidates = (candidates: any[]): Candidate[] => {
+    return candidates.map((candidate: any) => {
+      const price = candidate.day?.c || candidate.prevDay?.c || 0;
+      const volume = candidate.day?.v || 0;
+      const change_percent = candidate.todaysChangePerc || 0;
+      const volume_ratio = candidate.volume_ratio || 1.0;
+      const score = candidate.filter_score || 0;
+
+      return {
+        symbol: candidate.ticker || 'UNKNOWN',
+        ticker: candidate.ticker || 'UNKNOWN',
+        total_score: score,
+        score: score,
+        action_tag: score > 0.7 ? 'trade_ready' : score > 0.5 ? 'watchlist' : 'monitor',
+        price: price,
+        snapshot: {
+          price: price,
+          intraday_relvol: volume_ratio
+        },
+        entry: price,
+        stop: price * 0.95,
+        tp1: price * 1.10,
+        tp2: price * 1.20,
+        subscores: {
+          volume_momentum: Math.min(volume_ratio * 25, 100),
+          squeeze: Math.min(score * 150, 100),
+          catalyst: Math.max(0, Math.min(change_percent * 10, 100)),
+          options: Math.min(volume / 1000000 * 50, 100),
+          technical: score * 100
+        },
+        strategy: 'contenders',
+        confidence: Math.min(score + 0.1, 1.0)
+      };
+    });
+  };
+
+  // Enhanced discovery system with strategy support
   const fetchData = async () => {
     try {
       setLoading(true);
       setError("");
 
-      console.log('🔄 Using existing discovery system...');
+      console.log('🔄 Using enhanced discovery system...');
 
-      // Call the contenders discovery system that has real live data
+      // Call the enhanced discovery system with strategy validation
       const discoveryURL = WS_URL.replace('wss', 'https').replace('ws', 'http').replace('/v1/stream', '');
-      const discoveryResponse = await fetch(`${discoveryURL}/discovery/contenders?limit=50`);
 
-      if (!discoveryResponse.ok) {
-        throw new Error(`Discovery system failed: ${discoveryResponse.status}`);
+      // Try strategy validation first to get hybrid_v1 data
+      let discoveryResponse = await fetch(`${discoveryURL}/discovery/strategy-validation?limit=50`);
+      let useStrategyData = false;
+
+      if (discoveryResponse.ok) {
+        const strategyData = await discoveryResponse.json();
+        if (strategyData.success && strategyData.comparison?.hybrid_v1?.candidates) {
+          console.log('✅ Using hybrid_v1 strategy data');
+          const candidates = mapStrategyCandidate(strategyData.comparison.hybrid_v1.candidates, 'hybrid_v1');
+          setCandidates(candidates);
+          setExplosive([]);
+          setTelemetry({
+            schema_version: "hybrid_v1_strategy",
+            system_health: { system_ready: true },
+            production_health: { stale_data_detected: false }
+          });
+          useStrategyData = true;
+        }
       }
 
-      const discoveryData = await discoveryResponse.json();
-      console.log('✅ Discovery data received:', discoveryData);
-      console.log('Discovery success:', discoveryData.success);
-      console.log('Discovery data array:', discoveryData.data);
-      console.log('Discovery count:', discoveryData.count || 0, 'candidates');
+      // Fallback to contenders if strategy validation fails
+      if (!useStrategyData) {
+        discoveryResponse = await fetch(`${discoveryURL}/discovery/contenders?limit=50`);
 
-      if (!discoveryData.success) {
-        throw new Error(`Discovery system returned success=false: ${JSON.stringify(discoveryData)}`);
+        if (!discoveryResponse.ok) {
+          throw new Error(`Discovery system failed: ${discoveryResponse.status}`);
+        }
+
+        const discoveryData = await discoveryResponse.json();
+        console.log('✅ Discovery fallback data received:', discoveryData);
+
+        if (!discoveryData.success) {
+          throw new Error(`Discovery system returned success=false: ${JSON.stringify(discoveryData)}`);
+        }
+
+        if (!discoveryData.data || !Array.isArray(discoveryData.data)) {
+          throw new Error(`No valid data array returned: ${JSON.stringify(discoveryData)}`);
+        }
+
+        if (discoveryData.data.length === 0) {
+          console.warn('⚠️ Discovery returned empty data array');
+        }
+
+        // Map the real live discovery contenders data
+        const candidates = mapContenderCandidates(discoveryData.data);
+        setCandidates(candidates);
+        setExplosive([]);
+        setTelemetry({
+          schema_version: "contenders_fallback",
+          system_health: { system_ready: true },
+          production_health: { stale_data_detected: false }
+        });
       }
-
-      if (!discoveryData.data || !Array.isArray(discoveryData.data)) {
-        throw new Error(`No valid data array returned: ${JSON.stringify(discoveryData)}`);
-      }
-
-      if (discoveryData.data.length === 0) {
-        console.warn('⚠️ Discovery returned empty data array');
-      }
-
-      // Map the real live discovery contenders data
-      const candidates = discoveryData.data.map((candidate: any, index: number) => {
-        console.log(`Mapping candidate ${index}:`, candidate);
-
-        const price = candidate.day?.c || 0;
-        const volume = candidate.day?.v || 0;
-        const change_percent = candidate.todaysChangePerc || 0;
-        const volume_ratio = candidate.volume_ratio || 1.0;
-        const score = candidate.filter_score || 0;
-
-        const mapped = {
-          symbol: candidate.ticker || 'UNKNOWN',
-          ticker: candidate.ticker || 'UNKNOWN',
-          total_score: score, // Already in 0-1 range
-          score: score,
-          action_tag: score > 0.7 ? 'trade_ready' : score > 0.5 ? 'watch' : 'monitor',
-          price: price,
-          snapshot: {
-            price: price,
-            intraday_relvol: volume_ratio,
-            volume: volume,
-            change_percent: change_percent
-          },
-          entry: price,
-          stop: price * 0.95, // 5% stop loss
-          tp1: price * 1.10,  // 10% target
-          tp2: price * 1.20,  // 20% target
-          // Add contenders-specific data
-          subscores: {
-            volume_surge: Math.min(volume_ratio * 20, 100), // Convert ratio to score
-            price_momentum: Math.max(0, Math.min(change_percent * 5, 100)), // Convert % to score
-            technical_score: score * 100
-          },
-          confidence: Math.min(score + 0.2, 1.0), // Boost confidence for real data
-          news_count: 0, // Not available in contenders endpoint
-          volume_spike: volume_ratio,
-          // Real short interest data will come from backend
-          short_interest: { available: false }
-        };
-
-        console.log(`Mapped candidate ${index}:`, mapped);
-        return mapped;
-      });
-
-      console.log('✅ Using real discovery candidates:', candidates.slice(0, 5).map(c => `${c.symbol}: ${(c.score * 100).toFixed(1)}%`));
-
-      setCandidates(candidates);
-      setExplosive([]);
-      setTelemetry({
-        schema_version: "alphastack_v4_discovery",
-        system_health: { system_ready: true },
-        production_health: { stale_data_detected: false }
-      });
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to load real data";
@@ -346,43 +402,112 @@ export default function SqueezeMonitor() {
   );
 }
 
-// Candidate Card Component with safety guards
+// Enhanced Candidate Card Component with Subscores
 function CandidateCard({ candidate, onBuy, disabled }: { candidate: any; onBuy: () => void; disabled: boolean }) {
+  const getActionTagColor = (tag: string) => {
+    switch (tag) {
+      case 'trade_ready': return '#22c55e';
+      case 'watchlist': return '#f59e0b';
+      case 'monitor': return '#6b7280';
+      default: return '#999';
+    }
+  };
+
+  const renderSubscores = () => {
+    if (!candidate.subscores) return null;
+
+    return (
+      <div style={{ marginTop: '8px', padding: '8px', background: '#0a0a0a', borderRadius: '4px' }}>
+        <div style={{ fontSize: '10px', color: '#888', marginBottom: '4px' }}>
+          {candidate.strategy === 'hybrid_v1' ? 'Hybrid V1 Components:' : 'Score Breakdown:'}
+        </div>
+        {candidate.subscores.volume_momentum !== undefined && (
+          <div style={{ fontSize: '10px', color: '#22c55e' }}>
+            Volume/Momentum: {candidate.subscores.volume_momentum.toFixed(1)}%
+          </div>
+        )}
+        {candidate.subscores.squeeze !== undefined && (
+          <div style={{ fontSize: '10px', color: '#f59e0b' }}>
+            Squeeze: {candidate.subscores.squeeze.toFixed(1)}%
+          </div>
+        )}
+        {candidate.subscores.catalyst !== undefined && (
+          <div style={{ fontSize: '10px', color: '#ef4444' }}>
+            Catalyst: {candidate.subscores.catalyst.toFixed(1)}%
+          </div>
+        )}
+        {candidate.subscores.options !== undefined && (
+          <div style={{ fontSize: '10px', color: '#8b5cf6' }}>
+            Options: {candidate.subscores.options.toFixed(1)}%
+          </div>
+        )}
+        {candidate.subscores.technical !== undefined && (
+          <div style={{ fontSize: '10px', color: '#06b6d4' }}>
+            Technical: {candidate.subscores.technical.toFixed(1)}%
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div style={cardStyle}>
+    <div style={{
+      ...cardStyle,
+      border: `2px solid ${getActionTagColor(candidate.action_tag)}`
+    }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
         <span style={{ fontSize: '18px', fontWeight: 700, color: '#fff' }}>{candidate.symbol}</span>
         <span style={{ fontSize: '14px', color: '#22c55e' }}>
           {typeof candidate.price === 'number' ? `$${candidate.price.toFixed(2)}` : '—'}
         </span>
       </div>
-      <div style={{ fontSize: '12px', color: '#999', marginBottom: '12px' }}>
-        <div>Score: {typeof candidate.score === 'number' ? `${candidate.score.toFixed(1)}%` : 'N/A'}</div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <span style={{
+          fontSize: '12px',
+          padding: '2px 6px',
+          borderRadius: '4px',
+          background: getActionTagColor(candidate.action_tag),
+          color: '#000',
+          fontWeight: 600
+        }}>
+          {candidate.action_tag?.toUpperCase() || 'UNKNOWN'}
+        </span>
+        {candidate.strategy && (
+          <span style={{ fontSize: '10px', color: '#888' }}>
+            {candidate.strategy}
+          </span>
+        )}
+      </div>
+
+      <div style={{ fontSize: '12px', color: '#999', marginBottom: '8px' }}>
+        <div>Score: {typeof candidate.score === 'number' ? `${(candidate.score * 100).toFixed(1)}%` : 'N/A'}</div>
         <div>RelVol: {typeof candidate.relvol === 'number' ? `${candidate.relvol.toFixed(1)}x` : 'N/A'}</div>
         {typeof candidate.entry === 'number' && <div>Entry: ${candidate.entry.toFixed(2)}</div>}
         {typeof candidate.stop === 'number' && <div>Stop: ${candidate.stop.toFixed(2)}</div>}
         {typeof candidate.tp1 === 'number' && <div>TP1: ${candidate.tp1.toFixed(2)}</div>}
-        {candidate.short_interest?.available ? (
-          <div style={{ color: '#f59e0b' }}>
-            SI: {candidate.short_interest.percent.toFixed(1)}%
-            ({candidate.short_interest.days_to_cover.toFixed(1)}d)
+        {candidate.confidence && (
+          <div style={{ color: '#06b6d4' }}>
+            Confidence: {(candidate.confidence * 100).toFixed(0)}%
           </div>
-        ) : (
-          <div style={{ color: '#666' }}>SI: Not Available</div>
         )}
       </div>
+
+      {renderSubscores()}
+
       <button
         onClick={onBuy}
         disabled={disabled}
         style={{
           ...buttonStyle,
           width: '100%',
-          background: disabled ? '#333' : '#22c55e',
+          background: disabled ? '#333' : getActionTagColor(candidate.action_tag),
           cursor: disabled ? 'not-allowed' : 'pointer',
-          opacity: disabled ? 0.5 : 1
+          opacity: disabled ? 0.5 : 1,
+          marginTop: '8px'
         }}
       >
-        {disabled ? 'Not Available' : 'Buy Paper'}
+        {disabled ? 'Not Available' : `Buy ${candidate.symbol}`}
       </button>
     </div>
   );

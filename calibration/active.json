@@ -63,22 +63,22 @@
         "technical": 0.05
       },
       "thresholds": {
-        "min_relvol_30": 0.3,
-        "min_atr_pct": 0.015,
-        "rsi_band": [55, 75],
+        "min_relvol_30": 0.8,
+        "min_atr_pct": 0.025,
+        "rsi_band": [60, 80],
         "ema_fast": 9,
         "ema_slow": 20,
-        "iv_percentile_min": 70,
-        "call_put_min": 1.5,
-        "short_interest_min": 0.10,
-        "float_max": 100000000,
+        "iv_percentile_min": 75,
+        "call_put_min": 1.8,
+        "short_interest_min": 0.12,
+        "float_max": 75000000,
         "alt_path_large_float": {
           "float_min": 150000000,
-          "short_interest_min": 0.15,
-          "borrow_fee_min": 0.15,
-          "utilization_min": 0.80
+          "short_interest_min": 0.18,
+          "borrow_fee_min": 0.20,
+          "utilization_min": 0.85
         },
-        "require_vwap_reclaim": false,
+        "require_vwap_reclaim": true,
         "session_overrides": {
           "premarket": {
             "enabled": true,
@@ -114,8 +114,8 @@
         "max_soft_pass": 2
       },
       "entry_rules": {
-        "watchlist_min": 50,
-        "trade_ready_min": 70
+        "watchlist_min": 65,
+        "trade_ready_min": 80
       },
       "safety_guardrails": {
         "max_candidates": 150,
@@ -128,12 +128,12 @@
   },
   "discovery_filters": {
     "price_cap": 150.0,
-    "price_min": 0.05,
-    "dollar_volume_min": 25000,
-    "volume_spike_min": 1.0,
-    "compression_percentile_max": 0.60,
-    "squeeze_score_threshold": 0.08,
-    "atr_pct_min": 0.01,
+    "price_min": 0.10,
+    "dollar_volume_min": 100000,
+    "volume_spike_min": 1.5,
+    "compression_percentile_max": 0.50,
+    "squeeze_score_threshold": 0.15,
+    "atr_pct_min": 0.02,
     "max_candidates": 100
   },
   "squeeze_weights": {
