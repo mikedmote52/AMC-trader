@@ -224,13 +224,20 @@ class ExplosiveDiscoveryEngine:
             else:
                 action_tag = 'monitor'
 
+            # Ensure scores are in 0-1 range for consistent API response
             return {
-                'total_score': total_score,
-                'score': total_score,
-                'subscores': subscores,
+                'total_score': round(total_score, 3),  # 0-1 range
+                'score': round(total_score, 3),        # 0-1 range
+                'subscores': {
+                    'volume_momentum': round(volume_score * 40, 1),  # 0-40 range (weighted)
+                    'squeeze': round(price_momentum * 30, 1),        # 0-30 range (weighted)
+                    'catalyst': round(activity_score * 15, 1),       # 0-15 range (weighted)
+                    'options': round(price_score * 10, 1),           # 0-10 range (weighted)
+                    'technical': round(technical_score * 5, 1)       # 0-5 range (weighted)
+                },
                 'action_tag': action_tag,
-                'volume_momentum_raw': volume_score,
-                'price_momentum_raw': price_momentum
+                'volume_momentum_raw': round(volume_score, 3),
+                'price_momentum_raw': round(price_momentum, 3)
             }
 
         except Exception as e:
@@ -243,7 +250,7 @@ class ExplosiveDiscoveryEngine:
             }
 
     def add_trading_levels(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
-        """Add entry, stop, and target levels"""
+        """Add entry, stop, target levels, and thesis"""
         price = candidate.get('prevDay', {}).get('c') or candidate.get('day', {}).get('c') or 0
 
         if price > 0:
@@ -252,11 +259,87 @@ class ExplosiveDiscoveryEngine:
             candidate['stop'] = round(price * 0.92, 2)   # 8% stop loss
             candidate['tp1'] = round(price * 1.20, 2)    # 20% target
             candidate['tp2'] = round(price * 1.50, 2)    # 50% target
+            candidate['tp3'] = round(price * 2.00, 2)    # 100% explosive target
 
             # Add proper RelVol data
             candidate['relvol'] = candidate.get('volume_ratio', 1.0)
 
+            # Generate trading thesis based on metrics
+            candidate['thesis'] = self.generate_thesis(candidate)
+
+            # Add price target estimation
+            candidate['price_target'] = self.estimate_price_target(candidate, price)
+
         return candidate
+
+    def generate_thesis(self, candidate: Dict[str, Any]) -> str:
+        """Generate trading thesis based on stock metrics"""
+        ticker = candidate.get('ticker', 'UNKNOWN')
+        volume_ratio = candidate.get('volume_ratio', 1.0)
+        change_pct = candidate.get('todaysChangePerc', 0)
+        price = candidate.get('price', 0)
+        action_tag = candidate.get('action_tag', 'monitor')
+
+        # Base thesis components
+        volume_surge = ""
+        if volume_ratio >= 5:
+            volume_surge = f"massive {volume_ratio:.1f}x volume surge"
+        elif volume_ratio >= 3:
+            volume_surge = f"strong {volume_ratio:.1f}x volume increase"
+        else:
+            volume_surge = f"{volume_ratio:.1f}x volume"
+
+        price_action = ""
+        if change_pct > 8:
+            price_action = f"strong upward momentum (+{change_pct:.1f}%)"
+        elif change_pct > 3:
+            price_action = f"building momentum (+{change_pct:.1f}%)"
+        elif change_pct > -5:
+            price_action = "consolidation phase"
+        else:
+            price_action = f"potential reversal setup ({change_pct:.1f}%)"
+
+        # Action-specific thesis
+        if action_tag == 'trade_ready':
+            return f"{ticker} shows {volume_surge} with {price_action}. Pre-breakout setup at ${price:.2f} with explosive potential."
+        elif action_tag == 'watchlist':
+            return f"{ticker} exhibits {volume_surge} and {price_action}. Monitor for breakout confirmation above resistance."
+        else:
+            return f"{ticker} demonstrates {volume_surge}. {price_action.capitalize()} suggests potential opportunity developing."
+
+    def estimate_price_target(self, candidate: Dict[str, Any], current_price: float) -> Dict[str, Any]:
+        """Estimate price targets based on explosive growth patterns"""
+        volume_ratio = candidate.get('volume_ratio', 1.0)
+        action_tag = candidate.get('action_tag', 'monitor')
+
+        # Base multipliers based on volume and setup quality
+        if action_tag == 'trade_ready' and volume_ratio >= 5:
+            # High probability explosive setup
+            conservative = current_price * 1.3   # 30%
+            moderate = current_price * 1.8       # 80%
+            aggressive = current_price * 2.5     # 150%
+        elif action_tag == 'trade_ready':
+            # Good setup
+            conservative = current_price * 1.2   # 20%
+            moderate = current_price * 1.5       # 50%
+            aggressive = current_price * 2.0     # 100%
+        elif action_tag == 'watchlist':
+            # Potential setup
+            conservative = current_price * 1.15  # 15%
+            moderate = current_price * 1.3       # 30%
+            aggressive = current_price * 1.6     # 60%
+        else:
+            # Monitor level
+            conservative = current_price * 1.1   # 10%
+            moderate = current_price * 1.2       # 20%
+            aggressive = current_price * 1.4     # 40%
+
+        return {
+            'conservative': round(conservative, 2),
+            'moderate': round(moderate, 2),
+            'aggressive': round(aggressive, 2),
+            'timeframe': '1-4 weeks'
+        }
 
     async def run_discovery(self, limit: int = 50) -> Dict[str, Any]:
         """Run complete explosive discovery pipeline"""
