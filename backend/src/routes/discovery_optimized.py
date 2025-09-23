@@ -31,8 +31,8 @@ class ExplosiveDiscoveryEngine:
     async def get_market_universe(self) -> List[Dict[str, Any]]:
         """Get market universe using direct Polygon API calls"""
         try:
-            import aiohttp
             import os
+            import httpx  # Use httpx instead of aiohttp
 
             api_key = os.getenv('POLYGON_API_KEY')
             if not api_key:
@@ -41,32 +41,44 @@ class ExplosiveDiscoveryEngine:
             logger.info("📡 Fetching market universe via direct Polygon API...")
 
             # Get both gainers and losers for a broader universe
-            async with aiohttp.ClientSession() as session:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 # Get gainers
                 gainers_url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/gainers"
                 gainers_params = {'apikey': api_key}
 
-                async with session.get(gainers_url, params=gainers_params, timeout=30) as response:
-                    if response.status == 200:
-                        gainers_data = await response.json()
+                try:
+                    gainers_response = await client.get(gainers_url, params=gainers_params)
+                    if gainers_response.status_code == 200:
+                        gainers_data = gainers_response.json()
                         gainers = gainers_data.get('tickers', [])
+                        logger.info(f"✅ Retrieved {len(gainers)} gainers")
                     else:
+                        logger.error(f"Gainers API failed: {gainers_response.status_code}")
                         gainers = []
+                except Exception as e:
+                    logger.error(f"Error fetching gainers: {e}")
+                    gainers = []
 
                 # Get losers (to catch reversal opportunities)
                 losers_url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/losers"
                 losers_params = {'apikey': api_key}
 
-                async with session.get(losers_url, params=losers_params, timeout=30) as response:
-                    if response.status == 200:
-                        losers_data = await response.json()
+                try:
+                    losers_response = await client.get(losers_url, params=losers_params)
+                    if losers_response.status_code == 200:
+                        losers_data = losers_response.json()
                         losers = losers_data.get('tickers', [])
+                        logger.info(f"✅ Retrieved {len(losers)} losers")
                     else:
+                        logger.error(f"Losers API failed: {losers_response.status_code}")
                         losers = []
+                except Exception as e:
+                    logger.error(f"Error fetching losers: {e}")
+                    losers = []
 
             # Combine both datasets
             universe = gainers + losers
-            logger.info(f"✅ Retrieved {len(gainers)} gainers + {len(losers)} losers = {len(universe)} total stocks")
+            logger.info(f"📊 Total universe: {len(gainers)} gainers + {len(losers)} losers = {len(universe)} stocks")
 
             if not universe:
                 logger.error("No market data retrieved from Polygon API")
