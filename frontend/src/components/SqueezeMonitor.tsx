@@ -22,6 +22,8 @@ interface Candidate {
   stop?: number;
   tp1?: number;
   tp2?: number;
+  tp3?: number;
+  relvol?: number;
   subscores?: {
     volume_momentum?: number;
     squeeze?: number;
@@ -31,6 +33,13 @@ interface Candidate {
   };
   strategy?: string;
   confidence?: number;
+  thesis?: string;
+  price_target?: {
+    conservative?: number;
+    moderate?: number;
+    aggressive?: number;
+    timeframe?: string;
+  };
 }
 
 interface Telemetry {
@@ -106,6 +115,8 @@ export default function SqueezeMonitor() {
         stop: candidate.stop || price * 0.95,
         tp1: candidate.tp1 || price * 1.10,
         tp2: candidate.tp2 || price * 1.20,
+        tp3: candidate.tp3 || price * 1.50,
+        relvol: candidate.relvol || candidate.volume_ratio || 1.0,
         subscores: candidate.subscores || {
           volume_momentum: (score * 0.40) * 100,
           squeeze: (score * 0.30) * 100,
@@ -114,7 +125,9 @@ export default function SqueezeMonitor() {
           technical: (score * 0.05) * 100
         },
         strategy: strategy,
-        confidence: candidate.confidence || score
+        confidence: candidate.confidence || score,
+        thesis: candidate.thesis,
+        price_target: candidate.price_target
       };
     });
   };
@@ -486,12 +499,55 @@ function CandidateCard({ candidate, onBuy, disabled }: { candidate: any; onBuy: 
         {typeof candidate.entry === 'number' && <div>Entry: ${candidate.entry.toFixed(2)}</div>}
         {typeof candidate.stop === 'number' && <div>Stop: ${candidate.stop.toFixed(2)}</div>}
         {typeof candidate.tp1 === 'number' && <div>TP1: ${candidate.tp1.toFixed(2)}</div>}
+        {typeof candidate.tp2 === 'number' && <div>TP2: ${candidate.tp2.toFixed(2)}</div>}
+        {typeof candidate.tp3 === 'number' && <div>TP3: ${candidate.tp3.toFixed(2)}</div>}
         {candidate.confidence && (
           <div style={{ color: '#06b6d4' }}>
             Confidence: {(candidate.confidence * 100).toFixed(0)}%
           </div>
         )}
       </div>
+
+      {/* Price Targets */}
+      {candidate.price_target && (
+        <div style={{
+          fontSize: '11px',
+          color: '#22c55e',
+          marginBottom: '8px',
+          padding: '6px',
+          background: '#0a0a0a',
+          borderRadius: '4px',
+          border: '1px solid #22c55e'
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: '4px' }}>Price Targets ({candidate.price_target.timeframe || '1-4 weeks'}):</div>
+          {candidate.price_target.conservative && (
+            <div>Conservative: ${candidate.price_target.conservative}</div>
+          )}
+          {candidate.price_target.moderate && (
+            <div>Moderate: ${candidate.price_target.moderate}</div>
+          )}
+          {candidate.price_target.aggressive && (
+            <div>Aggressive: ${candidate.price_target.aggressive}</div>
+          )}
+        </div>
+      )}
+
+      {/* Trading Thesis */}
+      {candidate.thesis && (
+        <div style={{
+          fontSize: '11px',
+          color: '#f59e0b',
+          marginBottom: '8px',
+          padding: '6px',
+          background: '#0a0a0a',
+          borderRadius: '4px',
+          border: '1px solid #f59e0b',
+          lineHeight: '1.4'
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: '4px' }}>Trading Thesis:</div>
+          <div>{candidate.thesis}</div>
+        </div>
+      )}
 
       {renderSubscores()}
 
