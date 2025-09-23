@@ -188,8 +188,13 @@ class MCPPolygonBridge:
                             current_volume = day_info.get('v', 0)
                             prev_close = prev_day.get('c', 0)
 
-                            # Ensure we have valid data
-                            if current_price > 0 and prev_close > 0 and current_volume > 0:
+                            # Debug logging for first few items
+                            if len(tickers_data) < 3:
+                                logger.info(f"DEBUG: Processing {ticker_symbol} - price={current_price}, volume={current_volume}, prev_close={prev_close}")
+                                logger.info(f"DEBUG: Raw item keys: {list(item.keys())}")
+
+                            # Ensure we have basic data (temporarily relaxed for debugging)
+                            if ticker_symbol and (current_price > 0 or prev_close > 0):
                                 change_pct = ((current_price - prev_close) / prev_close) * 100
                                 change_abs = current_price - prev_close
                                 volume_ratio = current_volume / max(prev_day.get('v', 1), 1)
