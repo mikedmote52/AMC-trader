@@ -146,12 +146,8 @@ export default function SqueezeMonitor() {
           confidence: Math.min(score + 0.2, 1.0), // Boost confidence for real data
           news_count: 0, // Not available in contenders endpoint
           volume_spike: volume_ratio,
-          // Add mock short interest data for high-volume candidates
-          short_interest: volume_ratio > 3.0 ? {
-            percent: Math.min(15 + (volume_ratio * 2), 35), // 15-35% short interest
-            days_to_cover: Math.max(0.1, 2.0 - (volume_ratio * 0.2)), // Lower days to cover for higher volume
-            available: true
-          } : { available: false }
+          // Real short interest data will come from backend
+          short_interest: { available: false }
         };
 
         console.log(`Mapped candidate ${index}:`, mapped);

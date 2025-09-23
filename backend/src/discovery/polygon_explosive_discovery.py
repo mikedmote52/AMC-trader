@@ -760,22 +760,182 @@ class PolygonExplosiveDiscovery:
         }
 
     async def _get_short_interest_data(self, symbol: str) -> Dict[str, Any]:
-        """Get short interest data using HTTP MCP client"""
+        """Get short interest data using native MCP functions or direct API"""
         try:
-            from backend.src.mcp_http_client import mcp_http_client
-            return await mcp_http_client.get_short_interest(symbol)
+            # Try native MCP function first (works in Claude environment)
+            import os
+            if not os.getenv('RENDER_SERVICE_NAME'):
+                # In Claude environment, use native MCP functions
+                try:
+                    # Call the native MCP function for short interest
+                    result = await mcp__polygon__list_short_interest(ticker=symbol, limit=1)
+
+                    if result.get('status') == 'OK' and result.get('results'):
+                        latest = result['results'][0]
+                        return {
+                            'short_interest': latest.get('short_interest', 0),
+                            'avg_daily_volume': latest.get('avg_daily_volume', 0),
+                            'days_to_cover': latest.get('days_to_cover', 0),
+                            'settlement_date': latest.get('settlement_date'),
+                            'available': True
+                        }
+                except NameError:
+                    # MCP function not available, fall back to direct API
+                    pass
+
+            # On Render deployment or if MCP not available, use direct Polygon API
+            return await self._get_short_interest_direct_api(symbol)
+
         except Exception as e:
             logger.warning(f"Failed to get short interest for {symbol}: {e}")
             return {'available': False}
 
-    async def _get_sentiment_data(self, symbol: str) -> Dict[str, Any]:
-        """Get news sentiment data using HTTP MCP client"""
+    async def _get_short_interest_direct_api(self, symbol: str) -> Dict[str, Any]:
+        """Get short interest using direct Polygon REST API"""
         try:
-            from backend.src.mcp_http_client import mcp_http_client
-            return await mcp_http_client.get_news_sentiment(symbol, hours_back=24)
+            import httpx
+            import os
+
+            api_key = os.getenv('POLYGON_API_KEY')
+            if not api_key:
+                return {'available': False}
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"https://api.polygon.io/v3/reference/tickers/{symbol}/short_interest",
+                    params={
+                        "apikey": api_key,
+                        "limit": 1,
+                        "order": "desc"
+                    }
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('results'):
+                        latest = data['results'][0]
+                        return {
+                            'short_interest': latest.get('short_interest', 0),
+                            'avg_daily_volume': latest.get('avg_daily_volume', 0),
+                            'days_to_cover': latest.get('days_to_cover', 0),
+                            'settlement_date': latest.get('settlement_date'),
+                            'available': True
+                        }
+
+                return {'available': False}
+
+        except Exception as e:
+            logger.warning(f"Direct API short interest failed for {symbol}: {e}")
+            return {'available': False}
+
+    async def _get_sentiment_data(self, symbol: str) -> Dict[str, Any]:
+        """Get news sentiment data using native MCP functions or direct API"""
+        try:
+            import os
+            if not os.getenv('RENDER_SERVICE_NAME'):
+                # In Claude environment, use native MCP functions
+                try:
+                    # Get recent news for sentiment analysis
+                    news_result = await mcp__polygon__list_ticker_news(ticker=symbol, limit=10)
+
+                    if news_result.get('status') == 'OK' and news_result.get('results'):
+                        articles = news_result['results']
+                        positive_count = 0
+                        negative_count = 0
+                        total_news = len(articles)
+
+                        # Simple sentiment analysis based on insights
+                        for article in articles:
+                            insights = article.get('insights', [])
+                            for insight in insights:
+                                if insight.get('ticker') == symbol:
+                                    sentiment = insight.get('sentiment', 'neutral')
+                                    if sentiment == 'positive':
+                                        positive_count += 1
+                                    elif sentiment == 'negative':
+                                        negative_count += 1
+
+                        sentiment_score = (positive_count - negative_count) / max(total_news, 1) if total_news > 0 else 0
+
+                        return {
+                            'sentiment_score': sentiment_score,
+                            'news_count': total_news,
+                            'positive_count': positive_count,
+                            'negative_count': negative_count,
+                            'available': True
+                        }
+                except NameError:
+                    # MCP function not available, fall back to direct API
+                    pass
+
+            # On Render deployment or if MCP not available, use direct Polygon API
+            return await self._get_sentiment_direct_api(symbol)
+
         except Exception as e:
             logger.warning(f"Failed to get sentiment for {symbol}: {e}")
-            return {'available': False}
+            return {'sentiment_score': 0, 'news_count': 0, 'available': False}
+
+    async def _get_sentiment_direct_api(self, symbol: str) -> Dict[str, Any]:
+        """Get news sentiment using direct Polygon REST API"""
+        try:
+            import httpx
+            import os
+            from datetime import datetime, timedelta
+
+            api_key = os.getenv('POLYGON_API_KEY')
+            if not api_key:
+                return {'sentiment_score': 0, 'news_count': 0, 'available': False}
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"https://api.polygon.io/v2/reference/news",
+                    params={
+                        "ticker": symbol,
+                        "limit": 10,
+                        "sort": "published_utc",
+                        "order": "desc",
+                        "apikey": api_key
+                    }
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('results'):
+                        articles = data['results']
+                        # Simple sentiment analysis - count positive/negative keywords
+                        positive_keywords = ['surge', 'growth', 'bullish', 'upgrade', 'buy', 'strong', 'beat', 'outperform']
+                        negative_keywords = ['decline', 'bearish', 'downgrade', 'sell', 'weak', 'miss', 'underperform']
+
+                        positive_count = 0
+                        negative_count = 0
+
+                        for article in articles:
+                            title = (article.get('title', '') + ' ' + article.get('description', '')).lower()
+                            for keyword in positive_keywords:
+                                if keyword in title:
+                                    positive_count += 1
+                                    break
+                            for keyword in negative_keywords:
+                                if keyword in title:
+                                    negative_count += 1
+                                    break
+
+                        total_news = len(articles)
+                        sentiment_score = (positive_count - negative_count) / max(total_news, 1) if total_news > 0 else 0
+
+                        return {
+                            'sentiment_score': sentiment_score,
+                            'news_count': total_news,
+                            'positive_count': positive_count,
+                            'negative_count': negative_count,
+                            'available': True
+                        }
+
+                return {'sentiment_score': 0, 'news_count': 0, 'available': False}
+
+        except Exception as e:
+            logger.warning(f"Direct API sentiment failed for {symbol}: {e}")
+            return {'sentiment_score': 0, 'news_count': 0, 'available': False}
 
     async def _get_options_activity_data(self, symbol: str) -> Dict[str, Any]:
         """Get options activity data using HTTP MCP client"""
