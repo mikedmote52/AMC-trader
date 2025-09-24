@@ -143,8 +143,8 @@ class ExplosiveDiscoveryEngine:
             for stock in universe:
                 ticker = stock.get('ticker', '')
 
-                # Skip warrants, rights, units, preferred stocks
-                if any(suffix in ticker for suffix in ['.WS', '.WT', '.U', '.RT', '.PR']):
+                # Skip warrants, rights, units, preferred stocks (including W suffix)
+                if any(suffix in ticker for suffix in ['.WS', '.WT', '.U', '.RT', '.PR']) or ticker.endswith('W'):
                     continue
 
                 # Get price and volume data from Polygon API response format
