@@ -208,31 +208,49 @@ class ExplosiveDiscoveryEngine:
 
             # Component scores (each 0-1 range)
 
-            # Volume Momentum (40% weight) - favor 2-8x volume (pre-breakout surge)
-            if 2 <= volume_ratio <= 8:
-                volume_score = 1.0  # Sweet spot for pre-breakout
-            elif volume_ratio < 2:
-                volume_score = volume_ratio / 2.0
-            else:  # >8x might be post-explosion
-                volume_score = max(0.3, 1.0 - ((volume_ratio - 8) / 20.0))
+            # Volume Momentum (40% weight) - more nuanced scoring
+            if volume_ratio >= 8:
+                volume_score = 1.0  # Exceptional volume
+            elif volume_ratio >= 5:
+                volume_score = 0.85  # Very strong
+            elif volume_ratio >= 3:
+                volume_score = 0.70  # Strong
+            elif volume_ratio >= 2:
+                volume_score = 0.55  # Moderate
+            else:
+                volume_score = volume_ratio / 2.0  # Linear below 2x
 
-            # Pre-Breakout Momentum (30% weight) - favor 3-12% moves, not 50%+
+            # Pre-Breakout Momentum (30% weight) - nuanced price movement scoring
             abs_change = abs(change_pct)
-            if 3 <= abs_change <= 12:
-                price_momentum = 1.0  # Pre-breakout sweet spot
-            elif abs_change < 3:
-                price_momentum = abs_change / 3.0  # Building momentum
-            else:  # >12% might be post-explosion
-                price_momentum = max(0.2, 1.0 - ((abs_change - 12) / 15.0))
+            if abs_change >= 10:
+                price_momentum = 0.95  # Strong momentum
+            elif abs_change >= 7:
+                price_momentum = 0.80  # Good momentum
+            elif abs_change >= 4:
+                price_momentum = 0.65  # Building momentum
+            elif abs_change >= 2:
+                price_momentum = 0.45  # Modest momentum
+            else:
+                price_momentum = abs_change / 2.0  # Linear below 2%
 
-            # Activity Level (15% weight)
-            activity_score = min(volume / 1000000, 1.0)  # Cap at 1M volume
+            # Activity Level (15% weight) - gradual scaling
+            activity_score = min(volume / 2000000, 1.0) * 0.8  # Scale to 80% max
 
-            # Price Action (10% weight)
-            price_score = 1.0 if 1.0 <= price <= 20.0 else 0.5  # Sweet spot for explosive moves
+            # Price Action (10% weight) - more gradual
+            if 2.0 <= price <= 15.0:
+                price_score = 0.85  # Good price range
+            elif 1.0 <= price <= 25.0:
+                price_score = 0.65  # Acceptable range
+            else:
+                price_score = 0.35  # Outside optimal range
 
-            # Technical (5% weight)
-            technical_score = 0.5  # Placeholder until we add RSI/EMA
+            # Technical (5% weight) - variable based on setup
+            if volume_ratio >= 4 and abs_change >= 5:
+                technical_score = 0.75  # Strong setup
+            elif volume_ratio >= 2.5 and abs_change >= 3:
+                technical_score = 0.55  # Good setup
+            else:
+                technical_score = 0.35  # Basic setup
 
             # Calculate weighted total (0-1 range) with proper differentiation
             total_score = (
