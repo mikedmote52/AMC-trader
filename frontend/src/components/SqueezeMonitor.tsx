@@ -179,15 +179,18 @@ export default function SqueezeMonitor() {
       // Call the enhanced discovery system with strategy validation
       const discoveryURL = WS_URL.replace('wss', 'https').replace('ws', 'http').replace('/v1/stream', '');
 
-      // Try strategy validation first to get hybrid_v1 data
-      let discoveryResponse = await fetch(`${discoveryURL}/discovery/strategy-validation?limit=50`);
+      // Try strategy validation first to get hybrid_v1 data (with cache busting)
+      const timestamp = Date.now();
+      let discoveryResponse = await fetch(`${discoveryURL}/discovery/strategy-validation?limit=15&_t=${timestamp}`);
       let useStrategyData = false;
 
       if (discoveryResponse.ok) {
         const strategyData = await discoveryResponse.json();
         if (strategyData.success && strategyData.comparison?.hybrid_v1?.candidates) {
           console.log('✅ Using hybrid_v1 strategy data');
+          console.log('🔍 First candidate data:', strategyData.comparison.hybrid_v1.candidates[0]);
           const candidates = mapStrategyCandidate(strategyData.comparison.hybrid_v1.candidates, 'hybrid_v1');
+          console.log('🔍 Mapped candidate data:', candidates[0]);
           setCandidates(candidates);
           setExplosive([]);
           setTelemetry({
@@ -201,7 +204,7 @@ export default function SqueezeMonitor() {
 
       // Fallback to contenders if strategy validation fails
       if (!useStrategyData) {
-        discoveryResponse = await fetch(`${discoveryURL}/discovery/contenders?limit=50`);
+        discoveryResponse = await fetch(`${discoveryURL}/discovery/contenders?limit=15&_t=${timestamp}`);
 
         if (!discoveryResponse.ok) {
           throw new Error(`Discovery system failed: ${discoveryResponse.status}`);
