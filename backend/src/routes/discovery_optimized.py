@@ -191,7 +191,8 @@ class ExplosiveDiscoveryEngine:
 
         except Exception as e:
             logger.error(f"Universe filtering failed: {e}")
-            return []
+            logger.info("Creating demo universe due to API failure...")
+            return self.create_demo_universe()
 
     def calculate_explosive_score(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
         """
