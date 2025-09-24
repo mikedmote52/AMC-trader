@@ -234,7 +234,7 @@ class ExplosiveDiscoveryEngine:
             # Technical (5% weight)
             technical_score = 0.5  # Placeholder until we add RSI/EMA
 
-            # Calculate weighted total (0-1 range)
+            # Calculate weighted total (0-1 range) with proper differentiation
             total_score = (
                 volume_score * 0.40 +
                 price_momentum * 0.30 +
@@ -243,8 +243,19 @@ class ExplosiveDiscoveryEngine:
                 technical_score * 0.05
             )
 
-            # Ensure score is capped at 1.0
-            total_score = min(total_score, 1.0)
+            # Apply quality multiplier for exceptional setups
+            quality_multiplier = 1.0
+
+            # Bonus for exceptional volume + price combination
+            if volume_ratio >= 3.0 and 5 <= abs(change_pct) <= 12:
+                quality_multiplier = 1.2
+            elif volume_ratio >= 5.0 and abs(change_pct) >= 3:
+                quality_multiplier = 1.1
+
+            total_score = total_score * quality_multiplier
+
+            # Ensure score is properly bounded (0-1 range)
+            total_score = max(0.0, min(total_score, 1.0))
 
             # Calculate subscores for display (0-100 range)
             subscores = {
@@ -255,10 +266,10 @@ class ExplosiveDiscoveryEngine:
                 'technical': round(technical_score * 5, 1)
             }
 
-            # Determine action tag
-            if total_score >= 0.30:
+            # Determine action tag with higher standards
+            if total_score >= 0.75:
                 action_tag = 'trade_ready'
-            elif total_score >= 0.20:
+            elif total_score >= 0.55:
                 action_tag = 'watchlist'
             else:
                 action_tag = 'monitor'
@@ -408,8 +419,8 @@ class ExplosiveDiscoveryEngine:
                 # Add trading levels
                 candidate = self.add_trading_levels(candidate)
 
-                # Only include candidates with meaningful scores
-                if score_data['total_score'] >= 0.05:  # 5% minimum
+                # Only include candidates with meaningful scores (higher bar)
+                if score_data['total_score'] >= 0.40:  # 40% minimum for quality
                     scored_candidates.append(candidate)
 
             # Sort by score (highest first)
@@ -455,7 +466,7 @@ class ExplosiveDiscoveryEngine:
 discovery_engine = ExplosiveDiscoveryEngine()
 
 @router.get("/contenders")
-async def get_contenders(limit: int = Query(50, le=100)):
+async def get_contenders(limit: int = Query(15, le=25)):
     """
     Get explosive growth contenders
     Main endpoint for frontend integration
