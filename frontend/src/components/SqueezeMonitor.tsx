@@ -116,13 +116,13 @@ export default function SqueezeMonitor() {
         tp1: candidate.tp1 || price * 1.10,
         tp2: candidate.tp2 || price * 1.20,
         tp3: candidate.tp3 || price * 1.50,
-        relvol: candidate.relvol || candidate.volume_ratio || 1.0,
+        relvol: candidate.relvol || candidate.volume_ratio || candidate.intraday_relative_volume || 1.0,
         subscores: candidate.subscores || {
-          volume_momentum: (score * 0.40) * 100,
-          squeeze: (score * 0.30) * 100,
-          catalyst: (score * 0.15) * 100,
-          options: (score * 0.10) * 100,
-          technical: (score * 0.05) * 100
+          volume_momentum: score * 40,  // FIXED: Don't multiply by 100 twice
+          squeeze: score * 30,
+          catalyst: score * 15,
+          options: score * 10,
+          technical: score * 5
         },
         strategy: strategy,
         confidence: candidate.confidence || score,
@@ -132,40 +132,45 @@ export default function SqueezeMonitor() {
     });
   };
 
-  const mapContenderCandidates = (candidates: any[]): Candidate[] => {
+  // NEW: Optimized discovery data mapping (replaces old contenders mapping)
+  const mapOptimizedDiscoveryData = (candidates: any[]): Candidate[] => {
     return candidates.map((candidate: any) => {
-      const price = candidate.day?.c || candidate.prevDay?.c || 0;
-      const volume = candidate.day?.v || 0;
+      const price = candidate.price || candidate.day?.c || candidate.prevDay?.c || 0;
       const change_percent = candidate.todaysChangePerc || 0;
-      const volume_ratio = candidate.volume_ratio || 1.0;
-      const score = candidate.filter_score || 0;
+      const relVol = candidate.relvol || candidate.volume_ratio || candidate.intraday_relative_volume || 1.0;
+      const score = candidate.total_score || candidate.score || 0;  // Backend provides 0-1 range
 
       return {
-        symbol: candidate.ticker || 'UNKNOWN',
-        ticker: candidate.ticker || 'UNKNOWN',
-        total_score: score,
-        score: score,
-        action_tag: score > 0.7 ? 'trade_ready' : score > 0.5 ? 'watchlist' : 'monitor',
+        symbol: candidate.ticker || candidate.symbol || 'UNKNOWN',
+        ticker: candidate.ticker || candidate.symbol || 'UNKNOWN',
+        total_score: score,  // Keep 0-1 range from backend
+        score: score,        // Keep 0-1 range from backend
+        action_tag: candidate.action_tag || (score >= 0.80 ? 'trade_ready' : score >= 0.65 ? 'watchlist' : 'monitor'),
         price: price,
-        snapshot: {
-          price: price,
-          intraday_relvol: volume_ratio
+        entry: candidate.entry || price * 1.01,
+        stop: candidate.stop || price * 0.95,
+        tp1: candidate.tp1 || price * 1.15,
+        tp2: candidate.tp2 || price * 1.35,
+        tp3: candidate.tp3 || price * 1.75,
+        relvol: relVol,  // FIXED: Proper RelVol mapping
+        subscores: candidate.subscores || {  // Use backend subscores if available
+          volume_momentum: 0,
+          squeeze: 0,
+          catalyst: 0,
+          options: 0,
+          technical: 0
         },
-        entry: price,
-        stop: price * 0.95,
-        tp1: price * 1.10,
-        tp2: price * 1.20,
-        subscores: {
-          volume_momentum: Math.min(volume_ratio * 25, 100),
-          squeeze: Math.min(score * 150, 100),
-          catalyst: Math.max(0, Math.min(change_percent * 10, 100)),
-          options: Math.min(volume / 1000000 * 50, 100),
-          technical: score * 100
-        },
-        strategy: 'contenders',
-        confidence: Math.min(score + 0.1, 1.0)
+        strategy: 'optimized_discovery_v2',
+        confidence: score * 100,  // Convert to percentage for display only
+        thesis: candidate.thesis || `Pre-breakout opportunity with ${relVol.toFixed(1)}x volume surge`
       };
     });
+  };
+
+  // LEGACY: Keep old function for compatibility but mark as deprecated
+  const mapContenderCandidates = (candidates: any[]): Candidate[] => {
+    console.warn('⚠️ Using deprecated mapContenderCandidates - should use mapOptimizedDiscoveryData');
+    return mapOptimizedDiscoveryData(candidates);
   };
 
   // Enhanced discovery system with strategy support
@@ -179,62 +184,41 @@ export default function SqueezeMonitor() {
       // Call the enhanced discovery system with strategy validation
       const discoveryURL = WS_URL.replace('wss', 'https').replace('ws', 'http').replace('/v1/stream', '');
 
-      // Try strategy validation first to get hybrid_v1 data (with cache busting)
+      // Use optimized discovery system directly (limit to 8 as per backend design)
       const timestamp = Date.now();
-      let discoveryResponse = await fetch(`${discoveryURL}/discovery/strategy-validation?limit=15&_t=${timestamp}`);
-      let useStrategyData = false;
+      console.log('🎯 Fetching from optimized discovery system (max 8 candidates)');
+      const discoveryResponse = await fetch(`${discoveryURL}/discovery/contenders?limit=8&_t=${timestamp}`);
 
-      if (discoveryResponse.ok) {
-        const strategyData = await discoveryResponse.json();
-        if (strategyData.success && strategyData.comparison?.hybrid_v1?.candidates) {
-          console.log('✅ Using hybrid_v1 strategy data');
-          console.log('🔍 First candidate data:', strategyData.comparison.hybrid_v1.candidates[0]);
-          const candidates = mapStrategyCandidate(strategyData.comparison.hybrid_v1.candidates, 'hybrid_v1');
-          console.log('🔍 Mapped candidate data:', candidates[0]);
-          setCandidates(candidates);
-          setExplosive([]);
-          setTelemetry({
-            schema_version: "hybrid_v1_strategy",
-            system_health: { system_ready: true },
-            production_health: { stale_data_detected: false }
-          });
-          useStrategyData = true;
-        }
+      if (!discoveryResponse.ok) {
+        throw new Error(`Optimized discovery failed: ${discoveryResponse.status}`);
       }
 
-      // Fallback to contenders if strategy validation fails
-      if (!useStrategyData) {
-        discoveryResponse = await fetch(`${discoveryURL}/discovery/contenders?limit=15&_t=${timestamp}`);
+      const discoveryData = await discoveryResponse.json();
+      console.log('✅ Optimized discovery data received:', discoveryData);
+      console.log('🔍 First candidate sample:', discoveryData.data?.[0]);
 
-        if (!discoveryResponse.ok) {
-          throw new Error(`Discovery system failed: ${discoveryResponse.status}`);
-        }
-
-        const discoveryData = await discoveryResponse.json();
-        console.log('✅ Discovery fallback data received:', discoveryData);
-
-        if (!discoveryData.success) {
-          throw new Error(`Discovery system returned success=false: ${JSON.stringify(discoveryData)}`);
-        }
-
-        if (!discoveryData.data || !Array.isArray(discoveryData.data)) {
-          throw new Error(`No valid data array returned: ${JSON.stringify(discoveryData)}`);
-        }
-
-        if (discoveryData.data.length === 0) {
-          console.warn('⚠️ Discovery returned empty data array');
-        }
-
-        // Map the real live discovery contenders data
-        const candidates = mapContenderCandidates(discoveryData.data);
-        setCandidates(candidates);
-        setExplosive([]);
-        setTelemetry({
-          schema_version: "contenders_fallback",
-          system_health: { system_ready: true },
-          production_health: { stale_data_detected: false }
-        });
+      if (!discoveryData.success) {
+        throw new Error(`Discovery system returned success=false`);
       }
+
+      if (!discoveryData.data || !Array.isArray(discoveryData.data)) {
+        throw new Error(`No valid data array returned`);
+      }
+
+      // Use improved mapping for optimized discovery data
+      const candidates = mapOptimizedDiscoveryData(discoveryData.data);
+      console.log(`🎯 Mapped ${candidates.length} optimized candidates`);
+      console.log('🔍 First mapped candidate:', candidates[0]);
+
+      setCandidates(candidates);
+      setExplosive([]);
+      setTelemetry({
+        schema_version: "optimized_discovery_v2",
+        system_health: { system_ready: true },
+        production_health: { stale_data_detected: false },
+        universe_size: discoveryData.universe_size || 0,
+        execution_time: discoveryData.execution_time_sec || 0
+      });
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to load real data";
