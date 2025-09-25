@@ -8,7 +8,7 @@ from datetime import datetime, time
 import httpx
 from ..shared.redis_client import get_redis_client
 from .portfolio import get_holdings
-from .discovery_optimized import UnifiedDiscoverySystem
+from .discovery_optimized import get_contenders
 from .learning import LearningSystem
 
 router = APIRouter()
@@ -65,8 +65,7 @@ class DailyUpdatesSystem:
         """8:00 AM - Pre-market opportunities and portfolio prep"""
         try:
             # Get current discoveries and portfolio
-            discovery_system = UnifiedDiscoverySystem()
-            discovery_results = await discovery_system.get_candidates(limit=10)
+            discovery_results = await get_contenders(limit=10)
             discoveries = discovery_results.get('candidates', [])
             portfolio_response = await get_holdings()
             portfolio = portfolio_response.get("data", {}).get("positions", []) if portfolio_response.get("success") else []
