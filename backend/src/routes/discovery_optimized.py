@@ -68,10 +68,11 @@ class ExplosiveDiscoveryEngine:
                 # Calculate volume per minute today
                 volume_per_minute_today = current_volume / max(market_open_minutes, 1)
 
-                # Use historical average (simplified - would normally query past 10 days)
-                typical_volume_per_minute = 1000  # Placeholder - would calculate from historical data
+                # Use average daily volume divided by trading minutes (390 per day) as baseline
+                avg_daily_volume = base_data.get('day', {}).get('v', current_volume)
+                typical_volume_per_minute = max(avg_daily_volume / 390, 1)  # 390 trading minutes per day
 
-                irv = volume_per_minute_today / max(typical_volume_per_minute, 1)
+                irv = volume_per_minute_today / typical_volume_per_minute
                 return min(irv, 20.0)  # Cap at 20x for sanity
 
         except Exception as e:
@@ -127,17 +128,17 @@ class ExplosiveDiscoveryEngine:
                             'put_oi': put_oi,
                             'cp_ratio': round(cp_ratio, 2),
                             'avg_iv': round(avg_iv * 100, 1),  # Convert to percentage
-                            'iv_percentile': 50  # Placeholder - would need historical IV data
+                            'iv_percentile': None  # Historical IV percentile not available
                         }
                     else:
                         enriched['options_data'] = {
-                            'call_oi': 0, 'put_oi': 0, 'cp_ratio': 1.0, 'avg_iv': 25.0, 'iv_percentile': 50
+                            'call_oi': 0, 'put_oi': 0, 'cp_ratio': 1.0, 'avg_iv': 0.0, 'iv_percentile': None
                         }
 
                 except Exception as e:
                     logger.debug(f"Options data unavailable for {ticker}: {e}")
                     enriched['options_data'] = {
-                        'call_oi': 0, 'put_oi': 0, 'cp_ratio': 1.0, 'avg_iv': 25.0, 'iv_percentile': 50
+                        'call_oi': 0, 'put_oi': 0, 'cp_ratio': 1.0, 'avg_iv': 0.0, 'iv_percentile': None
                     }
 
                 # Get short interest data from real sources only
@@ -201,17 +202,17 @@ class ExplosiveDiscoveryEngine:
         """Get real short interest data or return None if unavailable"""
         try:
             # Try to get real short interest data from available sources
-            # For now, since we don't have a real SI API, we'll skip short interest
-            # Rather than use fake data, we'll set minimal impact
+            # Short interest data requires specialized API - not available in current setup
+            # Return null values instead of assumptions
             return {
-                'short_interest_pct': 5.0,  # Minimal assumption
-                'days_to_cover': 1.0,       # Minimal assumption
-                'short_ratio': 0.05         # Minimal assumption
+                'short_interest_pct': None,  # Real data required
+                'days_to_cover': None,       # Real data required
+                'short_ratio': None         # Real data required
             }
         except Exception as e:
             logger.warning(f"Short interest data unavailable for {ticker}: {e}")
             return {
-                'short_interest_pct': 5.0, 'days_to_cover': 1.0, 'short_ratio': 0.05
+                'short_interest_pct': None, 'days_to_cover': None, 'short_ratio': None
             }
 
     async def get_market_universe(self) -> List[Dict[str, Any]]:
@@ -714,103 +715,6 @@ async def get_contenders(limit: int = Query(8, le=10)):
             'timestamp': datetime.now().isoformat()
         }
 
-@router.get("/strategy-validation")
-async def strategy_validation(limit: int = Query(50, le=100)):
-    """
-    Strategy validation endpoint for A/B testing
-    Returns both legacy and optimized results
-    """
-    try:
-        # Run optimized discovery
-        optimized_result = await discovery_engine.run_discovery(limit)
+# REMOVED: strategy-validation endpoint (duplicate system eliminated)
 
-        if optimized_result['status'] != 'success':
-            raise HTTPException(status_code=500, detail="Discovery engine failed")
-
-        # Create legacy simulation (slightly different scoring for comparison)
-        legacy_candidates = []
-        for candidate in optimized_result['candidates'][:]:
-            legacy_candidate = candidate.copy()
-            # Legacy focuses more on volume, less on other factors
-            legacy_score = min(candidate.get('volume_momentum_raw', 0) * 0.8, 1.0)
-            legacy_candidate['score'] = legacy_score
-            legacy_candidate['total_score'] = legacy_score
-            legacy_candidate['strategy'] = 'legacy_v0'
-            legacy_candidates.append(legacy_candidate)
-
-        # Hybrid candidates (our optimized system)
-        hybrid_candidates = optimized_result['candidates'][:]
-        for candidate in hybrid_candidates:
-            candidate['strategy'] = 'hybrid_v1'
-
-        return {
-            'success': True,
-            'comparison': {
-                'legacy_v0': {
-                    'strategy': 'legacy_v0',
-                    'status': 'success',
-                    'candidates': legacy_candidates,
-                    'count': len(legacy_candidates),
-                    'trade_ready_count': sum(1 for c in legacy_candidates if c.get('action_tag') == 'trade_ready')
-                },
-                'hybrid_v1': {
-                    'strategy': 'hybrid_v1',
-                    'status': 'success',
-                    'candidates': hybrid_candidates,
-                    'count': len(hybrid_candidates),
-                    'trade_ready_count': sum(1 for c in hybrid_candidates if c.get('action_tag') == 'trade_ready')
-                }
-            },
-            'meta': {
-                'execution_time_sec': optimized_result['execution_time_sec'],
-                'universe_size': optimized_result['universe_size'],
-                'engine': 'Optimized Discovery with Legacy Comparison'
-            },
-            'timestamp': datetime.now().isoformat()
-        }
-
-    except Exception as e:
-        logger.error(f"Strategy validation failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/test")
-async def test_discovery(
-    strategy: str = Query("hybrid_v1", regex="^(legacy_v0|hybrid_v1)$"),
-    limit: int = Query(50, le=100)
-):
-    """
-    Test specific strategy
-    """
-    try:
-        result = await discovery_engine.run_discovery(limit)
-
-        if result['status'] != 'success':
-            raise HTTPException(status_code=500, detail="Discovery failed")
-
-        # Apply strategy-specific processing
-        for candidate in result['candidates']:
-            candidate['strategy'] = strategy
-            if strategy == 'legacy_v0':
-                # Legacy boosts volume-heavy candidates
-                if candidate.get('volume_ratio', 1.0) > 4.0:
-                    candidate['score'] = min(candidate['score'] * 1.2, 1.0)
-
-        return {
-            'success': True,
-            'strategy': strategy,
-            'status': result['status'],
-            'candidates': result['candidates'],
-            'count': result['count'],
-            'trade_ready_count': result['trade_ready_count'],
-            'trace': {
-                'strategy': strategy,
-                'execution_time_sec': result['execution_time_sec'],
-                'universe_size': result['universe_size'],
-                'filtered_size': result['filtered_size']
-            },
-            'timestamp': datetime.now().isoformat()
-        }
-
-    except Exception as e:
-        logger.error(f"Strategy test failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# REMOVED: test discovery endpoint (duplicate system eliminated)
