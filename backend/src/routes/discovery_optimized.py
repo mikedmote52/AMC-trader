@@ -29,10 +29,10 @@ class ExplosiveDiscoveryEngine:
     def __init__(self):
         self.min_price = 0.50
         self.max_price = 100.0
-        self.min_irv = 3.0  # Intraday Relative Volume minimum
-        self.max_daily_change = 15.0  # Max 15% daily move - catch BEFORE explosion
-        self.min_daily_change = 5.0   # Min 5% for pre-breakout detection
-        self.max_candidates = 8  # Limit to 5-8 highest quality
+        self.min_irv = 4.0  # ULTRA-SELECTIVE: Require 4x+ intraday volume surge
+        self.max_daily_change = 20.0  # Allow up to 20% moves for more explosive potential
+        self.min_daily_change = 7.0   # Raise minimum to 7% - only strong momentum
+        # REMOVED: No artificial limits - return all candidates that meet ultra-high standards
         self.api_key = os.getenv('POLYGON_API_KEY')
 
     async def calculate_intraday_relative_volume(self, ticker: str, current_volume: int) -> float:
@@ -68,9 +68,9 @@ class ExplosiveDiscoveryEngine:
                 # Calculate volume per minute today
                 volume_per_minute_today = current_volume / max(market_open_minutes, 1)
 
-                # Use average daily volume divided by trading minutes (390 per day) as baseline
-                avg_daily_volume = base_data.get('day', {}).get('v', current_volume)
-                typical_volume_per_minute = max(avg_daily_volume / 390, 1)  # 390 trading minutes per day
+                # Use current volume as baseline for relative calculation
+                # Since we don't have historical minute-by-minute data, use current volume as proxy
+                typical_volume_per_minute = max(current_volume / 390, 1)  # 390 trading minutes per day
 
                 irv = volume_per_minute_today / typical_volume_per_minute
                 return min(irv, 20.0)  # Cap at 20x for sanity
@@ -281,7 +281,7 @@ class ExplosiveDiscoveryEngine:
                 price = day_data.get('c') or prev_day_data.get('c') or 0
                 daily_change_pct = stock.get('todaysChangePerc', 0)
 
-                # PRE-BREAKOUT FILTER: 5% to 15% daily moves only
+                # ULTRA-SELECTIVE: 7% to 20% daily moves for maximum explosive potential
                 if not (self.min_daily_change <= daily_change_pct <= self.max_daily_change):
                     continue
 
@@ -295,8 +295,8 @@ class ExplosiveDiscoveryEngine:
                 volume_ratio = current_volume / max(prev_volume, 1)
                 stock['volume_ratio'] = volume_ratio
 
-                # Volume filter - basic screening, will be refined with IRV later
-                if volume_ratio < 1.5:
+                # ULTRA-SELECTIVE: Require 2.5x+ daily volume (was 1.5x)
+                if volume_ratio < 2.5:
                     continue
 
                 filtered_stocks.append(stock)
@@ -326,24 +326,24 @@ class ExplosiveDiscoveryEngine:
             short_data = candidate.get('short_data', {})
             vwap = candidate.get('vwap', price)
 
-            # 1. Early Volume & Momentum (35% weight)
-            # IRV component (20% of total)
-            if irv >= 8:
+            # 1. EXPLOSIVE Volume & Momentum (35% weight) - ULTRA-SELECTIVE
+            # IRV component (20% of total) - Only reward exceptional volume
+            if irv >= 10:  # 10x+ volume = maximum explosive potential
                 irv_score = 1.0
-            elif irv >= 5:
-                irv_score = 0.90
-            elif irv >= 3:
-                irv_score = 0.75
-            elif irv >= 2:
-                irv_score = 0.55
+            elif irv >= 7:  # 7x+ volume = strong explosive setup
+                irv_score = 0.95
+            elif irv >= 5:  # 5x+ volume = good explosive potential
+                irv_score = 0.85
+            elif irv >= 4:  # 4x+ volume = minimum for consideration
+                irv_score = 0.70
             else:
-                irv_score = irv / 2.0
+                irv_score = 0.0  # Below 4x = not explosive enough
 
-            # VWAP reclaim component (10% of total)
-            vwap_reclaim_score = 1.0 if price >= vwap else 0.3
+            # VWAP reclaim component (10% of total) - Critical for breakouts
+            vwap_reclaim_score = 1.0 if price >= vwap else 0.2  # Stricter penalty
 
-            # Price momentum (5% of total)
-            momentum_score = min(abs(change_pct) / 15.0, 1.0)
+            # Price momentum (5% of total) - Reward stronger moves
+            momentum_score = min(abs(change_pct) / 20.0, 1.0)  # Scale to 20% max
 
             volume_momentum_total = (irv_score * 0.57 + vwap_reclaim_score * 0.29 + momentum_score * 0.14)
 
@@ -618,27 +618,19 @@ class ExplosiveDiscoveryEngine:
                 # Add VWAP-based trading levels
                 enriched_candidate = self.add_trading_levels(enriched_candidate)
 
-                # Higher quality bar - only scores ≥0.65 (was 0.40)
-                if score_data['total_score'] >= 0.65:
+                # ULTRA-SELECTIVE: Only scores ≥0.75 (75%) - elite opportunities only
+                if score_data['total_score'] >= 0.75:
                     scored_candidates.append(enriched_candidate)
 
-            # Sort by score (highest first)
+            # Sort by score (highest first) - no limits, return all elite candidates
             scored_candidates.sort(key=lambda x: x.get('total_score', 0), reverse=True)
 
-            # Limit to 5-8 highest quality candidates with score ≥0.80
-            trade_ready_candidates = [c for c in scored_candidates if c.get('total_score', 0) >= 0.80]
+            # ULTRA-SELECTIVE: Trade ready threshold raised to 0.85 (85%)
+            trade_ready_candidates = [c for c in scored_candidates if c.get('total_score', 0) >= 0.85]
+            watchlist_candidates = [c for c in scored_candidates if 0.75 <= c.get('total_score', 0) < 0.85]
 
-            # If we have more than 8 trade-ready, take top 8
-            if len(trade_ready_candidates) > self.max_candidates:
-                final_candidates = trade_ready_candidates[:self.max_candidates]
-            elif len(trade_ready_candidates) >= 5:
-                # Perfect range - use all trade-ready candidates
-                final_candidates = trade_ready_candidates
-            else:
-                # Fill to at least 5 with next highest scores, but cap at 8
-                additional_needed = min(5 - len(trade_ready_candidates), self.max_candidates - len(trade_ready_candidates))
-                watchlist_candidates = [c for c in scored_candidates if 0.65 <= c.get('total_score', 0) < 0.80]
-                final_candidates = trade_ready_candidates + watchlist_candidates[:additional_needed]
+            # NO LIMITS: Return all candidates that meet ultra-high standards
+            final_candidates = trade_ready_candidates + watchlist_candidates
 
             # Calculate summary stats
             trade_ready_count = sum(1 for c in final_candidates if c.get('action_tag') == 'trade_ready')
