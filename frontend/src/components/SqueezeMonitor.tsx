@@ -140,6 +140,10 @@ export default function SqueezeMonitor() {
       const relVol = candidate.relvol || candidate.volume_ratio || candidate.intraday_relative_volume || 1.0;
       const score = candidate.total_score || candidate.score || 0;  // Backend provides 0-1 range
 
+      // Extract short data if available
+      const shortData = candidate.short_data || {};
+      const optionsData = candidate.options_data || {};
+
       return {
         symbol: candidate.ticker || candidate.symbol || 'UNKNOWN',
         ticker: candidate.ticker || candidate.symbol || 'UNKNOWN',
@@ -153,6 +157,17 @@ export default function SqueezeMonitor() {
         tp2: candidate.tp2 || price * 1.35,
         tp3: candidate.tp3 || price * 1.75,
         relvol: relVol,  // FIXED: Proper RelVol mapping
+        // Add squeeze metrics
+        short_interest_pct: shortData.short_interest_pct || null,
+        days_to_cover: shortData.days_to_cover || null,
+        float_shares: candidate.float_shares || null,
+        market_cap: candidate.market_cap || null,
+        // Add options flow data
+        call_put_ratio: optionsData.cp_ratio || null,
+        options_volume: optionsData.total_volume || null,
+        avg_iv: optionsData.avg_iv || null,
+        // AI confidence
+        confidence: candidate.confidence || (score * 0.85), // Derive from score if not provided
         subscores: candidate.subscores || {  // Use backend subscores if available
           volume_momentum: 0,
           squeeze: 0,
@@ -481,19 +496,44 @@ function CandidateCard({ candidate, onBuy, disabled }: { candidate: any; onBuy: 
       </div>
 
       <div style={{ fontSize: '12px', color: '#999', marginBottom: '8px' }}>
-        <div>Score: {typeof candidate.score === 'number' ? `${(candidate.score * 100).toFixed(1)}%` : 'N/A'}</div>
-        <div>RelVol: {typeof candidate.relvol === 'number' ? `${candidate.relvol.toFixed(1)}x` : 'N/A'}</div>
+        <div>Score: {typeof candidate.score === 'number' ? `${(candidate.score <= 1 ? candidate.score * 100 : candidate.score).toFixed(1)}%` : 'N/A'}</div>
+        <div>RelVol: {typeof candidate.relvol === 'number' && candidate.relvol > 0 ? `${candidate.relvol.toFixed(1)}x` : '0.0x'}</div>
+        <div>SI%: {typeof candidate.short_interest_pct === 'number' ? `${candidate.short_interest_pct.toFixed(1)}%` : 'N/A'}</div>
+        <div>DTC: {typeof candidate.days_to_cover === 'number' ? `${candidate.days_to_cover.toFixed(1)}` : 'N/A'}</div>
+        <div>Float: {typeof candidate.float_shares === 'number' ? `${(candidate.float_shares / 1000000).toFixed(1)}M` : 'N/A'}</div>
         {typeof candidate.entry === 'number' && <div>Entry: ${candidate.entry.toFixed(2)}</div>}
         {typeof candidate.stop === 'number' && <div>Stop: ${candidate.stop.toFixed(2)}</div>}
         {typeof candidate.tp1 === 'number' && <div>TP1: ${candidate.tp1.toFixed(2)}</div>}
         {typeof candidate.tp2 === 'number' && <div>TP2: ${candidate.tp2.toFixed(2)}</div>}
         {typeof candidate.tp3 === 'number' && <div>TP3: ${candidate.tp3.toFixed(2)}</div>}
+      </div>
+
+      {/* AI Confidence and Options Flow */}
+      <div style={{ fontSize: '11px', marginBottom: '8px', padding: '6px', background: '#0a0a0a', borderRadius: '4px' }}>
         {candidate.confidence && (
           <div style={{ color: '#06b6d4' }}>
-            Confidence: {(candidate.confidence * 100).toFixed(0)}%
+            AI Confidence: {(candidate.confidence * 100).toFixed(0)}%
+          </div>
+        )}
+        {candidate.call_put_ratio && (
+          <div style={{ color: '#8b5cf6' }}>
+            C/P Ratio: {candidate.call_put_ratio.toFixed(2)}
+          </div>
+        )}
+        {candidate.avg_iv && (
+          <div style={{ color: '#f59e0b' }}>
+            IV: {candidate.avg_iv.toFixed(1)}%
           </div>
         )}
       </div>
+
+      {/* Risk/Reward Calculation */}
+      {candidate.entry && candidate.stop && candidate.tp1 && (
+        <div style={{ fontSize: '11px', color: '#22c55e', marginBottom: '8px', padding: '4px', background: '#0a0a0a', borderRadius: '4px' }}>
+          <div>R/R: 1:{((candidate.tp1 - candidate.entry) / (candidate.entry - candidate.stop)).toFixed(1)}</div>
+          <div>Risk: ${(candidate.entry - candidate.stop).toFixed(2)} ({((candidate.entry - candidate.stop) / candidate.entry * 100).toFixed(1)}%)</div>
+        </div>
+      )}
 
       {/* Price Targets */}
       {candidate.price_target && (
