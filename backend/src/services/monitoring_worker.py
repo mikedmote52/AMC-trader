@@ -12,7 +12,7 @@ import sys
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from contextlib import asynccontextmanager
-from .discovery_monitor import get_discovery_monitor
+# Discovery monitor removed - using optimized discovery system
 from .recommendation_tracker import get_recommendation_tracker, update_recommendation_performance
 from .buy_the_dip_detector import get_buy_the_dip_detector
 from ..shared.redis_client import get_redis_client
@@ -162,7 +162,8 @@ class MonitoringWorker:
                 alerts_processed = 0
                 
                 # Check for critical system issues
-                monitor = get_discovery_monitor()
+                # Discovery monitor removed - using optimized discovery system
+                monitor = None
                 health_status = await monitor.get_current_health_status()
                 
                 # Generate alerts for critical health issues
@@ -208,7 +209,8 @@ class MonitoringWorker:
                 
                 # Check discovery monitor health
                 try:
-                    monitor = get_discovery_monitor()
+                    # Discovery monitor removed - using optimized discovery system
+                monitor = None
                     discovery_health = await monitor.get_current_health_status()
                     health_data['components']['discovery_monitor'] = {
                         'status': discovery_health.get('status', 'unknown'),

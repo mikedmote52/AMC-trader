@@ -16,7 +16,8 @@ from datetime import datetime
 
 # Import table creation SQL from all modules
 from ..services.performance_analytics import CREATE_PERFORMANCE_METRICS_TABLE
-from ..services.discovery_tracker import CREATE_DISCOVERY_TABLES
+# Discovery tracker tables removed - using optimized discovery system
+CREATE_DISCOVERY_TABLES = []  # Empty - no additional tables needed
 from ..services.thesis_accuracy_tracker import CREATE_THESIS_ACCURACY_TABLE
 from ..services.market_timing_analyzer import CREATE_MARKET_TIMING_TABLE
 from ..services.risk_management_tracker import CREATE_RISK_TABLES

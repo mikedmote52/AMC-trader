@@ -9,7 +9,7 @@ from typing import List, Dict, Optional, Union
 import json
 import asyncio
 from datetime import datetime, timedelta
-from ..services.discovery_monitor import get_discovery_monitor
+# Discovery monitor removed - using optimized discovery system
 from ..services.recommendation_tracker import get_recommendation_tracker
 from ..services.buy_the_dip_detector import get_buy_the_dip_detector
 from ..shared.database import get_db_pool
@@ -23,7 +23,8 @@ router = APIRouter()
 async def get_discovery_health():
     """Get current discovery pipeline health status with alerts"""
     try:
-        monitor = get_discovery_monitor()
+        # Discovery monitor removed - using optimized discovery system
+        monitor = None
         health_status = await monitor.get_current_health_status()
         
         return {
@@ -41,7 +42,8 @@ async def get_discovery_flow_stats(
 ):
     """Get recent discovery flow statistics showing stock filtering stages"""
     try:
-        monitor = get_discovery_monitor()
+        # Discovery monitor removed - using optimized discovery system
+        monitor = None
         flow_stats = await monitor.get_recent_flow_stats(hours=hours_back)
         
         # Calculate summary metrics
@@ -439,7 +441,8 @@ async def get_monitoring_status():
         
         # Check discovery monitor
         try:
-            monitor = get_discovery_monitor()
+            # Discovery monitor removed - using optimized discovery system
+        monitor = None
             health = await monitor.get_current_health_status()
             status["components"]["discovery_monitor"] = {
                 "status": health.get("status", "unknown"),

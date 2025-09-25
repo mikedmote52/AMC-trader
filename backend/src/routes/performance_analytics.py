@@ -6,7 +6,7 @@ import asyncio
 
 from ..services.performance_dashboard import PerformanceDashboard
 from ..services.performance_analytics import PerformanceAnalytics
-from ..services.discovery_tracker import DiscoveryPerformanceTracker
+# Discovery tracker removed - using optimized discovery system
 from ..services.thesis_accuracy_tracker import ThesisAccuracyTracker
 from ..services.market_timing_analyzer import MarketTimingAnalyzer
 from ..services.risk_management_tracker import RiskManagementTracker
@@ -17,7 +17,8 @@ router = APIRouter(prefix="/analytics", tags=["Performance Analytics"])
 # Initialize analytics services
 dashboard = PerformanceDashboard()
 performance_analytics = PerformanceAnalytics()
-discovery_tracker = DiscoveryPerformanceTracker()
+# Discovery tracker removed - using optimized discovery system
+discovery_tracker = None
 thesis_tracker = ThesisAccuracyTracker()
 timing_analyzer = MarketTimingAnalyzer()
 risk_tracker = RiskManagementTracker()
