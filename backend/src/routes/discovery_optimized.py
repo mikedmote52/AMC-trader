@@ -198,6 +198,19 @@ class ExplosiveDiscoveryEngine:
             logger.warning(f"VWAP calculation failed for {ticker}: {e}")
             return current_price
 
+    def get_miss_reason(self, irv: float, score: float, change_pct: float) -> str:
+        """Determine why a candidate was near-miss instead of elite"""
+        reasons = []
+
+        if irv < 4.0:
+            reasons.append(f"IRV {irv:.1f}x < 4.0x needed")
+        if score < 0.75:
+            reasons.append(f"Score {score*100:.1f}% < 75% needed")
+        if change_pct < 7.0:
+            reasons.append(f"Change {change_pct:.1f}% < 7% needed")
+
+        return " | ".join(reasons) if reasons else "Close to elite"
+
     async def get_real_short_interest(self, ticker: str) -> Dict[str, Any]:
         """Get real short interest data or return None if unavailable"""
         try:
@@ -228,37 +241,24 @@ class ExplosiveDiscoveryEngine:
                 universe = []
                 seen_tickers = set()
 
-                # 1. Get modest gainers (5-15% range for pre-breakout)
-                gainers_url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/gainers"
-                try:
-                    gainers_response = await client.get(gainers_url, params={'apikey': self.api_key})
-                    if gainers_response.status_code == 200:
-                        gainers_data = gainers_response.json()
-                        for stock in gainers_data.get('tickers', []):
-                            ticker = stock.get('ticker', '')
-                            if ticker not in seen_tickers:
-                                universe.append(stock)
-                                seen_tickers.add(ticker)
-                        logger.info(f"✅ Retrieved {len(gainers_data.get('tickers', []))} gainers")
-                except Exception as e:
-                    logger.error(f"Error fetching gainers: {e}")
-
-                # 2. Get full market snapshot for broader coverage
+                # Get complete market snapshot (includes gainers, losers, and everything else)
+                # Single API call replaces separate gainers + full market calls
                 try:
                     all_tickers_url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
                     all_response = await client.get(all_tickers_url, params={'apikey': self.api_key})
                     if all_response.status_code == 200:
                         all_data = all_response.json()
-                        new_count = 0
                         for stock in all_data.get('tickers', []):
                             ticker = stock.get('ticker', '')
-                            if ticker not in seen_tickers:
+                            if ticker and ticker not in seen_tickers:
                                 universe.append(stock)
                                 seen_tickers.add(ticker)
-                                new_count += 1
-                        logger.info(f"✅ Added {new_count} new stocks from full snapshot")
+                        logger.info(f"✅ Retrieved {len(universe)} stocks from market snapshot")
+                    else:
+                        logger.error(f"Market snapshot failed: {all_response.status_code}")
                 except Exception as e:
-                    logger.info(f"Full snapshot failed (expected): {e}")
+                    logger.error(f"Market snapshot error: {e}")
+                    return []
 
             logger.info(f"📊 Total deduplicated universe: {len(universe)} stocks")
 
@@ -281,8 +281,9 @@ class ExplosiveDiscoveryEngine:
                 price = day_data.get('c') or prev_day_data.get('c') or 0
                 daily_change_pct = stock.get('todaysChangePerc', 0)
 
-                # ULTRA-SELECTIVE: 7% to 20% daily moves for maximum explosive potential
-                if not (self.min_daily_change <= daily_change_pct <= self.max_daily_change):
+                # Allow broader daily change range for universe collection (filter later in scoring)
+                # Changed from 7-20% to 2-50% to capture more potential candidates
+                if not (-50.0 <= daily_change_pct <= 50.0):
                     continue
 
                 # Price filter
@@ -295,13 +296,18 @@ class ExplosiveDiscoveryEngine:
                 volume_ratio = current_volume / max(prev_volume, 1)
                 stock['volume_ratio'] = volume_ratio
 
-                # ULTRA-SELECTIVE: Require 2.5x+ daily volume (was 1.5x)
-                if volume_ratio < 2.5:
+                # Broader volume filter for universe collection (tighten later in scoring)
+                # Changed from 2.5x to 1.5x to capture more candidates
+                if volume_ratio < 1.5:
                     continue
 
                 filtered_stocks.append(stock)
 
-            logger.info(f"Pre-filtered universe: {len(filtered_stocks)} stocks (5-15% range)")
+                # Reasonable limit to prevent timeout while maintaining good coverage
+                if len(filtered_stocks) >= 1000:
+                    break
+
+            logger.info(f"Pre-filtered universe: {len(filtered_stocks)} stocks (expanded range)")
             return filtered_stocks
 
         except Exception as e:
@@ -314,17 +320,21 @@ class ExplosiveDiscoveryEngine:
         Returns score between 0.0 and 1.0 (0% to 100%)
         """
         try:
-            # Get enhanced metrics
-            irv = candidate.get('intraday_relative_volume', 1.0)
-            volume_ratio = candidate.get('volume_ratio', 1.0)
-            change_pct = candidate.get('todaysChangePerc', 0)
-            price = candidate.get('day', {}).get('c') or candidate.get('prevDay', {}).get('c', 0)
-            volume = candidate.get('day', {}).get('v', 0)
+            # Get enhanced metrics with comprehensive null handling
+            irv = float(candidate.get('intraday_relative_volume') or 1.0)
+            volume_ratio = float(candidate.get('volume_ratio') or 1.0)
+            change_pct = float(candidate.get('todaysChangePerc') or 0)
 
-            # Get enriched data
-            options_data = candidate.get('options_data', {})
-            short_data = candidate.get('short_data', {})
-            vwap = candidate.get('vwap', price)
+            # Get price with fallback chain
+            day_data = candidate.get('day') or {}
+            prev_day_data = candidate.get('prevDay') or {}
+            price = float(day_data.get('c') or prev_day_data.get('c') or 1.0)
+            volume = float(day_data.get('v') or 0)
+
+            # Get enriched data with safe defaults
+            options_data = candidate.get('options_data') or {}
+            short_data = candidate.get('short_data') or {}
+            vwap = float(candidate.get('vwap') or price)
 
             # 1. EXPLOSIVE Volume & Momentum (35% weight) - ULTRA-SELECTIVE
             # IRV component (20% of total) - Only reward exceptional volume
@@ -348,9 +358,9 @@ class ExplosiveDiscoveryEngine:
             volume_momentum_total = (irv_score * 0.57 + vwap_reclaim_score * 0.29 + momentum_score * 0.14)
 
             # 2. Float & Short Squeeze Potential (20% weight)
-            # Short interest factor
-            si_pct = short_data.get('short_interest_pct', 10)
-            days_to_cover = short_data.get('days_to_cover', 2)
+            # Short interest factor with safe defaults
+            si_pct = float(short_data.get('short_interest_pct') or 10)
+            days_to_cover = float(short_data.get('days_to_cover') or 2)
 
             if si_pct >= 30 and days_to_cover >= 3:
                 squeeze_score = 1.0  # High squeeze potential
@@ -362,7 +372,8 @@ class ExplosiveDiscoveryEngine:
                 squeeze_score = 0.4
 
             # 3. Catalyst Potential (15% weight)
-            # Volume surge indicates news/catalyst
+            # Volume surge indicates news/catalyst - ensure volume_ratio is safe
+            volume_ratio = float(candidate.get('volume_ratio') or 1.0)
             if irv >= 5 and volume_ratio >= 4:
                 catalyst_score = 1.0  # Strong catalyst evidence
             elif irv >= 3 and volume_ratio >= 2.5:
@@ -373,8 +384,8 @@ class ExplosiveDiscoveryEngine:
                 catalyst_score = 0.3
 
             # 4. Options Flow & IV (15% weight)
-            cp_ratio = options_data.get('cp_ratio', 1.0)
-            avg_iv = options_data.get('avg_iv', 25)
+            cp_ratio = float(options_data.get('cp_ratio') or 1.0)
+            avg_iv = float(options_data.get('avg_iv') or 25)
 
             # Call heavy with high IV is bullish
             if cp_ratio >= 2.0 and avg_iv >= 40:
@@ -593,66 +604,105 @@ class ExplosiveDiscoveryEngine:
                     'error': 'No universe data available'
                 }
 
-            # Enrich and score candidates with IRV filtering
-            scored_candidates = []
+            # Enrich and score candidates with dual-tier filtering
+            elite_candidates = []
+            near_miss_candidates = []
+
             for candidate in universe:
-                # First enrich with real-time features
-                ticker = candidate.get('ticker', '')
-                enriched_candidate = await self.enrich_realtime_features(ticker, candidate)
+                try:
+                    # First enrich with real-time features
+                    ticker = candidate.get('ticker', '')
+                    if not ticker:
+                        continue
 
-                # Skip if enrichment completely failed
-                if enriched_candidate is None:
-                    logger.debug(f"❌ {ticker}: Enrichment failed - skipping")
+                    enriched_candidate = await self.enrich_realtime_features(ticker, candidate)
+
+                    # Skip if enrichment completely failed
+                    if enriched_candidate is None:
+                        logger.debug(f"❌ {ticker}: Enrichment failed - skipping")
+                        continue
+
+                    # Calculate scoring with enriched data
+                    score_data = self.calculate_explosive_score(enriched_candidate)
+                    if not score_data or score_data.get('total_score') is None:
+                        logger.debug(f"❌ {ticker}: Scoring failed - skipping")
+                        continue
+
+                    enriched_candidate.update(score_data)
+
+                    # Add VWAP-based trading levels
+                    enriched_candidate = self.add_trading_levels(enriched_candidate)
+
+                    # Get key metrics for tier classification with guaranteed float conversion
+                    irv = float(enriched_candidate.get('intraday_relative_volume') or 0.0)
+                    score = float(score_data.get('total_score') or 0.0)
+                    change_pct = abs(float(enriched_candidate.get('todaysChangePerc') or 0.0))
+
+                    # Skip if score is invalid (scoring function failed)
+                    if score == 0.0:
+                        logger.debug(f"⚠️ {ticker}: Invalid score, skipping")
+                        continue
+
+                    # ULTRA-SELECTIVE TIER: 4.0x IRV + 75% score (elite opportunities)
+                    if irv >= self.min_irv and score >= 0.75:
+                        enriched_candidate['tier'] = 'elite'
+                        elite_candidates.append(enriched_candidate)
+                        logger.debug(f"✅ ELITE: {ticker}: {score*100:.1f}% score | {irv:.1f}x IRV")
+
+                    # NEAR-MISS TIER: Close but not quite elite (monitoring candidates)
+                    elif (irv >= 2.5 and score >= 0.60) or (irv >= 3.0 and score >= 0.55) or (change_pct >= 5 and score >= 0.50):
+                        # Tag as near-miss for monitoring
+                        enriched_candidate['tier'] = 'near_miss'
+                        enriched_candidate['miss_reason'] = self.get_miss_reason(irv, score, change_pct)
+                        near_miss_candidates.append(enriched_candidate)
+                        logger.debug(f"⚠️  NEAR-MISS: {ticker}: {score*100:.1f}% score | {irv:.1f}x IRV | {enriched_candidate['miss_reason']}")
+
+                except Exception as e:
+                    logger.debug(f"Error processing {candidate.get('ticker', 'unknown')}: {e}")
                     continue
 
-                # Apply IRV filter - must maintain ≥3.0 for 30+ minutes (simplified check)
-                irv = enriched_candidate.get('intraday_relative_volume', 1.0)
-                if irv < self.min_irv:
-                    logger.debug(f"❌ {ticker}: IRV too low ({irv:.1f} < {self.min_irv})")
-                    continue
 
-                # Calculate new scoring with enriched data
-                score_data = self.calculate_explosive_score(enriched_candidate)
-                enriched_candidate.update(score_data)
+            # Sort both tiers by score (highest first)
+            elite_candidates.sort(key=lambda x: x.get('total_score', 0), reverse=True)
+            near_miss_candidates.sort(key=lambda x: x.get('total_score', 0), reverse=True)
 
-                # Add VWAP-based trading levels
-                enriched_candidate = self.add_trading_levels(enriched_candidate)
-
-                # ULTRA-SELECTIVE: Only scores ≥0.75 (75%) - elite opportunities only
-                if score_data['total_score'] >= 0.75:
-                    scored_candidates.append(enriched_candidate)
-
-            # Sort by score (highest first) - no limits, return all elite candidates
-            scored_candidates.sort(key=lambda x: x.get('total_score', 0), reverse=True)
+            # Limit near-miss to top 10 for monitoring purposes
+            near_miss_candidates = near_miss_candidates[:10]
 
             # ULTRA-SELECTIVE: Trade ready threshold raised to 0.85 (85%)
-            trade_ready_candidates = [c for c in scored_candidates if c.get('total_score', 0) >= 0.85]
-            watchlist_candidates = [c for c in scored_candidates if 0.75 <= c.get('total_score', 0) < 0.85]
-
-            # NO LIMITS: Return all candidates that meet ultra-high standards
-            final_candidates = trade_ready_candidates + watchlist_candidates
+            trade_ready_candidates = [c for c in elite_candidates if c.get('total_score', 0) >= 0.85]
+            watchlist_candidates = [c for c in elite_candidates if 0.75 <= c.get('total_score', 0) < 0.85]
 
             # Calculate summary stats
-            trade_ready_count = sum(1 for c in final_candidates if c.get('action_tag') == 'trade_ready')
-            watchlist_count = sum(1 for c in final_candidates if c.get('action_tag') == 'watchlist')
-            monitor_count = len(final_candidates) - trade_ready_count - watchlist_count
+            trade_ready_count = len(trade_ready_candidates)
+            watchlist_count = len(watchlist_candidates)
+            near_miss_count = len(near_miss_candidates)
 
             execution_time = time.time() - start_time
 
             result = {
                 'status': 'success',
-                'candidates': final_candidates,
-                'count': len(final_candidates),
+                'candidates': elite_candidates,  # Main candidates (elite tier)
+                'near_miss_candidates': near_miss_candidates,  # Monitoring tier
+                'count': len(elite_candidates),
                 'trade_ready_count': trade_ready_count,
                 'watchlist_count': watchlist_count,
-                'monitor_count': monitor_count,
+                'near_miss_count': near_miss_count,
                 'universe_size': len(universe),
-                'filtered_size': len(scored_candidates),
+                'elite_qualified': len(elite_candidates),
+                'near_miss_qualified': near_miss_count,
                 'execution_time_sec': round(execution_time, 2),
-                'engine': 'Optimized Explosive Discovery v1.0'
+                'engine': 'Ultra-Selective Discovery with Near-Miss Monitoring v1.1',
+                'ultra_selective_status': {
+                    'min_irv': self.min_irv,
+                    'min_score': 0.75,
+                    'min_change': self.min_daily_change,
+                    'max_change': self.max_daily_change,
+                    'active': True
+                }
             }
 
-            logger.info(f"Discovery complete: {len(final_candidates)} candidates in {execution_time:.2f}s")
+            logger.info(f"Discovery complete: {len(elite_candidates)} elite + {near_miss_count} near-miss candidates in {execution_time:.2f}s")
             return result
 
         except Exception as e:
