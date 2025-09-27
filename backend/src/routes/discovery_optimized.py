@@ -72,84 +72,130 @@ class ExplosiveDiscoveryEngine:
             }
         }
 
-    async def calculate_intraday_relative_volume(self, ticker: str, current_volume: int) -> float:
-        """Calculate Intraday Relative Volume comparing today's pace to average daily volume"""
-        try:
-            # Get market open time (9:30 AM ET)
-            now = datetime.now()
-            market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+    async def calculate_batch_irv(self, candidates: List[Dict[str, Any]]) -> Dict[str, float]:
+        """Calculate IRV for multiple tickers in batches - OPTIMIZED"""
 
-            # Handle pre-market and after-hours
-            if now.hour < 9 or (now.hour == 9 and now.minute < 30):
-                # Pre-market - use simple volume intensity
-                return min(current_volume / 100000, 20.0)  # Cap at 20x
-            elif now.hour >= 16:
-                # After hours - use simple volume intensity
-                return min(current_volume / 100000, 20.0)  # Cap at 20x
+        # Get market timing once
+        now = datetime.now()
+        market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
 
-            # Calculate minutes since market open
-            minutes_since_open = max((now - market_open).total_seconds() / 60, 1)
+        # Pre/post market simple calculation
+        if now.hour < 9 or (now.hour == 9 and now.minute < 30) or now.hour >= 16:
+            irv_results = {}
+            for candidate in candidates:
+                ticker = candidate.get('ticker', '')
+                current_volume = candidate.get('day', {}).get('v', 0)
+                irv_results[ticker] = min(current_volume / 100000, 20.0)
+            return irv_results
 
-            # For explosive discovery, use aggressive volume comparison
-            # Get 20-day average volume to establish baseline
-            try:
-                end_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-                start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        minutes_since_open = max((now - market_open).total_seconds() / 60, 1)
+        trading_day_minutes = 390
 
-                # Use direct HTTP call like rest of the code
-                url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{start_date}/{end_date}"
+        # Process in batches to avoid overwhelming API
+        batch_size = 10  # Process 10 at a time
+        irv_results = {}
 
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.get(url, params={'apikey': self.api_key})
+        for i in range(0, len(candidates), batch_size):
+            batch = candidates[i:i + batch_size]
 
-                    if response.status_code == 200:
-                        data = response.json()
-                        results = data.get('results', [])
+            # Create concurrent tasks for batch
+            tasks = []
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                for candidate in batch:
+                    ticker = candidate.get('ticker', '')
+                    current_volume = candidate.get('day', {}).get('v', 0)
 
-                        if results:
-                            # Get last 20 days of volume data
-                            volumes = [bar['v'] for bar in results[-20:]]
-                            avg_daily_volume = sum(volumes) / len(volumes) if volumes else 1000000
+                    if not ticker:
+                        continue
+
+                    task = self._get_single_irv(client, ticker, current_volume, minutes_since_open, trading_day_minutes)
+                    tasks.append(task)
+
+                # Execute batch concurrently
+                if tasks:
+                    batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    for j, result in enumerate(batch_results):
+                        if isinstance(result, Exception):
+                            # Fallback for failed requests
+                            ticker = batch[j].get('ticker', '')
+                            current_volume = batch[j].get('day', {}).get('v', 0)
+                            irv_results[ticker] = min(current_volume / 100000, 10.0)
                         else:
-                            avg_daily_volume = max(current_volume * 2, 1000000)
-                    else:
-                        avg_daily_volume = max(current_volume * 2, 1000000)
+                            ticker, irv = result
+                            irv_results[ticker] = irv
 
-            except Exception:
-                # Fallback: estimate reasonable daily volume
-                avg_daily_volume = max(current_volume * 2, 1000000)
+            # Small delay between batches to respect rate limits
+            if i + batch_size < len(candidates):
+                await asyncio.sleep(0.1)
 
-            # Calculate expected volume by this time of day
-            trading_day_minutes = 390  # 6.5 hours
+        return irv_results
+
+    async def _get_single_irv(self, client: httpx.AsyncClient, ticker: str, current_volume: int,
+                             minutes_since_open: float, trading_day_minutes: int) -> tuple:
+        """Get IRV for single ticker with optimized calculation"""
+        try:
+            # Use 5-day history instead of 30-day for speed
+            end_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
+
+            url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{start_date}/{end_date}"
+            response = await client.get(url, params={'apikey': self.api_key})
+
+            if response.status_code == 200:
+                data = response.json()
+                results = data.get('results', [])
+
+                if results and len(results) >= 3:  # Need at least 3 days
+                    # Use last 5 days for faster calculation
+                    volumes = [bar['v'] for bar in results[-5:]]
+                    avg_daily_volume = sum(volumes) / len(volumes)
+                else:
+                    # Quick fallback: estimate from current volume
+                    avg_daily_volume = current_volume * 1.5
+            else:
+                # Quick fallback
+                avg_daily_volume = current_volume * 1.5
+
+            # Calculate IRV
             expected_volume_by_now = avg_daily_volume * (minutes_since_open / trading_day_minutes)
-
-            # Calculate IRV with explosive bias
             irv = current_volume / max(expected_volume_by_now, 1)
 
-            # For explosive stocks, we want high IRV (5x+ is explosive)
-            # Cap at 50x to prevent outliers
-            return min(max(irv, 0.1), 50.0)
+            return ticker, min(max(irv, 0.1), 50.0)
 
-        except Exception as e:
-            logger.warning(f"IRV calculation error for {ticker}: {e}")
-            # Fallback: use volume intensity
-            return min(current_volume / 100000, 10.0)
+        except Exception:
+            # Fallback calculation
+            return ticker, min(current_volume / 100000, 10.0)
+
+    async def calculate_intraday_relative_volume(self, ticker: str, current_volume: int) -> float:
+        """Legacy single-ticker IRV calculation for backward compatibility"""
+        candidates = [{'ticker': ticker, 'day': {'v': current_volume}}]
+        results = await self.calculate_batch_irv(candidates)
+        return results.get(ticker, 1.0)
 
     async def enrich_realtime_features(self, ticker: str, base_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Enrich ticker with options data, short interest, and real-time features"""
+        """Legacy method - uses lightweight enrichment + single IRV for compatibility"""
+        # Calculate IRV individually if needed for backward compatibility
+        current_volume = base_data.get('day', {}).get('v', 0)
+        irv = await self.calculate_intraday_relative_volume(ticker, current_volume)
+        base_data['intraday_relative_volume'] = round(irv, 2)
+
+        # Use lightweight enrichment for the rest
+        return await self.enrich_lightweight_features(ticker, base_data)
+
+    async def enrich_lightweight_features(self, ticker: str, base_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Lightweight enrichment without IRV calculation (IRV pre-calculated in batch)"""
         enriched = base_data.copy()
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=8.0) as client:  # Reduced timeout
                 # Get current price and basic data
                 current_price = base_data.get('day', {}).get('c', 0)
                 current_volume = base_data.get('day', {}).get('v', 0)
 
-                # Calculate Intraday Relative Volume
-                irv = await self.calculate_intraday_relative_volume(ticker, current_volume)
-                enriched['intraday_relative_volume'] = round(irv, 2)
+                # IRV already calculated in batch - skip individual calculation
 
-                # Get options data if available
+                # Get options data if available (faster without IRV bottleneck)
                 try:
                     # Get options chain snapshot
                     options_url = f"https://api.polygon.io/v3/snapshot/options/{ticker}"
@@ -693,18 +739,29 @@ class ExplosiveDiscoveryEngine:
                     'error': 'No universe data available'
                 }
 
-            # Enrich and score candidates with dual-tier filtering
+            # OPTIMIZED: Batch enrich and score candidates
             elite_candidates = []
             near_miss_candidates = []
 
+            logger.info(f"🚀 Batch processing {len(universe)} candidates for IRV...")
+
+            # Step 1: Batch calculate IRV for all candidates (MAJOR OPTIMIZATION)
+            irv_results = await self.calculate_batch_irv(universe)
+            logger.info(f"✅ IRV calculated for {len(irv_results)} candidates")
+
+            # Step 2: Process each candidate with pre-calculated IRV
             for candidate in universe:
                 try:
-                    # First enrich with real-time features
                     ticker = candidate.get('ticker', '')
                     if not ticker:
                         continue
 
-                    enriched_candidate = await self.enrich_realtime_features(ticker, candidate)
+                    # Get pre-calculated IRV
+                    irv = irv_results.get(ticker, 1.0)
+                    candidate['intraday_relative_volume'] = round(irv, 2)
+
+                    # Lightweight enrichment (options + short data only, skip individual IRV calls)
+                    enriched_candidate = await self.enrich_lightweight_features(ticker, candidate)
 
                     # Skip if enrichment completely failed
                     if enriched_candidate is None:
