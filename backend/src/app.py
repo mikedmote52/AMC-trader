@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 import os
 
 try:
@@ -45,6 +46,11 @@ except NameError:
 
 # Create FastAPI app
 app = FastAPI(title="AMC Trader API")
+
+# Mount static files for frontend
+static_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+if os.path.exists(static_path):
+    app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 @app.get("/_whoami")
 async def whoami():
@@ -138,7 +144,15 @@ app.lifespan = lifespan
 
 @app.get("/")
 def root():
-    return {"status": "AMC Trading API v1.0.0", "docs": "/docs"}
+    # Serve the trading interface if static files exist, otherwise API info
+    static_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+    index_path = os.path.join(static_path, "index.html")
+
+    if os.path.exists(index_path):
+        from fastapi.responses import FileResponse
+        return FileResponse(index_path)
+    else:
+        return {"status": "AMC Trading API v1.0.0", "docs": "/docs"}
 
 @app.get("/health")
 @app.get("/healthz")

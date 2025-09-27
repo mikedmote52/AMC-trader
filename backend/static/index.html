@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#00ff88">
+    <title>AMC-TRADER: Explosive Stock Discovery</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="mobile.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- PWA-style favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🚀%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-rocket"></i>
+                    <h1>AMC-TRADER</h1>
+                    <span class="version">AlphaStack v2</span>
+                </div>
+                <div class="header-stats">
+                    <div class="stat">
+                        <span class="label">System Status</span>
+                        <span class="value" id="systemStatus">Checking...</span>
+                    </div>
+                    <div class="stat">
+                        <span class="label">Discovery Time</span>
+                        <span class="value" id="discoveryTime">--</span>
+                    </div>
+                    <div class="stat">
+                        <span class="label">Candidates</span>
+                        <span class="value" id="candidateCount">--</span>
+                    </div>
+                </div>
+                <button class="refresh-btn" id="refreshBtn">
+                    <i class="fas fa-sync-alt"></i>
+                    Refresh Discovery
+                </button>
+            </div>
+        </header>
+
+        <!-- Action Bar -->
+        <div class="action-bar">
+            <div class="filter-tabs">
+                <button class="tab active" data-filter="all">All Candidates</button>
+                <button class="tab" data-filter="trade_ready">Trade Ready</button>
+                <button class="tab" data-filter="watchlist">Watch List</button>
+                <button class="tab" data-filter="builder">Builder Regime</button>
+                <button class="tab" data-filter="spike">Spike Regime</button>
+            </div>
+            <div class="sort-controls">
+                <select id="sortBy">
+                    <option value="score">Score (High to Low)</option>
+                    <option value="volume">Volume Surge</option>
+                    <option value="momentum">Momentum</option>
+                    <option value="price">Price (Low to High)</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div class="loading" id="loadingSpinner">
+            <div class="spinner"></div>
+            <p>Discovering explosive opportunities...</p>
+        </div>
+
+        <!-- Discovery Results -->
+        <main class="main-content">
+            <!-- Trade Ready Section -->
+            <section class="candidates-section" id="tradeReadySection">
+                <h2 class="section-title">
+                    <i class="fas fa-bolt text-green"></i>
+                    Trade Ready (75+ Score)
+                    <span class="count" id="tradeReadyCount">0</span>
+                </h2>
+                <div class="candidates-grid" id="tradeReadyGrid">
+                    <!-- Trade ready candidates will be populated here -->
+                </div>
+            </section>
+
+            <!-- Watchlist Section -->
+            <section class="candidates-section" id="watchlistSection">
+                <h2 class="section-title">
+                    <i class="fas fa-eye text-yellow"></i>
+                    Watch List (60-74 Score)
+                    <span class="count" id="watchlistCount">0</span>
+                </h2>
+                <div class="candidates-grid" id="watchlistGrid">
+                    <!-- Watchlist candidates will be populated here -->
+                </div>
+            </section>
+
+            <!-- Monitor Section -->
+            <section class="candidates-section" id="monitorSection">
+                <h2 class="section-title">
+                    <i class="fas fa-search text-gray"></i>
+                    Monitor (<60 Score)
+                    <span class="count" id="monitorCount">0</span>
+                </h2>
+                <div class="candidates-grid" id="monitorGrid">
+                    <!-- Monitor candidates will be populated here -->
+                </div>
+            </section>
+        </main>
+
+        <!-- Empty State -->
+        <div class="empty-state" id="emptyState">
+            <i class="fas fa-search"></i>
+            <h3>No candidates found</h3>
+            <p>Try refreshing discovery or adjusting filters</p>
+            <button class="btn btn-primary" onclick="refreshDiscovery()">
+                <i class="fas fa-sync-alt"></i>
+                Refresh Discovery
+            </button>
+        </div>
+    </div>
+
+    <!-- Stock Detail Modal -->
+    <div class="modal" id="stockModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTicker">STOCK</h3>
+                <button class="modal-close" id="modalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Stock details will be populated here -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modalWatchBtn">
+                    <i class="fas fa-eye"></i>
+                    Add to Watchlist
+                </button>
+                <button class="btn btn-primary" id="modalBuyBtn">
+                    <i class="fas fa-shopping-cart"></i>
+                    Execute Trade
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trade Execution Modal -->
+    <div class="modal" id="tradeModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Execute Trade: <span id="tradeTicker">STOCK</span></h3>
+                <button class="modal-close" id="tradeModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="trade-form">
+                    <div class="form-group">
+                        <label for="tradeAmount">Investment Amount ($)</label>
+                        <input type="number" id="tradeAmount" min="10" max="10000" value="100" step="10">
+                    </div>
+                    <div class="form-group">
+                        <label for="tradeType">Order Type</label>
+                        <select id="tradeType">
+                            <option value="market">Market Order (Immediate)</option>
+                            <option value="limit">Limit Order (At Entry Price)</option>
+                        </select>
+                    </div>
+                    <div class="trade-summary" id="tradeSummary">
+                        <!-- Trade summary will be populated here -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="tradeCancelBtn">Cancel</button>
+                <button class="btn btn-success" id="tradeConfirmBtn">
+                    <i class="fas fa-check"></i>
+                    Confirm Trade
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success/Error Toast -->
+    <div class="toast" id="toast">
+        <div class="toast-content">
+            <i class="fas fa-check-circle"></i>
+            <span id="toastMessage">Success!</span>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

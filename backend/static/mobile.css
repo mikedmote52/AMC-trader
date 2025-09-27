@@ -1,0 +1,220 @@
+/* Mobile-specific optimizations for AMC-TRADER */
+
+/* Touch-friendly interactions */
+@media (max-width: 768px) {
+    /* Increase touch targets */
+    .btn, .tab, .refresh-btn {
+        min-height: 44px;
+        min-width: 44px;
+        padding: 12px 20px;
+    }
+
+    /* Improved mobile layout */
+    .stock-card {
+        margin-bottom: 16px;
+        padding: 20px;
+    }
+
+    .action-buttons {
+        gap: 12px;
+        margin-top: 20px;
+    }
+
+    .action-buttons .btn {
+        flex: 1;
+        justify-content: center;
+        padding: 12px;
+    }
+
+    /* Mobile-optimized modal */
+    .modal-content {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        border-radius: 0;
+        max-height: 100vh;
+    }
+
+    .modal-body {
+        padding: 20px;
+        height: calc(100vh - 120px);
+        overflow-y: auto;
+    }
+
+    /* Swipe-friendly filters */
+    .filter-tabs {
+        padding: 8px;
+        gap: 8px;
+    }
+
+    .tab {
+        white-space: nowrap;
+        min-width: 120px;
+    }
+
+    /* Better mobile typography */
+    .stock-symbol {
+        font-size: 1.3rem;
+    }
+
+    .score-value {
+        font-size: 1.1rem;
+    }
+
+    /* Optimized grid for mobile */
+    .key-metrics {
+        gap: 8px;
+    }
+
+    .subscores {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+    }
+
+    .subscore {
+        padding: 6px;
+        font-size: 0.75rem;
+    }
+
+    /* Mobile trade form */
+    .trade-form input,
+    .trade-form select {
+        padding: 16px;
+        font-size: 16px; /* Prevents zoom on iOS */
+    }
+
+    /* Toast positioning for mobile */
+    .toast {
+        bottom: 20px;
+        left: 20px;
+        right: 20px;
+        transform: translateY(100px);
+    }
+
+    .toast.active {
+        transform: translateY(0);
+    }
+
+    /* Hide some desktop-only elements on mobile */
+    .version {
+        display: none;
+    }
+
+    /* Sticky header on mobile */
+    .header {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+    }
+
+    /* Improved scrolling performance */
+    .candidates-grid {
+        -webkit-overflow-scrolling: touch;
+    }
+}
+
+/* Landscape phone optimizations */
+@media (max-width: 896px) and (orientation: landscape) {
+    .header {
+        padding: 10px 0;
+    }
+
+    .header-content {
+        flex-direction: row;
+        justify-content: space-between;
+    }
+
+    .header-stats {
+        display: none; /* Hide stats in landscape to save space */
+    }
+
+    .candidates-grid {
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    }
+}
+
+/* Extra small devices */
+@media (max-width: 375px) {
+    .container {
+        padding: 0 10px;
+    }
+
+    .stock-card {
+        padding: 16px;
+    }
+
+    .logo h1 {
+        font-size: 1.3rem;
+    }
+
+    .key-metrics {
+        grid-template-columns: 1fr;
+    }
+
+    .subscores {
+        grid-template-columns: 1fr;
+    }
+
+    .action-buttons {
+        flex-direction: column;
+        gap: 8px;
+    }
+}
+
+/* Dark mode improvements for mobile */
+@media (prefers-color-scheme: dark) {
+    /* Better contrast for mobile screens */
+    .stock-card {
+        border-color: #555;
+    }
+
+    .modal-content {
+        background: #1e1e1e;
+    }
+
+    input, select {
+        background: #2a2a2a !important;
+        border-color: #555 !important;
+    }
+}
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+    .stock-card {
+        border: 2px solid var(--border-color);
+    }
+
+    .btn {
+        border: 2px solid currentColor;
+    }
+}
+
+/* Print styles (for trade confirmations) */
+@media print {
+    .header,
+    .action-bar,
+    .action-buttons,
+    .modal {
+        display: none !important;
+    }
+
+    .stock-card {
+        border: 1px solid #000;
+        break-inside: avoid;
+        margin-bottom: 20px;
+    }
+
+    body {
+        background: white !important;
+        color: black !important;
+    }
+}
