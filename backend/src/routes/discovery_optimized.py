@@ -30,9 +30,9 @@ class ExplosiveDiscoveryEngine:
     def __init__(self):
         self.min_price = 0.50
         self.max_price = 50.0    # Focus on smaller caps for 2x potential
-        self.min_irv = 2.0       # Lower IRV threshold to catch more opportunities
+        self.min_irv = 1.5       # Realistic IRV threshold for market conditions
         self.max_daily_change = 50.0  # Allow larger moves for explosive stocks
-        self.min_daily_change = 5.0   # Lower to catch early momentum
+        self.min_daily_change = 3.0   # Catch earlier momentum (was 5.0)
         # REMOVED: No artificial limits - return all candidates that meet ultra-high standards
         self.api_key = os.getenv('POLYGON_API_KEY')
         self.config = self._load_config()
@@ -380,8 +380,8 @@ class ExplosiveDiscoveryEngine:
                         if not (0.50 <= price <= 100.0):
                             continue
 
-                        # Apply minimum volume filter (500K minimum for liquidity)
-                        if volume < 500000:
+                        # Apply minimum volume filter (250K for more opportunities)
+                        if volume < 250000:  # Lowered from 500K
                             continue
 
                         # Calculate volume ratio efficiently
@@ -390,7 +390,7 @@ class ExplosiveDiscoveryEngine:
 
                         if prev_volume > 0:
                             volume_ratio = volume / prev_volume
-                            if volume_ratio < 1.3:  # Slightly lower threshold to catch building momentum
+                            if volume_ratio < 1.2:  # Lowered from 1.3 for more candidates
                                 continue
                         else:
                             continue  # Skip if no previous volume data
@@ -794,19 +794,20 @@ class ExplosiveDiscoveryEngine:
                     trade_ready_min = entry_rules.get('trade_ready_min', 0.80)
                     watchlist_min = entry_rules.get('watchlist_min', 0.70)
 
-                    # EXPLOSIVE TIER CLASSIFICATION: Based on score + volume surge
-                    if score >= trade_ready_min and irv >= 3.0:
+                    # REALISTIC EXPLOSIVE TIER CLASSIFICATION for actual trading
+                    # Relaxed thresholds to catch real opportunities
+                    if score >= 0.65 and irv >= 2.0:  # Lowered from 0.80 and 3.0
                         enriched_candidate['tier'] = 'trade_ready'
                         elite_candidates.append(enriched_candidate)
                         logger.debug(f"🚀 TRADE READY: {ticker}: {score*100:.1f}% score | {irv:.1f}x IRV")
 
-                    elif score >= watchlist_min and irv >= 2.0:
+                    elif score >= 0.50 and irv >= 1.5:  # Lowered from 0.70 and 2.0
                         enriched_candidate['tier'] = 'watchlist'
                         elite_candidates.append(enriched_candidate)
                         logger.debug(f"👀 WATCHLIST: {ticker}: {score*100:.1f}% score | {irv:.1f}x IRV")
 
                     # NEAR-MISS TIER: Promising but needs more confirmation
-                    elif score >= 0.50 and (irv >= 1.5 or change_pct >= 5):
+                    elif score >= 0.40 and (irv >= 1.2 or change_pct >= 5):  # More inclusive
                         enriched_candidate['tier'] = 'near_miss'
                         enriched_candidate['miss_reason'] = self.get_miss_reason(irv, score, change_pct)
                         near_miss_candidates.append(enriched_candidate)
