@@ -9,14 +9,14 @@ import logging
 from datetime import datetime
 
 # Import the discovery system
-from .discovery_optimized import UnifiedDiscoveryEngine
+from .discovery_optimized import ExplosiveDiscoveryEngine
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 # Create discovery engine instance
-discovery_engine = UnifiedDiscoveryEngine()
+discovery_engine = ExplosiveDiscoveryEngine()
 
 @router.get("/candidates")
 async def get_squeeze_candidates(
