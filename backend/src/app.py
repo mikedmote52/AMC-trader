@@ -234,6 +234,7 @@ app.mount("/v1/stream", sockets_app)
 
 # Single optimized discovery system
 from backend.src.routes import discovery_optimized as discovery_routes
+from backend.src.routes import squeeze as squeeze_routes
 from backend.src.routes import portfolio as portfolio_routes
 from backend.src.routes import learning as learning_routes
 from backend.src.routes import daily_updates as daily_updates_routes
@@ -251,6 +252,7 @@ from backend.src.routes import thesis_monitor as thesis_monitor_routes
 
 # Single optimized discovery system
 app.include_router(discovery_routes.router, prefix="/discovery", tags=["discovery"])
+app.include_router(squeeze_routes.router, prefix="/squeeze", tags=["squeeze"])
 # Calibration routes removed - unified BMS system
 app.include_router(advanced_ranking_routes.router, prefix="/advanced-ranking", tags=["advanced-ranking"])
 app.include_router(portfolio_routes.router, prefix="/portfolio", tags=["portfolio"])
@@ -285,6 +287,12 @@ async def api_contenders():
     # FIXED: Use unified discovery system with expanded universe (957+ stocks vs 200-500)
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/discovery/contenders?limit=20", status_code=307)
+
+@app.get("/squeeze1")
+async def squeeze1_compat():
+    # Compatibility route for squeeze monitor UI
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/squeeze/candidates?limit=20", status_code=307)
 
 
 # Optional buy-now alias if the UI ever posts here:
