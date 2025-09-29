@@ -101,9 +101,9 @@ class AMCTrader {
         try {
             // Add timeout and retry logic
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout for squeeze endpoint
 
-            const response = await fetch(`${this.API_BASE}/discovery/contenders?limit=20`, {
+            const response = await fetch(`${this.API_BASE}/squeeze/candidates?limit=20`, {
                 signal: controller.signal
             });
 
