@@ -1,11 +1,32 @@
 - API=https://amc-trader.onrender.com
 
-# AMC-TRADER Hybrid Scoring System
+# AMC-TRADER Real-Time Market Data System
+
+## CRITICAL: NO FAKE DATA POLICY
+
+**ABSOLUTE RULE: AMC-TRADER must NEVER use fake, mock, demo, or hardcoded data.**
+
+### Forbidden Practices:
+- ❌ Demo data fallbacks
+- ❌ Mock candidates
+- ❌ Hardcoded defaults (RSI=65, ATR=0.05, etc.)
+- ❌ Fake stock data
+- ❌ Placeholder values
+- ❌ Estimated/simulated data
+- ❌ Default social ranks, float shares, etc.
+
+### Required Practices:
+- ✅ Real-time Polygon API data ONLY
+- ✅ Return empty results if data unavailable
+- ✅ Fail with proper errors instead of fake data
+- ✅ All calculations based on actual market data
+- ✅ Authentic stock metrics only
 
 ## Overview
-AMC-TRADER now supports two scoring strategies:
-- **legacy_v0**: Original VIGL-based pattern detection
-- **hybrid_v1**: New 5-subscore system with advanced gatekeeping
+AMC-TRADER uses real-time market data to find explosive stocks:
+- **Real market snapshots** from Polygon API
+- **Live volume and price data**
+- **Actual technical indicators** calculated from real data
 
 ## Configuration
 

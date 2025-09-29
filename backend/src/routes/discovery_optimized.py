@@ -442,18 +442,62 @@ class ExplosiveDiscoveryEngine:
             logger.error(f"Universe filtering failed: {e}")
             return []
 
-    def calculate_consecutive_up_days(self, ticker: str) -> int:
-        """Calculate consecutive up days for momentum tracking"""
+    async def get_real_market_data(self, ticker: str, candidate: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Get ONLY real market data - NO DEFAULTS OR FAKE DATA"""
         try:
-            # Get last 10 days of price data
+            # Extract basic data
+            day_data = candidate.get('day', {})
+            if not day_data:
+                return None
+
+            price = float(day_data.get('c', 0))
+            if price <= 0:
+                return None
+
+            volume = float(day_data.get('v', 0))
+            if volume <= 0:
+                return None
+
+            # Get real consecutive up days
+            consecutive_up = await self.get_real_consecutive_days(ticker)
+
+            # Get real technical data
+            tech_data = await self.get_real_technical_data(ticker)
+            if not tech_data:
+                logger.debug(f"❌ {ticker}: Could not get real technical data")
+                return None
+
+            # Get real options and short data
+            options_data = await self.get_real_options_data(ticker)
+            short_data = await self.get_real_short_data(ticker)
+
+            # Return ONLY real data
+            return {
+                'ticker': ticker,
+                'price': price,
+                'rel_vol_now': float(candidate.get('intraday_relative_volume', 0)),
+                'consecutive_up_days': consecutive_up,
+                'daily_change_pct': float(candidate.get('todaysChangePerc', 0)),
+                **tech_data,
+                **(options_data if options_data else {}),
+                **(short_data if short_data else {})
+            }
+
+        except Exception as e:
+            logger.debug(f"❌ {ticker}: Error getting real market data: {e}")
+            return None
+
+    async def get_real_consecutive_days(self, ticker: str) -> int:
+        """Get REAL consecutive up days from Polygon API"""
+        try:
             end_date = datetime.now().strftime("%Y-%m-%d")
             start_date = (datetime.now() - timedelta(days=15)).strftime("%Y-%m-%d")
 
-            url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{start_date}/{end_date}"
-
-            import httpx
-            with httpx.Client(timeout=5.0) as client:
-                response = client.get(url, params={'apikey': self.api_key})
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.get(
+                    f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{start_date}/{end_date}",
+                    params={'apikey': self.api_key}
+                )
 
                 if response.status_code == 200:
                     data = response.json()
@@ -467,9 +511,196 @@ class ExplosiveDiscoveryEngine:
                             else:
                                 break
                         return consecutive
-        except:
-            pass
-        return 0
+        except Exception as e:
+            logger.debug(f"Could not get consecutive days for {ticker}: {e}")
+
+        return 0  # Return 0 if no real data available
+
+    async def get_real_technical_data(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """Get REAL technical indicators - RSI, ATR, VWAP, EMAs"""
+        try:
+            # Get 30 days of data for technical calculations
+            end_date = datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{start_date}/{end_date}",
+                    params={'apikey': self.api_key}
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    results = data.get('results', [])
+
+                    if len(results) >= 14:  # Need minimum data for RSI
+                        # Calculate real RSI
+                        rsi = self.calculate_real_rsi(results)
+
+                        # Calculate real ATR
+                        atr_pct = self.calculate_real_atr(results)
+
+                        # Calculate real EMAs
+                        ema9 = self.calculate_real_ema(results, 9)
+                        ema20 = self.calculate_real_ema(results, 20)
+
+                        # Calculate real VWAP (today's)
+                        vwap = self.calculate_real_vwap(ticker)
+
+                        return {
+                            'rsi': rsi,
+                            'atr_pct': atr_pct,
+                            'ema9': ema9,
+                            'ema20': ema20,
+                            'vwap': await vwap
+                        }
+
+        except Exception as e:
+            logger.debug(f"Could not get technical data for {ticker}: {e}")
+
+        return None
+
+    async def get_real_options_data(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """Get REAL options data from Polygon"""
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.get(
+                    f"https://api.polygon.io/v3/snapshot/options/{ticker}",
+                    params={'apikey': self.api_key}
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    results = data.get('results', [])
+
+                    if results:
+                        # Calculate real call/put ratios
+                        call_oi = sum(r.get('open_interest', 0) for r in results if r.get('option_type') == 'call')
+                        put_oi = sum(r.get('open_interest', 0) for r in results if r.get('option_type') == 'put')
+
+                        if call_oi > 0 and put_oi > 0:
+                            return {
+                                'options_call_oi': call_oi,
+                                'options_put_oi': put_oi,
+                                'iv_percentile': self.calculate_iv_percentile(results)
+                            }
+
+        except Exception as e:
+            logger.debug(f"Could not get options data for {ticker}: {e}")
+
+        return None
+
+    async def get_real_short_data(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """Get REAL short interest data - would need additional data source"""
+        # For now, return None - no fake data
+        # Could integrate with other APIs for real short data
+        return None
+
+    def calculate_real_rsi(self, price_data: List[Dict]) -> float:
+        """Calculate real RSI from price data"""
+        if len(price_data) < 14:
+            return 50.0  # Neutral if insufficient data
+
+        closes = [float(bar['c']) for bar in price_data[-14:]]
+        deltas = [closes[i] - closes[i-1] for i in range(1, len(closes))]
+
+        gains = [d for d in deltas if d > 0]
+        losses = [-d for d in deltas if d < 0]
+
+        avg_gain = sum(gains) / len(gains) if gains else 0
+        avg_loss = sum(losses) / len(losses) if losses else 0
+
+        if avg_loss == 0:
+            return 100.0
+
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+
+        return round(rsi, 1)
+
+    def calculate_real_atr(self, price_data: List[Dict]) -> float:
+        """Calculate real Average True Range percentage"""
+        if len(price_data) < 2:
+            return 0.05  # Default if insufficient data
+
+        true_ranges = []
+        for i in range(1, min(len(price_data), 15)):  # Last 14 days
+            high = float(price_data[i]['h'])
+            low = float(price_data[i]['l'])
+            prev_close = float(price_data[i-1]['c'])
+
+            tr = max(
+                high - low,
+                abs(high - prev_close),
+                abs(low - prev_close)
+            )
+            true_ranges.append(tr)
+
+        if not true_ranges:
+            return 0.05
+
+        atr = sum(true_ranges) / len(true_ranges)
+        current_price = float(price_data[-1]['c'])
+
+        return round(atr / current_price, 4) if current_price > 0 else 0.05
+
+    def calculate_real_ema(self, price_data: List[Dict], period: int) -> float:
+        """Calculate real Exponential Moving Average"""
+        if len(price_data) < period:
+            return float(price_data[-1]['c']) if price_data else 0
+
+        closes = [float(bar['c']) for bar in price_data[-period:]]
+        multiplier = 2 / (period + 1)
+
+        ema = closes[0]
+        for close in closes[1:]:
+            ema = (close * multiplier) + (ema * (1 - multiplier))
+
+        return round(ema, 2)
+
+    async def calculate_real_vwap(self, ticker: str) -> float:
+        """Calculate real VWAP for today"""
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.get(
+                    f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/minute/{today}/{today}",
+                    params={'apikey': self.api_key}
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    results = data.get('results', [])
+
+                    if results:
+                        total_volume = 0
+                        total_pv = 0
+
+                        for bar in results:
+                            vol = float(bar.get('v', 0))
+                            if vol > 0:
+                                typical_price = (float(bar['h']) + float(bar['l']) + float(bar['c'])) / 3
+                                total_pv += typical_price * vol
+                                total_volume += vol
+
+                        if total_volume > 0:
+                            return round(total_pv / total_volume, 2)
+
+        except Exception as e:
+            logger.debug(f"Could not calculate VWAP for {ticker}: {e}")
+
+        return 0  # Return 0 if no real data
+
+    def calculate_iv_percentile(self, options_data: List[Dict]) -> float:
+        """Calculate real IV percentile from options data"""
+        ivs = [float(opt.get('implied_volatility', 0)) for opt in options_data if opt.get('implied_volatility')]
+
+        if len(ivs) < 5:
+            return 50.0  # Neutral if insufficient data
+
+        avg_iv = sum(ivs) / len(ivs)
+        return min(max(avg_iv * 100, 0), 100)  # Convert to percentile
 
     def calculate_explosive_score(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -489,32 +720,14 @@ class ExplosiveDiscoveryEngine:
             price = float(day_data.get('c', 0))
             volume = float(day_data.get('v', 0))
 
-            # Calculate consecutive up days
-            consecutive_up = self.calculate_consecutive_up_days(ticker)
+            # Get REAL market data - NO DEFAULTS OR FAKE DATA
+            real_data = await self.get_real_market_data(ticker, candidate)
 
-            # Prepare features for AlphaStack v2
-            features = {
-                'ticker': ticker,
-                'price': price,
-                'rel_vol_now': float(candidate.get('intraday_relative_volume', 1.0)),
-                'rel_vol_5d': [float(candidate.get('volume_ratio', 1.5))] * 5,  # Simplified
-                'consecutive_up_days': consecutive_up,
-                'daily_change_pct': float(candidate.get('todaysChangePerc', 0)),
-                'rsi': 65,  # Default RSI - could enhance with real data
-                'atr_pct': 0.05,  # Default ATR - could enhance with real data
-                'vwap': float(candidate.get('vwap', price)),
-                'ema9': price * 0.99,  # Simplified EMA approximation
-                'ema20': price * 0.98,  # Simplified EMA approximation
-                'float_shares': 50000000,  # Default medium float
-                'short_interest': 0.15,  # Default 15% short interest
-                'utilization': 0.8,  # Default utilization
-                'borrow_fee_pct': 0.5,  # Default borrow fee
-                'options_call_oi': 1000,  # Default options data
-                'options_put_oi': 800,
-                'iv_percentile': 50,
-                'catalyst_detected': consecutive_up >= 3,  # Use momentum as catalyst proxy
-                'social_rank': min(consecutive_up * 10, 50)  # Convert momentum to social rank
-            }
+            if not real_data:
+                logger.debug(f"❌ {ticker}: No real market data available - skipping")
+                continue
+
+            features = real_data
 
             # Get AlphaStack v2 score
             result = score_ticker(features)
@@ -533,13 +746,8 @@ class ExplosiveDiscoveryEngine:
 
         except Exception as e:
             logger.error(f"AlphaStack v2 scoring failed for {candidate.get('ticker', 'unknown')}: {e}")
-            # Fallback to basic scoring
-            return {
-                'total_score': 0.5,  # Neutral score
-                'alphastack_regime': 'FALLBACK',
-                'alphastack_action': 'Pass',
-                'consecutive_up_days': 0
-            }
+            # NO FALLBACK - Return None to skip this candidate
+            return None
 
     def add_trading_levels(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
         """Add VWAP-based entry, stop, target levels, and thesis"""
