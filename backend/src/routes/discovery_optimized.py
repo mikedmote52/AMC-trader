@@ -381,8 +381,8 @@ class ExplosiveDiscoveryEngine:
                         if not (0.50 <= price <= 100.0):
                             continue
 
-                        # Apply minimum volume filter (250K for more opportunities)
-                        if volume < 250000:  # Lowered from 500K
+                        # Apply minimum volume filter for liquidity (500K threshold)
+                        if volume < 500000:  # Must have meaningful liquidity
                             continue
 
                         # Calculate volume ratio efficiently
@@ -391,7 +391,7 @@ class ExplosiveDiscoveryEngine:
 
                         if prev_volume > 0:
                             volume_ratio = volume / prev_volume
-                            if volume_ratio < 1.2:  # Lowered from 1.3 for more candidates
+                            if volume_ratio < 1.5:  # Need volume expansion but not too restrictive
                                 continue
                         else:
                             continue  # Skip if no previous volume data
@@ -409,11 +409,7 @@ class ExplosiveDiscoveryEngine:
 
                         high_potential_stocks.append(stock)
 
-                        # OPTIMIZATION: Cap at 500 candidates for enrichment
-                        # This covers enough ground without overwhelming the system
-                        if len(high_potential_stocks) >= 500:
-                            logger.info("🎯 Reached 500 candidate cap for optimal processing")
-                            break
+                        # NO CAPS - Let criteria do the filtering naturally
 
                     # PHASE 2: Sort by volume to prioritize most active stocks
                     # This ensures we process the most liquid stocks first
@@ -422,9 +418,9 @@ class ExplosiveDiscoveryEngine:
                         reverse=True
                     )
 
-                    # PHASE 3: Take top candidates based on volume
-                    # Focus on most liquid stocks for explosive detection
-                    final_candidates = high_potential_stocks[:300]  # Process top 300 by volume
+                    # PHASE 3: Process ALL candidates that meet criteria
+                    # No artificial limits - let the criteria do the filtering
+                    final_candidates = high_potential_stocks  # Process ALL qualified candidates
 
                     logger.info(f"✨ OPTIMIZATION COMPLETE:")
                     logger.info(f"   Input: {len(raw_tickers)} raw tickers")
@@ -475,7 +471,8 @@ class ExplosiveDiscoveryEngine:
             return {
                 'ticker': ticker,
                 'price': price,
-                'rel_vol_now': float(candidate.get('intraday_relative_volume', 0)),
+                'rel_vol_now': float(candidate.get('volume_ratio', 1.0)),  # Use calculated volume ratio
+                'rel_vol_5d': [float(candidate.get('volume_ratio', 1.0))] * 5,
                 'consecutive_up_days': consecutive_up,
                 'daily_change_pct': float(candidate.get('todaysChangePerc', 0)),
                 **tech_data,
