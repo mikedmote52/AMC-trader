@@ -21,7 +21,7 @@ discovery_engine = ExplosiveDiscoveryEngine()
 @router.get("/candidates")
 async def get_squeeze_candidates(
     limit: int = Query(default=20, ge=1, le=100),
-    min_score: float = Query(default=0.60, ge=0.0, le=1.0),
+    min_score: float = Query(default=0.30, ge=0.0, le=1.0),
     regime: Optional[str] = Query(default=None, regex="^(builder|spike|all)$")
 ) -> Dict[str, Any]:
     """
@@ -38,10 +38,18 @@ async def get_squeeze_candidates(
         # Get real candidates from discovery engine
         result = await discovery_engine.run_discovery(limit=limit * 2)
 
-        if not result.get('success', False):
+        # Handle different result formats
+        if isinstance(result, dict):
+            success = result.get('success', result.get('status') == 'success')
+            candidates = result.get('candidates', [])
+        else:
+            success = False
+            candidates = []
+
+        if not success:
             raise HTTPException(status_code=503, detail="Discovery engine unavailable")
 
-        candidates = result.get('candidates', [])
+        candidates = candidates or []
 
         # Filter for squeeze characteristics
         squeeze_candidates = []
@@ -94,7 +102,7 @@ async def squeeze_monitor(
     """
     try:
         # Get all candidates
-        candidates_result = await get_squeeze_candidates(limit=50, min_score=0.60)
+        candidates_result = await get_squeeze_candidates(limit=50, min_score=0.30)
 
         if not candidates_result.get('success'):
             return candidates_result
@@ -148,7 +156,7 @@ async def get_squeeze_alerts(
     """
     try:
         # Get candidates with high scores
-        candidates_result = await get_squeeze_candidates(limit=100, min_score=0.70)
+        candidates_result = await get_squeeze_candidates(limit=100, min_score=0.30)
 
         if not candidates_result.get('success'):
             return candidates_result
