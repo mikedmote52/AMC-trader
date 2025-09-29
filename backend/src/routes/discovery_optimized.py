@@ -702,7 +702,7 @@ class ExplosiveDiscoveryEngine:
         avg_iv = sum(ivs) / len(ivs)
         return min(max(avg_iv * 100, 0), 100)  # Convert to percentile
 
-    def calculate_explosive_score(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
+    async def calculate_explosive_score(self, candidate: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         ALPHASTACK V2 SCORING: Uses proven momentum builder algorithm
         Converts to 0.0-1.0 scale for compatibility
@@ -725,7 +725,7 @@ class ExplosiveDiscoveryEngine:
 
             if not real_data:
                 logger.debug(f"❌ {ticker}: No real market data available - skipping")
-                continue
+                return None
 
             features = real_data
 
@@ -741,7 +741,7 @@ class ExplosiveDiscoveryEngine:
                 'alphastack_action': result['action'],
                 'alphastack_breakdown': result['scores'],
                 'entry_plan': result['entry_plan'],
-                'consecutive_up_days': consecutive_up
+                'consecutive_up_days': real_data.get('consecutive_up_days', 0)
             }
 
         except Exception as e:
@@ -918,7 +918,7 @@ class ExplosiveDiscoveryEngine:
                         continue
 
                     # Calculate scoring with enriched data
-                    score_data = self.calculate_explosive_score(enriched_candidate)
+                    score_data = await self.calculate_explosive_score(enriched_candidate)
                     if not score_data or score_data.get('total_score') is None:
                         logger.debug(f"❌ {ticker}: Scoring failed - skipping")
                         continue
