@@ -174,9 +174,9 @@ class MCPPolygonBridge:
                 return {'status': 'error', 'error': 'No API key', 'tickers': []}
 
             async with httpx.AsyncClient(timeout=30.0) as client:
-                # Get market gainers from Polygon API
+                # CRITICAL: Use full market snapshot, NOT gainers (already moved stocks)
                 response = await client.get(
-                    "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/direction/gainers",
+                    "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers",
                     params={"apikey": api_key}
                 )
 
@@ -185,7 +185,7 @@ class MCPPolygonBridge:
                     if data.get('status') == 'OK' and data.get('results'):
                         # Convert to expected format - match MCP structure exactly
                         tickers_data = []
-                        for item in data['results'][:100]:  # Top 100 gainers for broader universe
+                        for item in data['results']:  # Full market universe, filter locally
                             # Extract data from actual Polygon API structure
                             ticker_symbol = item.get('ticker', '')
 
@@ -243,7 +243,7 @@ class MCPPolygonBridge:
                         # Final validation - ensure we have real price data
                         valid_tickers = [t for t in tickers_data if t['day']['c'] > 0 and t['day']['v'] > 0]
                         if valid_tickers:
-                            logger.info(f"✅ Got {len(valid_tickers)} valid explosive candidates from direct Polygon API (filtered from {len(tickers_data)} total)")
+                            logger.info(f"✅ Got {len(valid_tickers)} valid explosive candidates from full market snapshot (filtered from {len(tickers_data)} total)")
                             return {
                                 'status': 'OK',
                                 'tickers': valid_tickers,

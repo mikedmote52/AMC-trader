@@ -290,9 +290,9 @@ async def api_contenders():
 
 @app.get("/squeeze1")
 async def squeeze1_compat():
-    # Compatibility route for squeeze monitor UI - use demo data for speed
+    # Compatibility route for squeeze monitor UI
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/squeeze/candidates?limit=20&use_demo=true", status_code=307)
+    return RedirectResponse(url="/squeeze/candidates?limit=20", status_code=307)
 
 
 # Optional buy-now alias if the UI ever posts here:

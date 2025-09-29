@@ -228,47 +228,16 @@ class UnifiedDiscoverySystem:
                 return all_tickers
 
             except Exception as snapshot_error:
-                # Fallback to gainers/losers if full snapshot fails
-                logger.warning(f"⚠️ Full snapshot failed: {snapshot_error}")
-                logger.info("🔄 Falling back to gainers/losers method...")
-
-                return await self._get_gainers_losers_universe()
+                # CRITICAL: NO FALLBACK - If primary method fails, we want to know about it
+                logger.error(f"❌ CRITICAL: Full snapshot failed - NO FALLBACK ALLOWED: {snapshot_error}")
+                raise RuntimeError(f"Primary discovery method failed - system requires troubleshooting: {snapshot_error}")
 
         except Exception as e:
             logger.error(f"❌ FATAL: Universe retrieval failed: {e}")
             raise RuntimeError(f"Real-time data unavailable: {e}")
 
-    async def _get_gainers_losers_universe(self) -> List[Dict[str, Any]]:
-        """
-        Fallback method: Get universe from gainers/losers (original method)
-        """
-        logger.info("📡 Fetching gainers data...")
-        gainers_response = await self.call_mcp_snapshot("gainers")
-
-        logger.info("📡 Fetching losers data...")
-        losers_response = await self.call_mcp_snapshot("losers")
-
-        gainers_data = gainers_response if gainers_response else {'status': 'ERROR', 'tickers': []}
-        losers_data = losers_response if losers_response else {'status': 'ERROR', 'tickers': []}
-
-        # Combine and validate data
-        all_tickers = []
-
-        if gainers_data.get('status') == 'OK':
-            all_tickers.extend(gainers_data.get('tickers', []))
-        else:
-            raise RuntimeError("❌ CRITICAL: Failed to get gainers data from MCP")
-
-        if losers_data.get('status') == 'OK':
-            all_tickers.extend(losers_data.get('tickers', []))
-        else:
-            logger.warning("⚠️ Failed to get losers data, continuing with gainers only")
-
-        if len(all_tickers) < 50:
-            raise RuntimeError(f"❌ CRITICAL: Insufficient universe size: {len(all_tickers)} tickers")
-
-        logger.info(f"✅ Retrieved {len(all_tickers)} tickers from gainers/losers fallback")
-        return all_tickers
+    # REMOVED: _get_gainers_losers_universe method completely eliminated
+    # No fallback to gainers/losers - system must work with full snapshot or fail hard
 
     def apply_post_explosion_filter(self, tickers: List[Dict]) -> List[Dict]:
         """

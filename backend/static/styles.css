@@ -44,42 +44,6 @@ body {
     box-shadow: var(--shadow);
 }
 
-/* Demo Banner */
-.demo-banner {
-    background: linear-gradient(90deg, var(--warning-color), #ff7675);
-    color: var(--background-dark);
-    padding: 12px 0;
-    text-align: center;
-    font-weight: 600;
-    margin-bottom: 20px;
-}
-
-.demo-content {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    position: relative;
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 0 20px;
-}
-
-.demo-close {
-    background: none;
-    border: none;
-    color: var(--background-dark);
-    cursor: pointer;
-    padding: 4px;
-    border-radius: 50%;
-    position: absolute;
-    right: 20px;
-    transition: var(--transition);
-}
-
-.demo-close:hover {
-    background: rgba(0, 0, 0, 0.1);
-}
 
 .header-content {
     display: flex;

@@ -355,53 +355,8 @@ class PolygonMCPClient:
             logger.error(f"Failed to get momentum from aggregates for {ticker}: {e}")
             return {'available': False, 'reason': str(e)}
 
-    async def get_market_movers(self, direction: str = "gainers") -> Dict[str, Any]:
-        """Get market gainers/losers for discovery filtering (official Polygon MCP)"""
-        if not self.mcp_available:
-            return {'available': False, 'reason': 'MCP not available'}
-
-        try:
-            # Get market movers
-            result = await mcp__polygon__get_snapshot_direction(
-                market_type="stocks",
-                direction=direction  # "gainers" or "losers"
-            )
-
-            if result.get('results'):
-                movers = result['results']
-
-                # Filter for explosive candidates
-                explosive_movers = []
-                for mover in movers[:50]:  # Top 50 movers
-                    ticker_data = mover.get('ticker', {})
-                    day_data = ticker_data.get('day', {})
-                    prev_day = ticker_data.get('prevDay', {})
-
-                    change_pct = day_data.get('change_percent', 0)
-                    volume = day_data.get('volume', 0)
-
-                    # Filter for significant moves with volume
-                    if abs(change_pct) >= 5 and volume >= 100000:
-                        explosive_movers.append({
-                            'symbol': ticker_data.get('ticker', ''),
-                            'price': day_data.get('close', 0),
-                            'change_pct': change_pct,
-                            'volume': volume,
-                            'vwap': day_data.get('vwap', 0)
-                        })
-
-                return {
-                    'available': True,
-                    'movers': explosive_movers,
-                    'total_count': len(explosive_movers),
-                    'direction': direction
-                }
-
-            return {'available': False}
-
-        except Exception as e:
-            logger.error(f"Failed to get market movers: {e}")
-            return {'available': False}
+    # REMOVED: get_market_movers method completely eliminated
+    # No access to gainers/losers - system must use full market snapshot only
 
     async def get_financial_fundamentals(self, ticker: str) -> Dict[str, Any]:
         """Get fundamental financial data (official Polygon MCP)"""
