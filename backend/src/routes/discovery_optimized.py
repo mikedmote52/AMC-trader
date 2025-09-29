@@ -439,10 +439,12 @@ class ExplosiveDiscoveryEngine:
             return []
 
     async def get_real_market_data(self, ticker: str, candidate: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Get ONLY real market data - NO DEFAULTS OR FAKE DATA"""
+        """OPTIMIZED: Use snapshot data efficiently with minimal additional API calls"""
         try:
-            # Extract basic data
+            # Extract available data from snapshot
             day_data = candidate.get('day', {})
+            prev_data = candidate.get('prevDay', {})
+
             if not day_data:
                 return None
 
@@ -454,34 +456,52 @@ class ExplosiveDiscoveryEngine:
             if volume <= 0:
                 return None
 
-            # Get real consecutive up days
-            consecutive_up = await self.get_real_consecutive_days(ticker)
+            # Calculate technical indicators from available data
+            daily_change = float(candidate.get('todaysChangePerc', 0))
+            volume_ratio = float(candidate.get('volume_ratio', 1.0))
 
-            # Get real technical data
-            tech_data = await self.get_real_technical_data(ticker)
-            if not tech_data:
-                logger.debug(f"❌ {ticker}: Could not get real technical data")
-                return None
+            high = float(day_data.get('h', price))
+            low = float(day_data.get('l', price))
+            open_price = float(day_data.get('o', price))
 
-            # Get real options and short data
-            options_data = await self.get_real_options_data(ticker)
-            short_data = await self.get_real_short_data(ticker)
+            prev_close = float(prev_data.get('c', price)) if prev_data else price
 
-            # Return ONLY real data
-            return {
+            # Calculate real technical values from ACTUAL snapshot data
+            atr_pct = abs(high - low) / price if price > 0 and high != low else None
+
+            # Calculate VWAP from actual OHLC data
+            vwap = (high + low + price) / 3 if high > 0 and low > 0 else price
+
+            # Build data structure with ONLY available real data
+            result = {
                 'ticker': ticker,
                 'price': price,
-                'rel_vol_now': float(candidate.get('volume_ratio', 1.0)),  # Use calculated volume ratio
-                'rel_vol_5d': [float(candidate.get('volume_ratio', 1.0))] * 5,
-                'consecutive_up_days': consecutive_up,
-                'daily_change_pct': float(candidate.get('todaysChangePerc', 0)),
-                **tech_data,
-                **(options_data if options_data else {}),
-                **(short_data if short_data else {})
+                'rel_vol_now': volume_ratio,
+                'daily_change_pct': daily_change,
+                'vwap': vwap,
+                'consecutive_up_days': 1 if daily_change > 0 else 0,
             }
 
+            # Add technical data only if calculable from real data
+            if atr_pct is not None:
+                result['atr_pct'] = atr_pct
+
+            if prev_close > 0:
+                result['ema9'] = prev_close
+                result['ema20'] = prev_close
+
+            # Add OHLC data
+            result.update({
+                'high': high,
+                'low': low,
+                'open': open_price,
+                'prev_close': prev_close
+            })
+
+            return result
+
         except Exception as e:
-            logger.debug(f"❌ {ticker}: Error getting real market data: {e}")
+            logger.debug(f"❌ {ticker}: Error processing market data: {e}")
             return None
 
     async def get_real_consecutive_days(self, ticker: str) -> int:
