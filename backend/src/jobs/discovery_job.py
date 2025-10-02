@@ -108,7 +108,7 @@ async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
             from ..services.learning_integration import collect_discovery_data
             await collect_discovery_data({
                 'status': 'success',
-                'method': 'explosive_discovery_v2_polygon_mcp',
+                'method': 'unified_discovery_polygon_mcp',
                 'universe_size': pipeline_stats.get('universe_size', 0),
                 'filtered_size': filtered_size,
                 'count': len(candidates),
@@ -133,7 +133,7 @@ async def run_discovery_job(limit: int = 50) -> Dict[str, Any]:
             'execution_time_sec': results['execution_time_sec'],
             'engine': 'Explosive Discovery V2 - Polygon MCP',
             'schema_version': '2.0',
-            'algorithm_version': 'explosive_discovery_v2',
+            'algorithm_version': 'unified_discovery_system',
             'pipeline_stats': pipeline_stats
         }
 
