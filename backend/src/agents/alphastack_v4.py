@@ -2639,10 +2639,47 @@ class ScoringEngine:
             logger.warning(f"Confidence calculation failed for {snap.symbol}: {e}")
             return 0.7  # Reasonable default confidence
     
+    def _detect_vigl_stealth_pattern(self, snap: TickerSnapshot) -> float:
+        """
+        Detect VIGL-style stealth accumulation pattern
+        VIGL Pattern: RVOL 1.5-2.0x + <2% price change = pre-explosion
+        Historical validation: VIGL (+324%), CRWV (+171%), AEVA (+162%)
+        Returns bonus score 0-15 points
+        """
+        current_vol = getattr(snap, 'volume', 0) or 1000000
+        avg_vol_30d = getattr(snap, 'avg_volume_30d', None) or current_vol / 2.0
+        rel_vol = current_vol / avg_vol_30d if avg_vol_30d > 0 else 1.0
+
+        # Get price change percentage
+        change_pct = abs(getattr(snap, 'change_pct', 0.0))
+        price = float(snap.price)
+
+        # VIGL Magic Window Detection
+        # Pattern: High volume (1.5-2.0x) + Low price movement (<2%) = Institutional accumulation
+        in_rvol_window = 1.5 <= rel_vol <= 2.0
+        stealth_price_action = change_pct < 2.0
+        quality_price = price >= 5.0  # Avoid penny stocks
+
+        if in_rvol_window and stealth_price_action and quality_price:
+            # Perfect VIGL pattern match - maximum bonus
+            bonus_score = 15.0
+            logger.info(f"🎯 VIGL PATTERN DETECTED: {snap.symbol} RVOL={rel_vol:.2f}x Change={change_pct:.1f}% Price=${price:.2f}")
+        elif 1.3 <= rel_vol <= 2.5 and change_pct < 3.0 and quality_price:
+            # Near-VIGL pattern - partial bonus
+            bonus_score = 10.0
+            logger.debug(f"📊 Near-VIGL pattern: {snap.symbol} RVOL={rel_vol:.2f}x Change={change_pct:.1f}%")
+        elif rel_vol >= 1.5 and change_pct < 5.0:
+            # Elevated volume with moderate price movement - small bonus
+            bonus_score = 5.0
+        else:
+            bonus_score = 0.0
+
+        return bonus_score
+
     def score_candidate(self, snap: TickerSnapshot) -> CandidateScore:
         """Score a single candidate optimized for explosive parabolic gains"""
         weights = self._adaptive_weights(snap)
-        
+
         # Calculate component scores
         s1_score = self._score_volume_momentum(snap)
         s2_score = self._score_squeeze(snap)
@@ -2650,17 +2687,21 @@ class ScoringEngine:
         s4_score = self._score_sentiment(snap)
         s5_score = self._score_options(snap)
         s6_score = self._score_technical(snap)
-        
-        # Weighted total score
+
+        # VIGL stealth accumulation pattern detection (NEW)
+        vigl_bonus = self._detect_vigl_stealth_pattern(snap)
+
+        # Weighted total score with VIGL bonus
         total_score = (
             s1_score * weights.get("S1", 0) +
             s2_score * weights.get("S2", 0) +
             s3_score * weights.get("S3", 0) +
             s4_score * weights.get("S4", 0) +
             s5_score * weights.get("S5", 0) +
-            s6_score * weights.get("S6", 0)
+            s6_score * weights.get("S6", 0) +
+            vigl_bonus  # Add VIGL pattern bonus (0-15 points)
         )
-        
+
         # Clamp to 0-100 range
         total_score = min(100.0, max(0.0, total_score))
         

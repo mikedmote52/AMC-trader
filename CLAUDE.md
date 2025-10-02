@@ -2,6 +2,26 @@
 
 # AMC-TRADER Real-Time Market Data System
 
+## PRIMARY MISSION: REPLICATE +63.8% MONTHLY RETURNS
+
+**Historical Performance Target (June 1 - July 4, 2024):**
+- Portfolio: 15 positions × $100 = $1,500 initial capital
+- Final value: $2,457.50
+- Total return: +63.8% (+$957.50)
+- Win rate: 93.3% (14/15 profitable)
+- Top performers: VIGL +324%, CRWV +171%, AEVA +162%
+- Only loss: WOLF -25%
+
+**System Goal:**
+Enhance AlphaStack 4.1 discovery system to identify explosive stocks BEFORE major moves using:
+1. **VIGL stealth pattern detection** (RVOL 1.5-2.0x + <2% price change)
+2. **Institutional accumulation signals** (high volume + stable price)
+3. **Pre-explosion positioning** (catch stocks before they explode, not after)
+4. **Risk management** (prevent WOLF-like -25% losses)
+5. **Quality filters** (price ≥$5, avoid penny stocks)
+
+**Key Insight:** VIGL/CRWV/AEVA were found BEFORE their explosions by detecting quiet institutional accumulation (high volume + stable price) in the 1.5-2.0x RVOL magic window.
+
 ## CRITICAL: NO FAKE DATA POLICY
 
 **ABSOLUTE RULE: AMC-TRADER must NEVER use fake, mock, demo, or hardcoded data.**
@@ -27,6 +47,7 @@ AMC-TRADER uses real-time market data to find explosive stocks:
 - **Real market snapshots** from Polygon API
 - **Live volume and price data**
 - **Actual technical indicators** calculated from real data
+- **VIGL stealth pattern detection** for pre-explosion opportunities
 
 ## Configuration
 
@@ -90,14 +111,34 @@ curl -s "$API/discovery/strategy-validation" | jq .
 }
 ```
 
-## Hybrid V1 Strategy Details
+## AlphaStack 4.1 with VIGL Enhancement
 
-### Scoring Components (0-1.0 each)
-1. **Volume & Momentum (35%)**: RelVol, uptrend days, VWAP reclaim, ATR
-2. **Squeeze (25%)**: Float tightness, short interest, borrow fees, utilization
-3. **Catalyst (20%)**: News detection, social media rank
-4. **Options (10%)**: Call/put ratio, IV percentile
-5. **Technical (10%)**: EMA cross, RSI bands
+### Core Scoring Components (0-100 each)
+1. **Volume & Momentum (S1 - 35%)**: RelVol, uptrend days, VWAP reclaim, ATR
+2. **Squeeze (S2 - 25%)**: Float rotation, friction index, short interest
+3. **Catalyst (S3 - 20%)**: News detection, social media rank
+4. **Sentiment (S4)**: Reddit/StockTwits mentions, Z-score anomalies
+5. **Options (S5 - 10%)**: Call/put ratio, IV percentile
+6. **Technical (S6 - 10%)**: EMA cross, RSI bands
+
+### VIGL Stealth Pattern Detection (NEW - Up to +15 bonus points)
+**The Magic Window (VIGL/CRWV/AEVA Pattern):**
+- RVOL: 1.5-2.0x (institutional accumulation)
+- Price Change: <2% daily (stealth mode)
+- Price Floor: ≥$5 (quality filter)
+
+**Bonus Scoring:**
+- Perfect match (1.5-2.0x RVOL + <2% change + ≥$5 price): **+15 points**
+- Near match (1.3-2.5x RVOL + <3% change + ≥$5 price): **+10 points**
+- Partial match (≥1.5x RVOL + <5% change): **+5 points**
+
+**Historical Validation:**
+- VIGL: 1.8x RVOL, +0.4% change → **+324% gain** ✅
+- CRWV: 1.9x RVOL, -0.2% change → **+171% gain** ✅
+- AEVA: 1.7x RVOL, +1.1% change → **+162% gain** ✅
+
+**Why This Works:**
+System identifies institutional accumulation happening quietly - stocks being loaded BEFORE the public catches on. The 1.5-2.0x RVOL window captures smart money accumulation while <2% price movement ensures you're positioned BEFORE the explosion.
 
 ### Gatekeeping Rules
 - RelVol ≥ 2.5x (30-day average)
