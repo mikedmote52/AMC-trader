@@ -18,9 +18,8 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from app.services.market import MarketService
-from app.repositories.volume_cache import VolumeCacheRepository
-from app.deps import get_db
+from src.services.market import MarketService
+# Database connection handled directly with asyncpg (no SQLAlchemy dependency)
 
 
 logger = structlog.get_logger()
@@ -151,11 +150,23 @@ async def refresh_volume_cache(
         if volume_data:
             logger.info(f"Upserting {len(volume_data):,} volume averages to database...")
 
-            async with get_db() as session:
-                repo = VolumeCacheRepository(session)
-                updated_count = await repo.upsert_batch(volume_data)
+            import asyncpg
+            import os
+            conn = await asyncpg.connect(os.environ['DATABASE_URL'])
 
-            logger.info(f"✅ Database updated: {updated_count:,} records")
+            for symbol, avg_vol in volume_data.items():
+                await conn.execute(
+                    """
+                    INSERT INTO volume_averages (symbol, avg_volume_20d, last_updated)
+                    VALUES ($1, $2, NOW())
+                    ON CONFLICT (symbol)
+                    DO UPDATE SET avg_volume_20d = $2, last_updated = NOW()
+                    """,
+                    symbol, int(avg_vol)
+                )
+
+            await conn.close()
+            logger.info(f"✅ Database updated: {len(volume_data):,} records")
         else:
             logger.warning("No volume data to upsert - all symbols skipped")
 
@@ -189,15 +200,21 @@ async def refresh_stale_symbols_only(max_age_hours: int = 24):
     logger.info(f"🔄 Refreshing stale symbols (age > {max_age_hours}h)...")
 
     try:
+        import asyncpg
+        import os
+
         market_service = MarketService()
 
         # Get stale symbols from database
-        async with get_db() as session:
-            repo = VolumeCacheRepository(session)
-            stale_symbols = await repo.get_stale_symbols(max_age_hours)
+        conn = await asyncpg.connect(os.environ['DATABASE_URL'])
+        stale_symbols = await conn.fetch(
+            f"SELECT symbol FROM volume_averages WHERE last_updated < NOW() - INTERVAL '{max_age_hours} hours' ORDER BY last_updated ASC LIMIT 1000"
+        )
+        stale_symbols = [row['symbol'] for row in stale_symbols]
 
         if not stale_symbols:
             logger.info("No stale symbols found - cache is fresh")
+            await conn.close()
             return
 
         logger.info(f"Found {len(stale_symbols):,} stale symbols")
@@ -212,11 +229,20 @@ async def refresh_stale_symbols_only(max_age_hours: int = 24):
 
         # Update database
         if volume_data:
-            async with get_db() as session:
-                repo = VolumeCacheRepository(session)
-                updated = await repo.upsert_batch(volume_data)
+            for symbol, avg_vol in volume_data.items():
+                await conn.execute(
+                    """
+                    INSERT INTO volume_averages (symbol, avg_volume_20d, last_updated)
+                    VALUES ($1, $2, NOW())
+                    ON CONFLICT (symbol)
+                    DO UPDATE SET avg_volume_20d = $2, last_updated = NOW()
+                    """,
+                    symbol, int(avg_vol)
+                )
 
-            logger.info(f"✅ Refreshed {updated:,} stale symbols")
+            logger.info(f"✅ Refreshed {len(volume_data):,} stale symbols")
+
+        await conn.close()
 
     except Exception as e:
         logger.error("Stale symbol refresh failed", error=str(e), exc_info=True)
