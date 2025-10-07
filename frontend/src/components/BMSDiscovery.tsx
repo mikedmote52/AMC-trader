@@ -268,50 +268,75 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
           candidates.map((candidate, index) => (
             <div
               key={candidate.symbol}
-              className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-blue-400 hover:shadow-lg transition-all cursor-pointer"
               onClick={() => showAuditDetails(candidate)}
+              style={{
+                background: 'white',
+                border: '2px solid #e5e7eb',
+                borderRadius: '12px',
+                padding: '24px',
+                marginBottom: '16px',
+                cursor: 'pointer',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+              }}
             >
               {/* Header Row */}
-              <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center space-x-4">
-                  <span className="text-3xl font-black text-gray-900">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <span style={{ fontSize: '32px', fontWeight: '900', color: '#111' }}>
                     {candidate.symbol}
                   </span>
-                  <span className="text-2xl font-bold text-gray-600">
+                  <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#6b7280' }}>
                     ${candidate.price.toFixed(2)}
                   </span>
                   {getActionBadge(candidate.action, candidate.confidence || 'MEDIUM')}
                 </div>
-                <span className="text-sm font-medium text-gray-500">#{index + 1}</span>
+                <span style={{ fontSize: '14px', fontWeight: '500', color: '#9ca3af' }}>#{index + 1}</span>
               </div>
 
               {/* Key Metrics - Big & Bold */}
-              <div className="grid grid-cols-3 gap-6 mb-4">
-                <div className="text-center bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4">
-                  <div className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                <div style={{
+                  textAlign: 'center',
+                  background: 'linear-gradient(to bottom right, #f0fdf4, #dcfce7)',
+                  borderRadius: '8px',
+                  padding: '16px'
+                }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
                     Explosion Probability
                   </div>
-                  <div className="text-3xl font-black text-green-600">
+                  <div style={{ fontSize: '36px', fontWeight: '900', color: '#16a34a' }}>
                     {candidate.bms_score.toFixed(1)}%
                   </div>
                 </div>
 
-                <div className="text-center bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4">
-                  <div className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">
+                <div style={{
+                  textAlign: 'center',
+                  background: 'linear-gradient(to bottom right, #eff6ff, #dbeafe)',
+                  borderRadius: '8px',
+                  padding: '16px'
+                }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
                     Volume Surge
                   </div>
-                  <div className="text-3xl font-black text-blue-600">
+                  <div style={{ fontSize: '36px', fontWeight: '900', color: '#2563eb' }}>
                     {candidate.volume_surge.toFixed(1)}x
                   </div>
                 </div>
 
-                <div className="text-center bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4">
-                  <div className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-1">
+                <div style={{
+                  textAlign: 'center',
+                  background: 'linear-gradient(to bottom right, #faf5ff, #f3e8ff)',
+                  borderRadius: '8px',
+                  padding: '16px'
+                }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
                     Price Change
                   </div>
-                  <div className={`text-3xl font-black ${
-                    candidate.momentum_1d >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
+                  <div style={{
+                    fontSize: '36px',
+                    fontWeight: '900',
+                    color: candidate.momentum_1d >= 0 ? '#16a34a' : '#dc2626'
+                  }}>
                     {candidate.momentum_1d >= 0 ? '+' : ''}{candidate.momentum_1d.toFixed(1)}%
                   </div>
                 </div>
@@ -319,25 +344,25 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
 
               {/* Thesis */}
               {candidate.thesis && (
-                <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                  <p className="text-gray-700 text-sm leading-relaxed">{candidate.thesis}</p>
+                <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+                  <p style={{ color: '#374151', fontSize: '14px', lineHeight: '1.6', margin: 0 }}>{candidate.thesis}</p>
                 </div>
               )}
 
               {/* Secondary Metrics */}
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 {candidate.dollar_volume && (
-                  <div className="flex justify-between items-center bg-gray-50 rounded px-3 py-2">
-                    <span className="text-gray-600 font-medium">Dollar Volume</span>
-                    <span className="text-gray-900 font-bold">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f9fafb', borderRadius: '6px', padding: '8px 12px' }}>
+                    <span style={{ color: '#4b5563', fontWeight: '500', fontSize: '14px' }}>Dollar Volume</span>
+                    <span style={{ color: '#111', fontWeight: 'bold', fontSize: '14px' }}>
                       ${(candidate.dollar_volume / 1000000).toFixed(1)}M
                     </span>
                   </div>
                 )}
                 {candidate.volume && (
-                  <div className="flex justify-between items-center bg-gray-50 rounded px-3 py-2">
-                    <span className="text-gray-600 font-medium">Volume</span>
-                    <span className="text-gray-900 font-bold">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f9fafb', borderRadius: '6px', padding: '8px 12px' }}>
+                    <span style={{ color: '#4b5563', fontWeight: '500', fontSize: '14px' }}>Volume</span>
+                    <span style={{ color: '#111', fontWeight: 'bold', fontSize: '14px' }}>
                       {(candidate.volume / 1000000).toFixed(1)}M
                     </span>
                   </div>
