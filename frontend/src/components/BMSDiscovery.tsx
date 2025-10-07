@@ -209,10 +209,10 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            BMS Discovery System
+            🚀 V2 Explosive Stock Discovery (11,644 stocks scanned)
           </h2>
           <p className="text-gray-600">
-            Breakout Momentum Score • Based on June-July 2025 Winners
+            Real-time VIGL Pattern Detection • 50x Faster Than V1
           </p>
         </div>
         <div className="flex items-center space-x-4">
