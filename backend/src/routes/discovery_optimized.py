@@ -31,8 +31,8 @@ class ExplosiveDiscoveryEngine:
         self.min_price = 0.50
         self.max_price = 50.0    # Focus on smaller caps for 2x potential
         self.min_irv = 1.5       # Realistic IRV threshold for market conditions
-        self.max_daily_change = 50.0  # Allow larger moves for explosive stocks
-        self.min_daily_change = -10.0  # VIGL stealth pattern: Allow <2% change (institutional accumulation)
+        self.max_daily_change = 5.0  # VIGL stealth pattern: <5% change (find stocks BEFORE explosion)
+        self.min_daily_change = -10.0  # Allow down to -10% (dip buying opportunity)
         # REMOVED: No artificial limits - return all candidates that meet ultra-high standards
         self.api_key = os.getenv('POLYGON_API_KEY')
         self.config = self._load_config()
@@ -1116,13 +1116,22 @@ async def get_contenders_v2(
         MIN_VOLUME = 100_000
         ETF_KEYWORDS = ['ETF', 'FUND', 'INDEX', 'TRUST', 'REIT']
 
+        # VIGL Stealth Pattern: Find stocks BEFORE they explode
+        MAX_DAILY_CHANGE = 5.0  # Allow up to +5% daily change (stealth accumulation)
+        MIN_DAILY_CHANGE = -10.0  # Allow down to -10% (dip buying opportunity)
+
         filtered_snapshots = {}
         for symbol, snapshot in snapshots.items():
             if any(kw in symbol.upper() for kw in ETF_KEYWORDS):
                 continue
             price = snapshot.get('price', 0)
             volume = snapshot.get('volume', 0)
-            if MIN_PRICE <= price <= MAX_PRICE and volume >= MIN_VOLUME:
+            change_pct = snapshot.get('change_pct', 0)
+
+            # Filter: Price, volume, and VIGL stealth pattern (<5% daily change)
+            if (MIN_PRICE <= price <= MAX_PRICE and
+                volume >= MIN_VOLUME and
+                MIN_DAILY_CHANGE <= change_pct <= MAX_DAILY_CHANGE):
                 filtered_snapshots[symbol] = snapshot
 
         # Stage 3: SKIPPED (to avoid missing VIGL-pattern stocks)
