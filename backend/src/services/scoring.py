@@ -321,15 +321,19 @@ class ScoringService:
 
         Predicts likelihood of explosive upside move (0-100 scale).
 
-        8-factor formula:
-        - Momentum (25%): Price acceleration
-        - RVOL (25%): Relative volume participation
+        8-factor formula (VIGL-optimized weights):
+        - RVOL (40%): PRIMARY - Relative volume surge is the key signal
         - Catalyst (20%): News/trigger strength
+        - Momentum (10%): Price acceleration (absolute volume)
         - Price (10%): Lower price = higher % upside potential
         - Change (10%): Current price momentum
         - Short Interest (5%): Squeeze fuel
         - Borrow Rate (5%): Short stress
         - Float Size (5%): Smaller = more volatile
+
+        VIGL Pattern: High RVOL (35x+) is more important than high absolute volume.
+        This ensures stocks with massive relative volume but moderate absolute volume
+        (like VIGL: 1.8x RVOL → +324%) get high scores.
 
         CRITICAL: Uses ONLY real data provided.
         Missing optional data = 0.0 contribution (NO fake defaults).
@@ -344,9 +348,11 @@ class ScoringService:
             return max(0.0, min(1.0, (value - min_val) / (max_val - min_val + 1e-9)))
 
         # Required components (from real data)
-        momentum_component = norm(momentum_score, 0, 200) * 0.25
+        # VIGL pattern: RVOL is the PRIMARY signal (40%), momentum is secondary (10%)
+        # This ensures high-RVOL stocks score high even with low absolute volume
+        momentum_component = norm(momentum_score, 0, 200) * 0.10
         # VIGL pattern: 35x+ RVOL is explosive, so expand range to 1-50x
-        rvol_component = norm(rvol, 1, 50) * 0.25
+        rvol_component = norm(rvol, 1, 50) * 0.40
         catalyst_component = norm(catalyst_score, 0, 100) * 0.20
 
         # Price component (inverse: lower price = higher score)

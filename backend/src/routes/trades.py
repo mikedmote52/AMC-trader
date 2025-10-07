@@ -1,11 +1,13 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
-import os, math, httpx, json
+import os, math, httpx, json, logging
 from prometheus_client import Counter
 from typing import Literal, Optional
 from datetime import datetime
 from backend.src.services.polygon_client import poly_singleton
 from backend.src.shared.redis_client import get_redis_client
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
