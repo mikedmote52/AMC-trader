@@ -16,6 +16,7 @@ from fastapi.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from backend.src.routes.trades import router as trades_router
 from backend.src.routes.debug_polygon import router as polygon_debug
+from backend.src.routes.admin import router as admin_router
 
 # Trace v3 constants
 APP_TAG    = "trace_v3"
@@ -223,6 +224,7 @@ async def health():
 # Include routers
 app.include_router(trades_router)
 app.include_router(polygon_debug, prefix="/debug")
+app.include_router(admin_router, tags=["admin"])
 
 # Include AlphaStack 4.1 API
 from backend.src.routes.alphastack import router as alphastack_router
