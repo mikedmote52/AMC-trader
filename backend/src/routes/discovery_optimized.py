@@ -1034,49 +1034,6 @@ class ExplosiveDiscoveryEngine:
 # Global discovery engine instance
 discovery_engine = ExplosiveDiscoveryEngine()
 
-@router.get("/contenders")
-async def get_contenders(limit: int = Query(8, le=10)):
-    """
-    Get explosive growth contenders
-    Main endpoint for frontend integration
-    """
-    try:
-        result = await discovery_engine.run_discovery(limit)
-
-        if result['status'] == 'success':
-            return {
-                'success': True,
-                'data': result['candidates'],
-                'count': result['count'],
-                'trade_ready_count': result['trade_ready_count'],
-                'source': 'optimized_discovery',
-                'engine': result['engine'],
-                'execution_time_sec': result['execution_time_sec'],
-                'timestamp': datetime.now().isoformat()
-            }
-        else:
-            return {
-                'success': False,
-                'data': [],
-                'count': 0,
-                'error': result.get('error', 'Discovery failed'),
-                'timestamp': datetime.now().isoformat()
-            }
-
-    except Exception as e:
-        logger.error(f"Contenders endpoint failed: {e}")
-        return {
-            'success': False,
-            'data': [],
-            'count': 0,
-            'error': str(e),
-            'timestamp': datetime.now().isoformat()
-        }
-
-# REMOVED: strategy-validation endpoint (duplicate system eliminated)
-
-# REMOVED: test discovery endpoint (duplicate system eliminated)
-
 # ===== NEW SQUEEZE-PROPHET OPTIMIZED PIPELINE (V2) =====
 # 7-Stage optimized pipeline with RVOL caching and momentum pre-ranking
 # Performance: 1-2 seconds for 8,000+ stocks (vs 20-30s for 20 stocks)
