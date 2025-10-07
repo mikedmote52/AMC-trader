@@ -32,7 +32,7 @@ class ExplosiveDiscoveryEngine:
         self.max_price = 50.0    # Focus on smaller caps for 2x potential
         self.min_irv = 1.5       # Realistic IRV threshold for market conditions
         self.max_daily_change = 50.0  # Allow larger moves for explosive stocks
-        self.min_daily_change = 3.0   # Catch earlier momentum (was 5.0)
+        self.min_daily_change = -10.0  # VIGL stealth pattern: Allow <2% change (institutional accumulation)
         # REMOVED: No artificial limits - return all candidates that meet ultra-high standards
         self.api_key = os.getenv('POLYGON_API_KEY')
         self.config = self._load_config()
@@ -344,11 +344,12 @@ class ExplosiveDiscoveryEngine:
                         # Add volume ratio for downstream processing
                         stock['volume_ratio'] = volume_ratio
 
-                        # Check daily change is within target range (7-20% for momentum but not exploded)
+                        # Check daily change is within target range
+                        # VIGL stealth pattern: Allow <2% change (institutional accumulation before explosion)
                         daily_change = stock.get('todaysChangePerc', 0)
                         if daily_change is None:
                             continue
-                        # CRITICAL: Enforce the configured range - no flat stocks, no already-exploded stocks
+                        # CRITICAL: Enforce the configured range - allow stealth stocks, reject already-exploded
                         if daily_change < self.min_daily_change or daily_change > self.max_daily_change:
                             continue
 
