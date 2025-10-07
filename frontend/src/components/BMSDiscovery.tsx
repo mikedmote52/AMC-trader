@@ -53,6 +53,8 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
   const [lastUpdate, setLastUpdate] = useState<string>('');
   const [selectedCandidate, setSelectedCandidate] = useState<BMSCandidate | null>(null);
   const [showAuditModal, setShowAuditModal] = useState(false);
+  const [showTradeModal, setShowTradeModal] = useState(false);
+  const [tradingCandidate, setTradingCandidate] = useState<BMSCandidate | null>(null);
 
   const fetchCandidates = async () => {
     try {
@@ -268,15 +270,20 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
           candidates.map((candidate, index) => (
             <div
               key={candidate.symbol}
-              onClick={() => showAuditDetails(candidate)}
               style={{
                 background: 'white',
                 border: '2px solid #e5e7eb',
                 borderRadius: '12px',
                 padding: '24px',
                 marginBottom: '16px',
-                cursor: 'pointer',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                transition: 'box-shadow 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
               }}
             >
               {/* Header Row */}
@@ -350,7 +357,7 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
               )}
 
               {/* Secondary Metrics */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
                 {candidate.dollar_volume && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f9fafb', borderRadius: '6px', padding: '8px 12px' }}>
                     <span style={{ color: '#4b5563', fontWeight: '500', fontSize: '14px' }}>Dollar Volume</span>
@@ -368,6 +375,51 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: '12px', paddingTop: '16px', borderTop: '1px solid #e5e7eb' }}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTradingCandidate(candidate);
+                    setShowTradeModal(true);
+                  }}
+                  style={{
+                    flex: 2,
+                    padding: '14px',
+                    fontSize: '16px',
+                    fontWeight: '700',
+                    border: 'none',
+                    borderRadius: '8px',
+                    background: candidate.action === 'TRADE_READY' ? '#16a34a' : '#3b82f6',
+                    color: 'white',
+                    cursor: 'pointer',
+                    transition: 'transform 0.1s',
+                    ':hover': { transform: 'scale(1.02)' }
+                  }}
+                >
+                  🚀 Buy Now
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    showAuditDetails(candidate);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '14px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    background: 'white',
+                    color: '#6b7280',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Details
+                </button>
+              </div>
             </div>
           ))
         )}
@@ -378,6 +430,17 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
         <BMSAuditModal
           candidate={selectedCandidate}
           onClose={() => setShowAuditModal(false)}
+        />
+      )}
+
+      {/* Trade Modal */}
+      {showTradeModal && tradingCandidate && (
+        <TradeModal
+          candidate={tradingCandidate}
+          onClose={() => {
+            setShowTradeModal(false);
+            setTradingCandidate(null);
+          }}
         />
       )}
     </div>
@@ -502,6 +565,328 @@ const BMSAuditModal: React.FC<BMSAuditModalProps> = ({ candidate, onClose }) => 
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+};
+
+// Trade Modal Component
+interface TradeModalProps {
+  candidate: BMSCandidate;
+  onClose: () => void;
+}
+
+const TradeModal: React.FC<TradeModalProps> = ({ candidate, onClose }) => {
+  const [dollarAmount, setDollarAmount] = useState('100');
+  const [stopLossPct, setStopLossPct] = useState(0);
+  const [takeProfitPct, setTakeProfitPct] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [result, setResult] = useState<{success: boolean, message: string} | null>(null);
+
+  // Calculate smart stop-loss based on stock characteristics
+  useEffect(() => {
+    // Stop-loss based on explosion probability and RVOL
+    // High explosion prob + high RVOL = tighter stop (less risky)
+    // Low explosion prob + high RVOL = wider stop (more volatile)
+
+    const explosionProb = candidate.bms_score || 50;
+    const rvol = candidate.volume_surge || 1.5;
+
+    // Base stop-loss: 5-15%
+    // Lower explosion prob = wider stop (more risk)
+    // Higher RVOL = tighter stop (momentum stock, move fast)
+    let baseStop = 10; // 10% default
+
+    if (explosionProb >= 70) {
+      baseStop = 5; // Tight stop for high-confidence trades
+    } else if (explosionProb >= 60) {
+      baseStop = 7; // Medium stop
+    } else {
+      baseStop = 10; // Wider stop for lower confidence
+    }
+
+    // Adjust for RVOL (high volume = tighter stops)
+    if (rvol >= 10) {
+      baseStop *= 0.8; // 20% tighter
+    } else if (rvol >= 5) {
+      baseStop *= 0.9; // 10% tighter
+    }
+
+    setStopLossPct(Math.round(baseStop * 10) / 10); // Round to 1 decimal
+
+    // Take profit: 2x the stop-loss (risk/reward ratio of 1:2)
+    setTakeProfitPct(Math.round(baseStop * 2 * 10) / 10);
+  }, [candidate]);
+
+  const handleBuy = async () => {
+    setIsSubmitting(true);
+    setResult(null);
+
+    try {
+      const amount = parseFloat(dollarAmount);
+      if (isNaN(amount) || amount <= 0) {
+        setResult({success: false, message: 'Invalid dollar amount'});
+        setIsSubmitting(false);
+        return;
+      }
+
+      const response = await fetch(
+        `${window.location.hostname === 'localhost' ? '/api' : 'https://amc-trader.onrender.com'}/trades/execute`,
+        {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            symbol: candidate.symbol,
+            action: 'BUY',
+            mode: 'live',
+            notional_usd: amount,
+            bracket: true,
+            stop_loss_pct: stopLossPct / 100,
+            take_profit_pct: takeProfitPct / 100
+          })
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        setResult({
+          success: true,
+          message: `✅ Purchased ${candidate.symbol} for $${amount} with ${stopLossPct}% stop-loss`
+        });
+      } else {
+        setResult({
+          success: false,
+          message: `❌ Trade failed: ${data.error?.message || 'Unknown error'}`
+        });
+      }
+    } catch (err: any) {
+      setResult({
+        success: false,
+        message: `❌ Error: ${err.message || 'Network error'}`
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const estimatedShares = Math.floor(parseFloat(dollarAmount || '0') / candidate.price);
+  const stopLossPrice = (candidate.price * (1 - stopLossPct / 100)).toFixed(2);
+  const takeProfitPrice = (candidate.price * (1 + takeProfitPct / 100)).toFixed(2);
+  const potentialLoss = (parseFloat(dollarAmount || '0') * stopLossPct / 100).toFixed(2);
+  const potentialGain = (parseFloat(dollarAmount || '0') * takeProfitPct / 100).toFixed(2);
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0,0,0,0.7)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000
+    }}>
+      <div style={{
+        background: 'white',
+        borderRadius: '16px',
+        padding: '32px',
+        maxWidth: '600px',
+        width: '90%',
+        maxHeight: '90vh',
+        overflow: 'auto'
+      }}>
+        {/* Header */}
+        <div style={{marginBottom: '24px'}}>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
+            <h2 style={{fontSize: '28px', fontWeight: '900', color: '#111', margin: 0}}>
+              Buy {candidate.symbol}
+            </h2>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: '32px',
+                cursor: 'pointer',
+                color: '#9ca3af',
+                padding: 0,
+                lineHeight: 1
+              }}
+            >
+              ×
+            </button>
+          </div>
+          <p style={{fontSize: '18px', color: '#6b7280', margin: 0}}>
+            ${candidate.price.toFixed(2)} | {candidate.bms_score.toFixed(1)}% explosion probability
+          </p>
+        </div>
+
+        {/* Dollar Amount Input */}
+        <div style={{marginBottom: '24px'}}>
+          <label style={{display: 'block', fontSize: '14px', fontWeight: '600', color: '#374151', marginBottom: '8px'}}>
+            Dollar Amount to Invest
+          </label>
+          <input
+            type="number"
+            value={dollarAmount}
+            onChange={(e) => setDollarAmount(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '12px 16px',
+              fontSize: '18px',
+              fontWeight: '600',
+              border: '2px solid #e5e7eb',
+              borderRadius: '8px',
+              outline: 'none'
+            }}
+            min="1"
+            step="1"
+          />
+          <p style={{fontSize: '13px', color: '#6b7280', marginTop: '6px', marginBottom: 0}}>
+            ≈ {estimatedShares} shares
+          </p>
+        </div>
+
+        {/* Stop-Loss & Take-Profit */}
+        <div style={{background: '#f9fafb', borderRadius: '12px', padding: '20px', marginBottom: '24px'}}>
+          <h3 style={{fontSize: '16px', fontWeight: '700', color: '#111', marginTop: 0, marginBottom: '16px'}}>
+            Automatic Risk Management
+          </h3>
+
+          <div style={{marginBottom: '16px'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
+              <label style={{fontSize: '14px', fontWeight: '600', color: '#374151'}}>
+                Stop-Loss
+              </label>
+              <span style={{fontSize: '14px', fontWeight: '700', color: '#dc2626'}}>
+                -{stopLossPct}%
+              </span>
+            </div>
+            <input
+              type="range"
+              value={stopLossPct}
+              onChange={(e) => setStopLossPct(parseFloat(e.target.value))}
+              min="2"
+              max="20"
+              step="0.5"
+              style={{width: '100%'}}
+            />
+            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#6b7280'}}>
+              <span>Exit at ${stopLossPrice}</span>
+              <span>Max loss: ${potentialLoss}</span>
+            </div>
+          </div>
+
+          <div>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
+              <label style={{fontSize: '14px', fontWeight: '600', color: '#374151'}}>
+                Take-Profit
+              </label>
+              <span style={{fontSize: '14px', fontWeight: '700', color: '#16a34a'}}>
+                +{takeProfitPct}%
+              </span>
+            </div>
+            <input
+              type="range"
+              value={takeProfitPct}
+              onChange={(e) => setTakeProfitPct(parseFloat(e.target.value))}
+              min="5"
+              max="50"
+              step="1"
+              style={{width: '100%'}}
+            />
+            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#6b7280'}}>
+              <span>Exit at ${takeProfitPrice}</span>
+              <span>Potential gain: ${potentialGain}</span>
+            </div>
+          </div>
+
+          <div style={{
+            marginTop: '16px',
+            padding: '12px',
+            background: '#eff6ff',
+            borderRadius: '8px',
+            border: '1px solid #bfdbfe'
+          }}>
+            <p style={{fontSize: '13px', color: '#1e40af', margin: 0, lineHeight: '1.5'}}>
+              <strong>Risk/Reward:</strong> 1:{(takeProfitPct / stopLossPct).toFixed(1)} -
+              For every $1 risked, you could gain ${(takeProfitPct / stopLossPct).toFixed(2)}
+            </p>
+          </div>
+        </div>
+
+        {/* Result Message */}
+        {result && (
+          <div style={{
+            padding: '16px',
+            borderRadius: '8px',
+            marginBottom: '20px',
+            background: result.success ? '#f0fdf4' : '#fef2f2',
+            border: result.success ? '1px solid #86efac' : '1px solid #fca5a5'
+          }}>
+            <p style={{
+              margin: 0,
+              color: result.success ? '#166534' : '#991b1b',
+              fontSize: '14px',
+              fontWeight: '600'
+            }}>
+              {result.message}
+            </p>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div style={{display: 'flex', gap: '12px'}}>
+          <button
+            onClick={onClose}
+            style={{
+              flex: 1,
+              padding: '14px',
+              fontSize: '16px',
+              fontWeight: '600',
+              border: '2px solid #e5e7eb',
+              borderRadius: '8px',
+              background: 'white',
+              color: '#374151',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleBuy}
+            disabled={isSubmitting || !dollarAmount || parseFloat(dollarAmount) <= 0}
+            style={{
+              flex: 2,
+              padding: '14px',
+              fontSize: '16px',
+              fontWeight: '700',
+              border: 'none',
+              borderRadius: '8px',
+              background: isSubmitting ? '#9ca3af' : '#16a34a',
+              color: 'white',
+              cursor: isSubmitting ? 'not-allowed' : 'pointer',
+              opacity: isSubmitting ? 0.6 : 1
+            }}
+          >
+            {isSubmitting ? 'Processing...' : `🚀 Buy $${dollarAmount} of ${candidate.symbol}`}
+          </button>
+        </div>
+
+        {/* Fine Print */}
+        <p style={{
+          marginTop: '20px',
+          fontSize: '11px',
+          color: '#9ca3af',
+          textAlign: 'center',
+          lineHeight: '1.4'
+        }}>
+          Market order will execute at current price. Stop-loss and take-profit orders will be placed automatically.
+          Trading involves risk of loss.
+        </p>
       </div>
     </div>
   );
