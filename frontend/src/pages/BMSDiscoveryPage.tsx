@@ -42,28 +42,8 @@ const BMSDiscoveryPage: React.FC = () => {
   const [showSystemInfo, setShowSystemInfo] = useState(false);
 
   useEffect(() => {
-    // Fetch system health
-    const fetchHealth = async () => {
-      try {
-        const health = await getJSON('/discovery/health');
-        setSystemHealth(health);
-      } catch (err) {
-        console.error('Failed to fetch system health:', err);
-      }
-    };
-
-    // Fetch winners analysis
-    const fetchWinnersAnalysis = async () => {
-      try {
-        const analysis = await getJSON('/discovery/winners-analysis');
-        setWinnersAnalysis(analysis);
-      } catch (err) {
-        console.error('Failed to fetch winners analysis:', err);
-      }
-    };
-
-    fetchHealth();
-    fetchWinnersAnalysis();
+    // V2 system doesn't use health/winners-analysis endpoints
+    // All data comes from /discovery/contenders-v2
   }, []);
 
   const getHealthStatusColor = (status: string): string => {
