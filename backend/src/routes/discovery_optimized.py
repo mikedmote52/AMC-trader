@@ -1103,10 +1103,10 @@ async def get_contenders_v2(
 
     CRITICAL: NO FAKE DATA - All data from Polygon API
     """
-    from app.services.market import MarketService
-    from app.services.scoring import ScoringService
-    from app.repositories.volume_cache import VolumeCacheRepository
-    from app.deps import get_db as get_app_db
+    from src.services.market import MarketService
+    from src.services.scoring import ScoringService
+    import asyncpg
+    import os
 
     start_time = time.time()
 
@@ -1160,9 +1160,15 @@ async def get_contenders_v2(
         )
 
         # Stage 4: Load Cached Averages
-        async with get_app_db() as session:
-            volume_repo = VolumeCacheRepository(session)
-            avg_volumes = await volume_repo.fetch_batch(top_momentum)
+        conn = await asyncpg.connect(os.environ['DATABASE_URL'])
+
+        # Fetch cached averages from database
+        rows = await conn.fetch(
+            "SELECT symbol, avg_volume_20d FROM volume_averages WHERE symbol = ANY($1) AND last_updated > NOW() - INTERVAL '24 hours'",
+            top_momentum
+        )
+        avg_volumes = {row['symbol']: float(row['avg_volume_20d']) for row in rows}
+        await conn.close()
 
         if not avg_volumes:
             return {
@@ -1269,9 +1275,9 @@ async def validate_discovery_v2():
     """
     Validation endpoint to verify NO FAKE DATA in V2 pipeline.
     """
-    from app.services.market import MarketService
-    from app.repositories.volume_cache import VolumeCacheRepository
-    from app.deps import get_db as get_app_db
+    from src.services.market import MarketService
+    import asyncpg
+    import os
 
     try:
         diagnostics = {
@@ -1290,9 +1296,13 @@ async def validate_discovery_v2():
         }
 
         # Check 2: Volume cache
-        async with get_app_db() as session:
-            volume_repo = VolumeCacheRepository(session)
-            cached = await volume_repo.fetch_batch(['AAPL', 'MSFT', 'SPY'])
+        conn = await asyncpg.connect(os.environ['DATABASE_URL'])
+        rows = await conn.fetch(
+            "SELECT symbol, avg_volume_20d FROM volume_averages WHERE symbol = ANY($1)",
+            ['AAPL', 'MSFT', 'SPY']
+        )
+        cached = {row['symbol']: float(row['avg_volume_20d']) for row in rows}
+        await conn.close()
 
         diagnostics['checks']['volume_cache'] = {
             'status': 'PASS' if len(cached) > 0 else 'FAIL',
