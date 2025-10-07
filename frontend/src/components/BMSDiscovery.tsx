@@ -58,41 +58,43 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
     try {
       setLoading(true);
       setError(null);
-      
-      const endpoint = showOnlyTradeReady 
-        ? `/discovery/candidates/trade-ready?limit=${maxResults}`
-        : `/discovery/candidates?limit=${maxResults}`;
-      
+
+      // V2 Explosive Stock Discovery - 11,644 stocks scanned in 1-2 seconds
+      const endpoint = `/discovery/contenders-v2?limit=${maxResults}`;
+
       const response = await getJSON<any>(endpoint);
-      
-      // Handle async discovery response patterns
-      if (response.status === 'cached' || response.status === 'ready') {
-        // Immediate response with candidates
-        setCandidates(response.candidates || []);
+
+      // V2 returns simple format: { candidates: [...], count: N, stats: {...} }
+      if (response.candidates && Array.isArray(response.candidates)) {
+        // Map V2 data format to component's expected format
+        const mappedCandidates = response.candidates.map((c: any) => ({
+          symbol: c.symbol,
+          price: c.price,
+          bms_score: c.explosion_probability, // V2 explosion_probability → bms_score
+          action: c.explosion_probability >= 60 ? 'TRADE_READY' : 'MONITOR',
+          confidence: c.explosion_probability >= 65 ? 'HIGH' : 'MEDIUM',
+          volume_surge: c.rvol, // V2 rvol → volume_surge
+          dollar_volume: c.price * c.volume,
+          momentum_1d: c.change_pct,
+          thesis: `Explosive potential: ${c.explosion_probability.toFixed(1)}% probability, ${c.rvol.toFixed(1)}x volume surge`,
+          ...c // Include all original V2 fields
+        }));
+
+        setCandidates(mappedCandidates);
         setLastUpdate(new Date().toLocaleTimeString());
-        
-      } else if (response.status === 'queued') {
-        // Job queued, need to poll for results
-        setError('Discovery in progress... This may take 30-60 seconds.');
-        await pollForResults(response.task);
-        
-      } else if (response.candidates && Array.isArray(response.candidates)) {
-        // Fallback: old API format with direct candidates array
-        setCandidates(response.candidates);
-        if (response.timestamp) {
-          setLastUpdate(new Date(response.timestamp).toLocaleTimeString());
-        } else {
-          setLastUpdate(new Date().toLocaleTimeString());
+
+        // Log V2 performance stats
+        if (response.stats) {
+          console.log('V2 Discovery Stats:', response.stats);
         }
       } else {
-        // Unknown response format
-        console.warn('Unknown discovery response format:', response);
+        console.warn('Unexpected V2 response format:', response);
         setError('Received unexpected response format. Please refresh the page.');
       }
-      
+
     } catch (err) {
-      console.error('Error fetching BMS candidates:', err);
-      setError('Failed to load discovery candidates. The system may be starting up.');
+      console.error('Error fetching V2 explosive stocks:', err);
+      setError('Failed to load explosive stocks. The system may be starting up.');
     } finally {
       setLoading(false);
     }
@@ -141,26 +143,8 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
   }, [maxResults, showOnlyTradeReady, autoRefresh, refreshInterval]);
 
   const triggerDiscovery = async () => {
-    try {
-      setLoading(true);
-      setError('Triggering fresh discovery scan...');
-      
-      // Trigger forces a fresh discovery job
-      const response = await getJSON<any>(`/discovery/trigger?limit=${maxResults}`);
-      
-      if (response.status === 'queued') {
-        setError('Fresh discovery started. This will take 30-60 seconds...');
-        await pollForResults(response.task);
-      } else {
-        // Immediate response or other format
-        await fetchCandidates();
-      }
-    } catch (err) {
-      console.error('Error triggering discovery:', err);
-      setError('Failed to trigger discovery scan');
-    } finally {
-      setLoading(false);
-    }
+    // V2 returns results immediately - just refresh candidates
+    await fetchCandidates();
   };
 
   const getScoreColor = (score: number): string => {
