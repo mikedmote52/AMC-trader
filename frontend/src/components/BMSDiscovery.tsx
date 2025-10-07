@@ -268,70 +268,80 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
           candidates.map((candidate, index) => (
             <div
               key={candidate.symbol}
-              className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+              className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-blue-400 hover:shadow-lg transition-all cursor-pointer"
               onClick={() => showAuditDetails(candidate)}
             >
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <span className="text-xl font-bold text-gray-900">
-                      #{index + 1} {candidate.symbol}
-                    </span>
-                    <span className={`text-lg ${getScoreColor(candidate.bms_score)}`}>
-                      {candidate.bms_score.toFixed(1)}
-                    </span>
-                    {getActionBadge(candidate.action, candidate.confidence || 'MEDIUM')}
-                    <span className="text-sm text-gray-500">
-                      ${candidate.price.toFixed(2)}
-                    </span>
+              {/* Header Row */}
+              <div className="flex justify-between items-center mb-4">
+                <div className="flex items-center space-x-4">
+                  <span className="text-3xl font-black text-gray-900">
+                    {candidate.symbol}
+                  </span>
+                  <span className="text-2xl font-bold text-gray-600">
+                    ${candidate.price.toFixed(2)}
+                  </span>
+                  {getActionBadge(candidate.action, candidate.confidence || 'MEDIUM')}
+                </div>
+                <span className="text-sm font-medium text-gray-500">#{index + 1}</span>
+              </div>
+
+              {/* Key Metrics - Big & Bold */}
+              <div className="grid grid-cols-3 gap-6 mb-4">
+                <div className="text-center bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4">
+                  <div className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1">
+                    Explosion Probability
                   </div>
-                  
-                  {candidate.thesis && <p className="text-gray-700 mb-3">{candidate.thesis}</p>}
-                  
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-500">Volume Surge:</span>
-                      <span className="ml-1 font-medium">{candidate.volume_surge.toFixed(1)}x</span>
-                    </div>
-                    {candidate.dollar_volume && (
-                      <div>
-                        <span className="text-gray-500">Dollar Vol:</span>
-                        <span className="ml-1 font-medium">${(candidate.dollar_volume / 1000000).toFixed(0)}M</span>
-                      </div>
-                    )}
-                    {candidate.momentum_1d !== undefined && (
-                      <div>
-                        <span className="text-gray-500">Momentum 1D:</span>
-                        <span className={`ml-1 font-medium ${candidate.momentum_1d >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {candidate.momentum_1d.toFixed(1)}%
-                        </span>
-                      </div>
-                    )}
-                    {candidate.atr_pct !== undefined && (
-                      <div>
-                        <span className="text-gray-500">ATR:</span>
-                        <span className="ml-1 font-medium">{candidate.atr_pct.toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {candidate.risk_level && (
-                      <div>
-                        <span className="text-gray-500">Risk:</span>
-                        <span className={`ml-1 font-medium ${
-                          candidate.risk_level === 'LOW' ? 'text-green-600' :
-                          candidate.risk_level === 'MEDIUM' ? 'text-yellow-600' : 'text-red-600'
-                        }`}>
-                          {candidate.risk_level}
-                        </span>
-                      </div>
-                    )}
+                  <div className="text-3xl font-black text-green-600">
+                    {candidate.bms_score.toFixed(1)}%
                   </div>
                 </div>
-                
-                <div className="ml-4 text-right">
-                  <button className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-sm hover:bg-blue-200">
-                    Details
-                  </button>
+
+                <div className="text-center bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4">
+                  <div className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">
+                    Volume Surge
+                  </div>
+                  <div className="text-3xl font-black text-blue-600">
+                    {candidate.volume_surge.toFixed(1)}x
+                  </div>
                 </div>
+
+                <div className="text-center bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4">
+                  <div className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-1">
+                    Price Change
+                  </div>
+                  <div className={`text-3xl font-black ${
+                    candidate.momentum_1d >= 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {candidate.momentum_1d >= 0 ? '+' : ''}{candidate.momentum_1d.toFixed(1)}%
+                  </div>
+                </div>
+              </div>
+
+              {/* Thesis */}
+              {candidate.thesis && (
+                <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                  <p className="text-gray-700 text-sm leading-relaxed">{candidate.thesis}</p>
+                </div>
+              )}
+
+              {/* Secondary Metrics */}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {candidate.dollar_volume && (
+                  <div className="flex justify-between items-center bg-gray-50 rounded px-3 py-2">
+                    <span className="text-gray-600 font-medium">Dollar Volume</span>
+                    <span className="text-gray-900 font-bold">
+                      ${(candidate.dollar_volume / 1000000).toFixed(1)}M
+                    </span>
+                  </div>
+                )}
+                {candidate.volume && (
+                  <div className="flex justify-between items-center bg-gray-50 rounded px-3 py-2">
+                    <span className="text-gray-600 font-medium">Volume</span>
+                    <span className="text-gray-900 font-bold">
+                      {(candidate.volume / 1000000).toFixed(1)}M
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           ))
