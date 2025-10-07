@@ -52,7 +52,7 @@ export type Candidate = {
 };
 
 export async function fetchContenders(signal?: AbortSignal): Promise<Candidate[]> {
-  return getJSON<Candidate[]>("/discovery/contenders", signal);
+  return getJSON<Candidate[]>("/discovery/contenders-v2", signal);
 }
 
 export async function ping(): Promise<boolean> {
