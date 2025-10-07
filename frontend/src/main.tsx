@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { Toaster } from "sonner";
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode},{hasError:boolean;err?:any}>{
   constructor(p:any){ super(p); this.state={hasError:false}; }
@@ -19,5 +20,18 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode},{hasErro
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary><App /></ErrorBoundary>
+    <Toaster
+      position="top-right"
+      richColors
+      closeButton
+      duration={4000}
+      toastOptions={{
+        style: {
+          background: "#111",
+          color: "#fff",
+          border: "1px solid #333",
+        },
+      }}
+    />
   </React.StrictMode>
 );

@@ -6,6 +6,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { getJSON } from '../lib/api';
+import { API_BASE } from '../config';
+import { toast } from 'sonner';
 
 interface BMSCandidate {
   symbol: string;
@@ -61,8 +63,8 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
       setLoading(true);
       setError(null);
 
-      // V2 Explosive Stock Discovery - 11,644 stocks scanned in 1-2 seconds
-      const endpoint = `/discovery/contenders-v2?limit=${maxResults}`;
+      // Unified Discovery Endpoint - Routes to V2 Squeeze-Prophet
+      const endpoint = `/discovery/contenders?limit=${maxResults}`;
 
       const response = await getJSON<any>(endpoint);
 
@@ -94,9 +96,13 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
         setError('Received unexpected response format. Please refresh the page.');
       }
 
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching V2 explosive stocks:', err);
-      setError('Failed to load explosive stocks. The system may be starting up.');
+      const errorMsg = 'Failed to load explosive stocks. The system may be starting up.';
+      setError(errorMsg);
+      toast.error(errorMsg, {
+        description: err?.message || 'Check your connection and try again'
+      });
     } finally {
       setLoading(false);
     }
@@ -582,6 +588,7 @@ const TradeModal: React.FC<TradeModalProps> = ({ candidate, onClose }) => {
   const [takeProfitPct, setTakeProfitPct] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<{success: boolean, message: string} | null>(null);
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   // Calculate smart stop-loss based on stock characteristics
   useEffect(() => {
@@ -618,20 +625,29 @@ const TradeModal: React.FC<TradeModalProps> = ({ candidate, onClose }) => {
     setTakeProfitPct(Math.round(baseStop * 2 * 10) / 10);
   }, [candidate]);
 
-  const handleBuy = async () => {
+  const handleBuyClick = () => {
+    // First click: show confirmation
+    setShowConfirmation(true);
+  };
+
+  const handleConfirmBuy = async () => {
+    setShowConfirmation(false);
     setIsSubmitting(true);
     setResult(null);
 
     try {
       const amount = parseFloat(dollarAmount);
       if (isNaN(amount) || amount <= 0) {
-        setResult({success: false, message: 'Invalid dollar amount'});
+        toast.error('Invalid dollar amount');
         setIsSubmitting(false);
         return;
       }
 
+      // Generate idempotency key to prevent duplicate orders
+      const idempotencyKey = `${candidate.symbol}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
       const response = await fetch(
-        `${window.location.hostname === 'localhost' ? '/api' : 'https://amc-trader.onrender.com'}/trades/execute`,
+        `${API_BASE}/trades/execute?idempotency_key=${idempotencyKey}`,
         {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -650,20 +666,37 @@ const TradeModal: React.FC<TradeModalProps> = ({ candidate, onClose }) => {
       const data = await response.json();
 
       if (data.success) {
+        const successMsg = `✅ Purchased ${candidate.symbol} for $${amount}`;
         setResult({
           success: true,
-          message: `✅ Purchased ${candidate.symbol} for $${amount} with ${stopLossPct}% stop-loss`
+          message: successMsg
         });
+        toast.success('Trade Executed', {
+          description: `Bought ${estimatedShares} shares of ${candidate.symbol} at $${candidate.price.toFixed(2)}`
+        });
+
+        // Auto-close modal after 2 seconds
+        setTimeout(() => {
+          onClose();
+        }, 2000);
       } else {
+        const errorMsg = data.error?.message || data.error?.code || 'Unknown error';
         setResult({
           success: false,
-          message: `❌ Trade failed: ${data.error?.message || 'Unknown error'}`
+          message: `❌ Trade failed: ${errorMsg}`
+        });
+        toast.error('Trade Failed', {
+          description: errorMsg
         });
       }
     } catch (err: any) {
+      const errorMsg = err.message || 'Network error';
       setResult({
         success: false,
-        message: `❌ Error: ${err.message || 'Network error'}`
+        message: `❌ Error: ${errorMsg}`
+      });
+      toast.error('Trade Error', {
+        description: errorMsg
       });
     } finally {
       setIsSubmitting(false);
@@ -838,6 +871,70 @@ const TradeModal: React.FC<TradeModalProps> = ({ candidate, onClose }) => {
           </div>
         )}
 
+        {/* Confirmation Dialog */}
+        {showConfirmation && (
+          <div style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}>
+            <div style={{
+              background: 'white',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '400px',
+              width: '90%',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
+            }}>
+              <h3 style={{fontSize: '20px', fontWeight: '700', color: '#111', marginBottom: '16px'}}>
+                Confirm Purchase
+              </h3>
+              <p style={{fontSize: '14px', color: '#6b7280', marginBottom: '24px', lineHeight: '1.5'}}>
+                You are about to buy <strong>${dollarAmount} of {candidate.symbol}</strong> ({estimatedShares} shares at ${candidate.price.toFixed(2)})
+                with a {stopLossPct}% stop-loss (${stopLossPrice}) and {takeProfitPct}% take-profit (${takeProfitPrice}).
+              </p>
+              <div style={{display: 'flex', gap: '12px'}}>
+                <button
+                  onClick={() => setShowConfirmation(false)}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    background: 'white',
+                    color: '#374151',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmBuy}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    border: 'none',
+                    borderRadius: '8px',
+                    background: '#16a34a',
+                    color: 'white',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ✅ Confirm Purchase
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Action Buttons */}
         <div style={{display: 'flex', gap: '12px'}}>
           <button
@@ -857,7 +954,7 @@ const TradeModal: React.FC<TradeModalProps> = ({ candidate, onClose }) => {
             Cancel
           </button>
           <button
-            onClick={handleBuy}
+            onClick={handleBuyClick}
             disabled={isSubmitting || !dollarAmount || parseFloat(dollarAmount) <= 0}
             style={{
               flex: 2,

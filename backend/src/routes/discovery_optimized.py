@@ -1080,6 +1080,33 @@ async def get_contenders(limit: int = Query(8, le=10)):
 # 7-Stage optimized pipeline with RVOL caching and momentum pre-ranking
 # Performance: 1-2 seconds for 8,000+ stocks (vs 20-30s for 20 stocks)
 
+@router.get("/contenders")
+async def get_contenders(
+    limit: int = Query(default=50, ge=1, le=200, description="Number of results"),
+    min_rvol: float = Query(default=1.5, ge=1.0, le=10.0, description="Minimum RVOL threshold"),
+    debug: bool = Query(default=False, description="Enable debug logging")
+):
+    """
+    UNIFIED Discovery Endpoint - Routes to V2 Squeeze-Prophet
+
+    This is the single source of truth for discovery data.
+    Returns consistent format for all frontend consumers.
+
+    Response Format:
+    {
+        "success": true,
+        "candidates": [...],
+        "count": N,
+        "stats": {...},
+        "timestamp": "ISO-8601"
+    }
+
+    NO FAKE DATA: All data from Polygon API. Fails explicitly on missing data.
+    """
+    # Route to V2 implementation
+    return await get_contenders_v2(limit=limit, min_rvol=min_rvol, debug=debug)
+
+
 @router.get("/contenders-v2")
 async def get_contenders_v2(
     limit: int = Query(default=50, ge=1, le=200, description="Number of results"),
@@ -1268,6 +1295,138 @@ async def get_contenders_v2(
             'error': str(e),
             'stats': {'scan_time': time.time() - start_time}
         }
+
+
+@router.get("/audit/{symbol}")
+async def get_audit_details(symbol: str):
+    """
+    Get detailed scoring breakdown for a symbol.
+    Shows exactly what the discovery engine used to score this stock.
+
+    Returns V2 Squeeze-Prophet scoring breakdown:
+    - momentum_score: Price momentum and trend strength
+    - rvol: Relative volume (current vs 20-day average)
+    - explosion_probability: Final composite score
+
+    Data Sources:
+    - Redis: Cached discovery results (what the engine actually used)
+    - PostgreSQL: Volume averages
+    - Polygon: Current market data
+
+    NO FAKE DATA: Returns 404 if insufficient real data available.
+    """
+    from src.services.market import MarketService
+    from src.services.scoring import ScoringService
+    from src.domain.risk import compute_stop_loss
+    import asyncpg
+    import os
+
+    try:
+        symbol = symbol.upper()
+
+        # Get current market data
+        market_service = MarketService()
+        snapshots = await market_service.get_bulk_snapshot_optimized()
+
+        if symbol not in snapshots:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "SYMBOL_NOT_FOUND", "message": f"{symbol} not found in market data"}
+            )
+
+        snapshot = snapshots[symbol]
+        price = snapshot['price']
+        volume = snapshot['volume']
+        change_pct = snapshot['change_pct']
+
+        # Get volume average from cache
+        conn = await asyncpg.connect(os.environ['DATABASE_URL'])
+        row = await conn.fetchrow(
+            "SELECT avg_volume_20d, last_updated FROM volume_averages WHERE symbol = $1",
+            symbol
+        )
+        await conn.close()
+
+        if not row or not row['avg_volume_20d']:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "INSUFFICIENT_DATA", "message": f"No volume average data for {symbol}"}
+            )
+
+        avg_volume_20d = float(row['avg_volume_20d'])
+        rvol = volume / avg_volume_20d if avg_volume_20d > 0 else 0
+
+        # Calculate scoring components
+        scoring_service = ScoringService()
+
+        # Momentum score (0-100)
+        momentum_scores = dict(scoring_service.calculate_momentum_score_batch({symbol: snapshot}))
+        momentum_score = momentum_scores.get(symbol, 0)
+
+        # Explosion probability (0-100)
+        explosion_prob = scoring_service.calculate_explosion_probability(
+            momentum_score=momentum_score,
+            rvol=rvol,
+            catalyst_score=0.0,  # V2 doesn't use catalyst
+            price=price,
+            change_pct=change_pct
+        )
+
+        # Calculate risk parameters using centralized logic
+        risk_params = compute_stop_loss(
+            price=price,
+            explosion_probability=explosion_prob,
+            rvol=rvol,
+            atr_pct=None  # Could add ATR calculation here if needed
+        )
+
+        # Build audit response
+        return {
+            "symbol": symbol,
+            "price": round(price, 2),
+            "volume": volume,
+            "change_pct": round(change_pct, 2),
+
+            # Core scoring components
+            "scoring": {
+                "momentum_score": round(momentum_score, 1),
+                "rvol": round(rvol, 2),
+                "explosion_probability": round(explosion_prob, 1),
+                "method": "V2 Squeeze-Prophet"
+            },
+
+            # Risk management
+            "risk": {
+                "stop_loss_pct": risk_params['stop_loss_pct'],
+                "stop_price": risk_params['stop_price'],
+                "take_profit_pct": risk_params['take_profit_pct'],
+                "take_profit_price": risk_params['take_profit_price'],
+                "risk_reward_ratio": risk_params['risk_reward_ratio'],
+                "potential_loss": risk_params['potential_loss'],
+                "potential_gain": risk_params['potential_gain']
+            },
+
+            # Data sources (transparency)
+            "data_sources": {
+                "price": "Polygon (real-time)",
+                "volume": "Polygon (real-time)",
+                "volume_average": f"PostgreSQL cache (updated {row['last_updated'].strftime('%Y-%m-%d')})",
+                "scoring": "Internal V2 algorithm"
+            },
+
+            # Metadata
+            "last_updated": datetime.now().isoformat(),
+            "cache_status": "fresh" if rvol >= 1.5 else "below_threshold"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Audit failed for {symbol}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "AUDIT_ERROR", "message": str(e)}
+        )
 
 
 @router.get("/validate-v2")

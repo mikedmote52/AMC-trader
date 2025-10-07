@@ -59,10 +59,42 @@ class TradeResp(BaseModel):
 
 @router.post("/trades/execute", response_model=TradeResp, responses={
     400: {"description":"Guardrail or validation block"},
+    409: {"description":"Duplicate request (idempotency check failed)"},
     502: {"description":"Broker error"},
 })
-async def execute(req: TradeReq):
+async def execute(req: TradeReq, idempotency_key: str = None):
+    """
+    Execute a trade with idempotency protection.
+
+    Headers:
+        Idempotency-Key: Optional unique key to prevent duplicate trades
+                        (recommended for live trading)
+
+    Idempotency Logic:
+    - If key provided, stores in Redis for 5 minutes
+    - Duplicate key within 5 minutes returns 409 DUPLICATE_REQUEST
+    - Prevents accidental double-clicks or network retries
+    """
     try:
+        # Idempotency check (prevent duplicate orders)
+        if idempotency_key:
+            r = get_redis_client()
+            key = f"trade:idempotency:{idempotency_key}"
+
+            # Check if this key was used recently (5 minute window)
+            if r.get(key):
+                guardrail_blocks.labels("duplicate_request").inc()
+                raise HTTPException(status_code=409, detail={
+                    "success": False,
+                    "error": "DUPLICATE_REQUEST",
+                    "message": "This trade request was already processed",
+                    "idempotency_key": idempotency_key,
+                    "handler_tag": "trace_v1"
+                })
+
+            # Store idempotency key (5 minute TTL)
+            r.setex(key, 300, f"{req.symbol}:{req.action}:{datetime.now().isoformat()}")
+
         # --- deterministic mode decision ---
         live = int(os.getenv("LIVE_TRADING","0"))
         kill = int(os.getenv("KILL_SWITCH","1"))
@@ -567,26 +599,90 @@ async def polygon_atr_pct(symbol: str) -> Optional[float]:
 
 @router.get("/defaults/{symbol}")
 async def trade_defaults(symbol: str):
+    """
+    Get smart default trade parameters for a symbol.
+    Uses centralized risk calculation for consistency.
+
+    Returns stop-loss and take-profit based on:
+    - Discovery engine scoring (if available)
+    - Real-time market data (fallback)
+    - Centralized risk.py logic (single source of truth)
+    """
+    from backend.src.domain.risk import compute_stop_loss
+
     sym = symbol.upper()
+
+    # Try to get discovery data first (preferred - uses engine scoring)
     r = get_redis_client()
     items = json.loads(r.get("amc:discovery:v2:contenders.latest") or r.get("amc:discovery:contenders.latest") or "[]")
-    c = next((i for i in items if i.get("symbol")==sym), None)
-    if c:
+    candidate = next((i for i in items if i.get("symbol")==sym), None)
+
+    if candidate and candidate.get("explosion_probability") and candidate.get("rvol"):
+        # Use discovery engine data with centralized risk calculation
+        price = candidate.get("price", 0)
+        explosion_prob = candidate.get("explosion_probability", 50)
+        rvol = candidate.get("rvol", 1.5)
+
+        risk_params = compute_stop_loss(
+            price=price,
+            explosion_probability=explosion_prob,
+            rvol=rvol
+        )
+
         return {
-          "symbol": sym, "order_type":"market","time_in_force":"day","mode":"live","bracket": True,
-          "stop_loss_pct": c.get("stop_loss_pct"), "take_profit_pct": c.get("take_profit_pct"),
-          "stop_price": c.get("stop_price"), "take_profit_price": c.get("take_profit_price"),
-          "r_multiple": c.get("r_multiple"), "last_price": c.get("price"),
-          "price_cap": float(os.getenv("AMC_PRICE_CAP","100"))
+            "symbol": sym,
+            "order_type": "market",
+            "time_in_force": "day",
+            "mode": "live",
+            "bracket": True,
+            "stop_loss_pct": risk_params['stop_loss_pct'],
+            "stop_price": risk_params['stop_price'],
+            "take_profit_pct": risk_params['take_profit_pct'],
+            "take_profit_price": risk_params['take_profit_price'],
+            "risk_reward_ratio": risk_params['risk_reward_ratio'],
+            "potential_loss": risk_params['potential_loss'],
+            "potential_gain": risk_params['potential_gain'],
+            "last_price": price,
+            "price_cap": float(os.getenv("AMC_PRICE_CAP","100")),
+            "source": "discovery_engine"
         }
-    # fallback: compute ATR based levels quickly
-    # return a safe set if polygon fails
-    last = await polygon_last_price(sym)
-    atrp = await polygon_atr_pct(sym) or 0.04
-    risk = max(last*float(os.getenv("AMC_MIN_STOP_PCT","0.02")), last*atrp*float(os.getenv("AMC_ATR_STOP_MULT","1.5")))
-    return {
-      "symbol": sym, "order_type":"market","time_in_force":"day","mode":"live","bracket": True,
-      "stop_price": round(max(0.01, last-risk),2),
-      "take_profit_price": round(last+float(os.getenv("AMC_R_MULT","2.0"))*risk,2),
-      "last_price": last, "price_cap": float(os.getenv("AMC_PRICE_CAP","100"))
-    }
+
+    # Fallback: compute from real-time market data
+    try:
+        last = await polygon_last_price(sym)
+        if last <= 0:
+            raise HTTPException(status_code=404, detail={
+                "error": "PRICE_NOT_FOUND",
+                "message": f"Could not get price for {sym}"
+            })
+
+        # Use conservative defaults for fallback
+        risk_params = compute_stop_loss(
+            price=last,
+            explosion_probability=50.0,  # Neutral score
+            rvol=1.5  # Minimum threshold
+        )
+
+        return {
+            "symbol": sym,
+            "order_type": "market",
+            "time_in_force": "day",
+            "mode": "live",
+            "bracket": True,
+            "stop_loss_pct": risk_params['stop_loss_pct'],
+            "stop_price": risk_params['stop_price'],
+            "take_profit_pct": risk_params['take_profit_pct'],
+            "take_profit_price": risk_params['take_profit_price'],
+            "risk_reward_ratio": risk_params['risk_reward_ratio'],
+            "potential_loss": risk_params['potential_loss'],
+            "potential_gain": risk_params['potential_gain'],
+            "last_price": last,
+            "price_cap": float(os.getenv("AMC_PRICE_CAP","100")),
+            "source": "realtime_fallback"
+        }
+    except Exception as e:
+        logger.error(f"Failed to get trade defaults for {sym}: {e}")
+        raise HTTPException(status_code=500, detail={
+            "error": "DEFAULTS_ERROR",
+            "message": str(e)
+        })
