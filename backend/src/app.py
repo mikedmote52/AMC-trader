@@ -126,10 +126,13 @@ import redis.asyncio as redis
 
 # Discovery worker imports removed - using enhanced discovery system only
 
-DISCOVERY_TRIGGERED = Counter("amc_discovery_triggered_total", "manual discovery trigger calls")
-DISCOVERY_ERRORS = Counter("amc_discovery_errors_total", "manual discovery trigger errors")
-
+# Create custom registry first
 registry = CollectorRegistry()
+
+# Register metrics to custom registry to avoid duplicates
+DISCOVERY_TRIGGERED = Counter("amc_discovery_triggered_total", "manual discovery trigger calls", registry=registry)
+DISCOVERY_ERRORS = Counter("amc_discovery_errors_total", "manual discovery trigger errors", registry=registry)
+
 metrics_app = make_asgi_app(registry=registry)
 app.mount("/metrics", metrics_app)
 
