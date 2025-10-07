@@ -180,19 +180,9 @@ async def execute(req: TradeReq, idempotency_key: str = None):
                 "handler_tag": "trace_v1"
             })
 
-        # shadow path
-        if effective_mode != "live":
-            trade_submissions.labels(mode="shadow", result="accepted").inc()
-            return TradeResp(
-                success=True, 
-                mode="shadow",
-                execution_result=ExecResult(
-                    status="shadow_logged", 
-                    execution_mode="shadow", 
-                    message="Shadow trade recorded."
-                ),
-                handler_tag="trace_v1"
-            )
+        # Paper trading: Execute to Alpaca paper account (no shadow logging)
+        # effective_mode is already "shadow" by default, which means paper trading
+        # We'll execute to Alpaca paper-api.alpaca.markets below
 
         # build Alpaca payload
         side = "buy" if req.action=="BUY" else "sell"
