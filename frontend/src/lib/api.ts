@@ -1,7 +1,6 @@
 // frontend/src/lib/api.ts
-export const API_BASE =
-  (import.meta.env.VITE_API_BASE as string) ??
-  (window.location.hostname === 'localhost' ? '/api' : "https://amc-trader.onrender.com");
+import { API_BASE } from '../config';
+export { API_BASE };
 
 const api = (p: string) => {
   // Handle relative URLs for proxy correctly
