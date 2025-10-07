@@ -345,7 +345,8 @@ class ScoringService:
 
         # Required components (from real data)
         momentum_component = norm(momentum_score, 0, 200) * 0.25
-        rvol_component = norm(rvol, 1, 10) * 0.25
+        # VIGL pattern: 35x+ RVOL is explosive, so expand range to 1-50x
+        rvol_component = norm(rvol, 1, 50) * 0.25
         catalyst_component = norm(catalyst_score, 0, 100) * 0.20
 
         # Price component (inverse: lower price = higher score)
