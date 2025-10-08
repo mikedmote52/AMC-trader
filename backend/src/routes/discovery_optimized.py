@@ -1157,8 +1157,10 @@ async def get_contenders_v2(
         conn = await asyncpg.connect(os.environ['DATABASE_URL'])
 
         # Fetch cached averages from database
+        # Relaxed: Accept cache up to 7 days old (was 24 hours)
+        # This prevents "No candidates" errors when cache refresh is running
         rows = await conn.fetch(
-            "SELECT symbol, avg_volume_20d FROM volume_averages WHERE symbol = ANY($1) AND last_updated > NOW() - INTERVAL '24 hours'",
+            "SELECT symbol, avg_volume_20d FROM volume_averages WHERE symbol = ANY($1) AND last_updated > NOW() - INTERVAL '7 days'",
             top_momentum
         )
         avg_volumes = {row['symbol']: float(row['avg_volume_20d']) for row in rows}
