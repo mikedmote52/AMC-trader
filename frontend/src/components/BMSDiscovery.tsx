@@ -65,8 +65,10 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
 
       // Unified Discovery Endpoint - Routes to V2 Squeeze-Prophet
       const endpoint = `/discovery/contenders?limit=${maxResults}`;
+      console.log('[BMSDiscovery] Fetching from:', endpoint, '| API_BASE:', API_BASE);
 
       const response = await getJSON<any>(endpoint);
+      console.log('[BMSDiscovery] Response received:', response);
 
       // V2 returns simple format: { candidates: [...], count: N, stats: {...} }
       if (response.candidates && Array.isArray(response.candidates)) {
@@ -84,7 +86,13 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
           ...c // Include all original V2 fields
         }));
 
-        setCandidates(mappedCandidates);
+        // Apply client-side filter if showOnlyTradeReady is true
+        const filteredCandidates = showOnlyTradeReady
+          ? mappedCandidates.filter(c => c.action === 'TRADE_READY')
+          : mappedCandidates;
+
+        console.log('[BMSDiscovery] Mapped candidates:', mappedCandidates.length, '| Filtered:', filteredCandidates.length);
+        setCandidates(filteredCandidates);
         setLastUpdate(new Date().toLocaleTimeString());
 
         // Log V2 performance stats
