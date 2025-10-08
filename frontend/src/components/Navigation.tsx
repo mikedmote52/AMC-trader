@@ -107,7 +107,7 @@ export function NavigationWithResponsive() {
 
   const navItems = [
     { path: "/", label: "Home", icon: "🏠" },
-    { path: "/squeeze", label: "Squeeze Monitor", icon: "🔍" },
+    { path: "/discovery", label: "Discovery", icon: "🎯" },
     { path: "/portfolio", label: "Portfolio", icon: "🚀" },
     { path: "/updates", label: "Daily Updates", icon: "📱" }
   ];

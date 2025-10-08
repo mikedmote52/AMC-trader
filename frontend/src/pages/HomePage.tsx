@@ -10,31 +10,12 @@ export default function HomePage() {
       </div>
 
       <div style={cardsContainerStyle}>
-        <Link to="/squeeze" style={cardLinkStyle}>
-          <div data-card style={{ ...cardStyle, ...squeezeCardStyle }}>
-            <div style={cardIconStyle}>🔍</div>
-            <h2 style={cardTitleStyle}>Squeeze Monitor</h2>
-            <p style={cardDescriptionStyle}>
-              Real-time ANTE alerts and squeeze pattern detection
-            </p>
-            <div style={cardFeatureStyle}>
-              • Live price monitoring
-            </div>
-            <div style={cardFeatureStyle}>
-              • Pattern history tracking
-            </div>
-            <div style={cardFeatureStyle}>
-              • Auto-refresh alerts
-            </div>
-          </div>
-        </Link>
-
         <Link to="/discovery" style={cardLinkStyle}>
           <div data-card style={{ ...cardStyle, ...discoveryCardStyle }}>
             <div style={cardIconStyle}>🎯</div>
             <h2 style={cardTitleStyle}>Discovery Engine</h2>
             <p style={cardDescriptionStyle}>
-              Top stock recommendations with AI-powered analysis
+              Top stock recommendations with VIGL pattern analysis
             </p>
             <div style={cardFeatureStyle}>
               • VIGL pattern scoring
@@ -158,10 +139,6 @@ const cardStyle: React.CSSProperties = {
   transition: "all 0.3s ease",
   cursor: "pointer",
   minHeight: "280px"
-};
-
-const squeezeCardStyle: React.CSSProperties = {
-  borderColor: "#3b82f6"
 };
 
 const discoveryCardStyle: React.CSSProperties = {

@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import Navigation from "./components/Navigation";
 import HomePage from "./pages/HomePage";
 import BMSDiscoveryPage from "./pages/BMSDiscoveryPage";
-import SqueezePage from "./pages/SqueezePage";
 import EnhancedPortfolioPage from "./pages/EnhancedPortfolioPage";
 import UpdatesPageWrapper from "./pages/UpdatesPageWrapper";
 
@@ -11,17 +10,17 @@ export default function App() {
   return (
     <Router>
       <div style={{
-        fontFamily: "ui-sans-serif, system-ui", 
-        color: "#e7e7e7", 
+        fontFamily: "ui-sans-serif, system-ui",
+        color: "#e7e7e7",
         background: "#000",
         minHeight: "100vh"
       }}>
         <Navigation />
-        
+
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/squeeze" element={<SqueezePage />} />
           <Route path="/discovery" element={<BMSDiscoveryPage />} />
+          <Route path="/squeeze" element={<Navigate to="/discovery" replace />} />
           <Route path="/portfolio" element={<EnhancedPortfolioPage />} />
           <Route path="/portfolio-enhanced" element={<Navigate to="/portfolio" replace />} />
           <Route path="/updates" element={<UpdatesPageWrapper />} />
