@@ -2,6 +2,40 @@
 
 # AMC-TRADER Real-Time Market Data System
 
+## CURRENT SYSTEM STATUS (October 2025)
+
+**✅ Working Features:**
+- **Discovery Engine**: V2 Squeeze-Prophet scanning 11,644+ stocks in <2 seconds
+  - Real-time VIGL pattern detection (1.5-2.0x RVOL + <5% daily change)
+  - Explosion probability scoring (0-95% scale)
+  - TRADE_READY threshold: ≥60% probability
+  - Live API: `https://amc-trader.onrender.com/discovery/contenders`
+- **Portfolio Manager**: Alpaca paper trading integration
+  - Real-time position tracking
+  - Buy execution with auto stop-loss/take-profit
+  - Paper account only (no real money)
+- **Backend**: FastAPI + PostgreSQL + Redis
+  - Volume cache: 11,638 stocks (7-day freshness window)
+  - RVOL calculations from 20-day averages
+  - Polygon API integration for real-time data
+
+**📱 User Interface:**
+- **Home**: 3 feature cards (Discovery, Portfolio, Daily Updates)
+- **Navigation**: Home → Discovery → Portfolio → Daily Updates
+- **Discovery Page**: Real-time candidates with buy interface
+- **Removed**: Squeeze Monitor (replaced by Discovery Engine)
+
+**⚠️ In Development:**
+- **Daily Updates**: Placeholder for future learning system
+- **Learning Module**: Not yet implemented
+
+**🔧 Technical Stack:**
+- Frontend: React + TypeScript + Vite (Bundle: 379KB)
+- Backend: Python 3.11 + FastAPI + asyncpg
+- Database: PostgreSQL (volume_averages table)
+- Cache: Redis (5-minute idempotency for trades)
+- Deployment: Render.com (frontend + backend services)
+
 ## PRIMARY MISSION: REPLICATE +63.8% MONTHLY RETURNS
 
 **Historical Performance Target (June 1 - July 4, 2024):**
