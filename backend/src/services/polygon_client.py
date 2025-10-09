@@ -32,6 +32,45 @@ class Polygon:
         b = res[0]
         return {"price": b.get("c"), "volume": b.get("v"), "t": js.get("queryCount"), "source": "poly_v2_prev"}
 
+    async def get_bars(self, symbol: str, timespan: str = "day", limit: int = 20):
+        """
+        Fetch historical bars from Polygon API
+
+        NO MOCK DATA - Returns None if data unavailable
+
+        Args:
+            symbol: Stock ticker
+            timespan: 'day', 'hour', 'minute'
+            limit: Number of bars to fetch
+
+        Returns:
+            List of bars with {c: close, v: volume, t: timestamp} or None
+        """
+        try:
+            from datetime import datetime, timedelta
+
+            # Calculate date range (add buffer for weekends/holidays)
+            to_date = datetime.now()
+            from_date = to_date - timedelta(days=limit + 10)
+
+            from_ts = int(from_date.timestamp() * 1000)
+            to_ts = int(to_date.timestamp() * 1000)
+
+            url = f"/v2/aggs/ticker/{symbol.upper()}/range/1/{timespan}/{from_ts}/{to_ts}"
+            r = await self.c.get(url, params={"adjusted": "true", "sort": "asc", "limit": limit + 5})
+            r.raise_for_status()
+
+            js = r.json()
+            results = js.get("results") or []
+
+            if not results:
+                return None  # NO FAKE DATA - return None if no data
+
+            return results
+
+        except Exception:
+            return None  # NO FAKE DATA - return None on error
+
     async def close(self): await self.c.aclose()
 
 poly_singleton = Polygon()

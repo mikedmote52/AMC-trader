@@ -16,6 +16,7 @@ import os
 import httpx
 from decimal import Decimal
 from pathlib import Path
+from services.polygon_client import poly_singleton
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -1321,6 +1322,60 @@ async def get_contenders(
     return await get_contenders_v2(limit=limit, min_rvol=min_rvol, debug=debug)
 
 
+async def calculate_multi_day_changes(symbol: str, current_price: float) -> Optional[Dict[str, Optional[float]]]:
+    """
+    Calculate 5-day and 20-day price changes from REAL Polygon historical data.
+
+    NO FAKE DATA: Returns None if historical data unavailable.
+
+    Args:
+        symbol: Stock ticker
+        current_price: Current price from snapshot
+
+    Returns:
+        Dict with change_5d and change_20d percentages, or None if data unavailable
+    """
+    try:
+        # Fetch 25 days of historical data (buffer for weekends/holidays)
+        bars = await poly_singleton.get_bars(symbol=symbol, timespan="day", limit=25)
+
+        if not bars or len(bars) < 5:
+            return None  # Not enough data - skip stock
+
+        # Sort by timestamp ascending (oldest first)
+        bars_sorted = sorted(bars, key=lambda x: x['t'])
+
+        # Get closing prices at specific lookback periods
+        price_5d_ago = None
+        price_20d_ago = None
+
+        # 5-day lookback (need at least 6 bars including today)
+        if len(bars_sorted) >= 6:
+            price_5d_ago = bars_sorted[-6]['c']  # 5 days ago
+
+        # 20-day lookback (need at least 21 bars including today)
+        if len(bars_sorted) >= 21:
+            price_20d_ago = bars_sorted[-21]['c']  # 20 days ago
+
+        # Calculate percentage changes
+        change_5d = None
+        if price_5d_ago and price_5d_ago > 0:
+            change_5d = ((current_price - price_5d_ago) / price_5d_ago) * 100
+
+        change_20d = None
+        if price_20d_ago and price_20d_ago > 0:
+            change_20d = ((current_price - price_20d_ago) / price_20d_ago) * 100
+
+        return {
+            'change_5d': change_5d,
+            'change_20d': change_20d
+        }
+
+    except Exception as e:
+        logger.warning(f"Failed to calculate multi-day changes for {symbol}: {e}")
+        return None  # NO FAKE DATA on error
+
+
 @router.get("/contenders-v2")
 async def get_contenders_v2(
     limit: int = Query(default=50, ge=1, le=200, description="Number of results"),
@@ -1476,6 +1531,25 @@ async def get_contenders_v2(
         scored_candidates = []
         for candidate in candidates:
             symbol = candidate['symbol']
+
+            # POST-EXPLOSION DETECTION GATES
+            # Check multi-day price changes to filter out stocks that already exploded
+            multi_day = await calculate_multi_day_changes(symbol, candidate['price'])
+
+            if multi_day:
+                # Gate 1: Reject stocks that exploded in last 5 days (>30% gain)
+                # Example: TROO showed +104% move, we missed the opportunity
+                if multi_day['change_5d'] and multi_day['change_5d'] > 30:
+                    logger.debug(f"REJECTED {symbol}: Already exploded +{multi_day['change_5d']:.1f}% in 5 days")
+                    continue
+
+                # Gate 2: Reject stocks in strong uptrend over 20 days (>50% gain)
+                # These are missed opportunities - entry point was weeks ago
+                if multi_day['change_20d'] and multi_day['change_20d'] > 50:
+                    logger.debug(f"REJECTED {symbol}: Strong uptrend +{multi_day['change_20d']:.1f}% in 20 days")
+                    continue
+            # If multi_day is None (no data), we allow the stock through
+            # This is safer than rejecting potentially good candidates
 
             # Calculate base explosion probability
             base_probability = scoring_service.calculate_explosion_probability(
