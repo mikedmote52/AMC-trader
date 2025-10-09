@@ -1505,8 +1505,16 @@ async def get_contenders_v2(
                 'momentum_score': momentum_scores_map.get(symbol, 0)
             })
 
-        # Sort by explosion probability
-        scored_candidates.sort(key=lambda x: x['explosion_probability'], reverse=True)
+        # Sort by explosion probability (primary), VIGL match % (secondary), RVOL (tertiary)
+        # This ensures higher VIGL matches rank higher when explosion probabilities are tied
+        scored_candidates.sort(
+            key=lambda x: (
+                x['explosion_probability'],  # Primary: highest explosion probability
+                x.get('pattern_match', {}).get('similarity', 0) if x.get('pattern_match') else 0,  # Secondary: highest VIGL match
+                x.get('rvol', 0)  # Tertiary: highest relative volume
+            ),
+            reverse=True
+        )
 
         # Apply regime-aware threshold filtering
         regime_threshold = market_regime["recommended_threshold"]
