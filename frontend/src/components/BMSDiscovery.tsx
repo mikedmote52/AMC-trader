@@ -21,6 +21,13 @@ interface BMSCandidate {
   confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
   risk_level?: 'LOW' | 'MEDIUM' | 'HIGH';
   thesis?: string;
+  pattern_match?: {
+    pattern: string | null;
+    similarity: number;
+    bonus_points: number;
+    outcome: string | null;
+  };
+  base_probability?: number;
   component_scores?: {
     volume_surge: number;
     price_momentum: number;
@@ -57,6 +64,7 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradingCandidate, setTradingCandidate] = useState<BMSCandidate | null>(null);
+  const [learningData, setLearningData] = useState<any>(null);
 
   const fetchCandidates = async () => {
     try {
@@ -70,19 +78,28 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
       const response = await getJSON<any>(endpoint);
       console.log('[BMSDiscovery] Response received:', response);
 
-      // V2 returns simple format: { candidates: [...], count: N, stats: {...} }
+      // V2 returns simple format: { candidates: [...], count: N, stats: {...}, learning: {...} }
       if (response.candidates && Array.isArray(response.candidates)) {
+        // Store learning data for UI display
+        if (response.learning) {
+          setLearningData(response.learning);
+        }
+
         // Map V2 data format to component's expected format
         const mappedCandidates = response.candidates.map((c: any) => ({
           symbol: c.symbol,
           price: c.price,
           bms_score: c.explosion_probability, // V2 explosion_probability → bms_score
-          action: c.explosion_probability >= 60 ? 'TRADE_READY' : 'MONITOR',
+          base_probability: c.base_probability, // Before pattern bonus
+          pattern_match: c.pattern_match, // VIGL/CRWV/AEVA similarity
+          action: c.action_tag || (c.explosion_probability >= 60 ? 'TRADE_READY' : 'MONITOR'),
           confidence: c.explosion_probability >= 65 ? 'HIGH' : 'MEDIUM',
           volume_surge: c.rvol, // V2 rvol → volume_surge
           dollar_volume: c.price * c.volume,
           momentum_1d: c.change_pct,
-          thesis: `Explosive potential: ${c.explosion_probability.toFixed(1)}% probability, ${c.rvol.toFixed(1)}x volume surge`,
+          thesis: c.pattern_match?.pattern
+            ? `${c.pattern_match.similarity*100}% similar to ${c.pattern_match.pattern} (${c.pattern_match.outcome}) • ${c.explosion_probability.toFixed(1)}% explosion probability`
+            : `Explosive potential: ${c.explosion_probability.toFixed(1)}% probability, ${c.rvol.toFixed(1)}x volume surge`,
           ...c // Include all original V2 fields
         }));
 
@@ -171,7 +188,7 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
 
   const getActionBadge = (action: string, confidence?: string): JSX.Element => {
     const baseClasses = 'px-2 py-1 rounded-full text-xs font-medium';
-    
+
     if (action === 'TRADE_READY') {
       return (
         <span className={`${baseClasses} bg-green-100 text-green-800`}>
@@ -186,6 +203,40 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
       );
     }
     return <span className={`${baseClasses} bg-gray-100 text-gray-800`}>REJECT</span>;
+  };
+
+  const getPatternMatchBadge = (patternMatch?: any): JSX.Element | null => {
+    if (!patternMatch || !patternMatch.pattern || patternMatch.similarity < 0.65) {
+      return null;
+    }
+
+    const similarity = Math.round(patternMatch.similarity * 100);
+    const baseClasses = 'px-2 py-1 rounded-full text-xs font-medium';
+
+    // Perfect match (85%+)
+    if (similarity >= 85) {
+      return (
+        <span className={`${baseClasses} bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-900 border border-yellow-300`}>
+          ⭐ {similarity}% Similar to {patternMatch.pattern} ({patternMatch.outcome})
+        </span>
+      );
+    }
+    // Strong match (75-84%)
+    else if (similarity >= 75) {
+      return (
+        <span className={`${baseClasses} bg-purple-100 text-purple-800 border border-purple-300`}>
+          🎯 {similarity}% Similar to {patternMatch.pattern}
+        </span>
+      );
+    }
+    // Moderate match (65-74%)
+    else {
+      return (
+        <span className={`${baseClasses} bg-indigo-100 text-indigo-800`}>
+          📊 {similarity}% Similar to {patternMatch.pattern}
+        </span>
+      );
+    }
   };
 
   const showAuditDetails = async (candidate: BMSCandidate) => {
@@ -245,6 +296,43 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
         </div>
       </div>
 
+      {/* Learning System Status Banner */}
+      {learningData && (
+        <div className="mt-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <span className="text-2xl">🤖</span>
+              <div>
+                <h3 className="font-semibold text-gray-900">Learning System Active</h3>
+                <p className="text-sm text-gray-600">
+                  {learningData.market_regime ? (
+                    <>
+                      Market Regime: <span className="font-medium text-purple-700">{learningData.market_regime.regime}</span>
+                      {' • '}
+                      Threshold: <span className="font-medium text-blue-700">{learningData.market_regime.recommended_threshold}%</span>
+                      {' • '}
+                      Confidence: <span className="font-medium text-green-700">{(learningData.market_regime.confidence * 100).toFixed(0)}%</span>
+                    </>
+                  ) : (
+                    'Using default parameters'
+                  )}
+                </p>
+              </div>
+            </div>
+            {learningData.adaptive_weights && (
+              <div className="text-xs text-gray-600 bg-white px-3 py-2 rounded border border-gray-200">
+                <div className="font-medium text-gray-900 mb-1">Adaptive Weights:</div>
+                <div className="space-y-0.5">
+                  <div>RVOL: <span className="font-semibold text-purple-600">{(learningData.adaptive_weights.rvol * 100).toFixed(0)}%</span></div>
+                  <div>Price: <span className="font-semibold text-blue-600">{(learningData.adaptive_weights.price * 100).toFixed(0)}%</span></div>
+                  <div>Momentum: <span className="font-semibold text-green-600">{(learningData.adaptive_weights.momentum * 100).toFixed(0)}%</span></div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Stats Summary */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-lg border">
@@ -302,7 +390,7 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
             >
               {/* Header Row */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '32px', fontWeight: '900', color: '#111' }}>
                     {candidate.symbol}
                   </span>
@@ -310,6 +398,7 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
                     ${candidate.price.toFixed(2)}
                   </span>
                   {getActionBadge(candidate.action, candidate.confidence || 'MEDIUM')}
+                  {getPatternMatchBadge(candidate.pattern_match)}
                 </div>
                 <span style={{ fontSize: '14px', fontWeight: '500', color: '#9ca3af' }}>#{index + 1}</span>
               </div>

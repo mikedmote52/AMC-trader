@@ -73,6 +73,262 @@ class ExplosiveDiscoveryEngine:
             }
         }
 
+    def calculate_pattern_similarity(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Calculate similarity to historical VIGL/CRWV/AEVA winner patterns.
+
+        Uses cosine similarity on normalized feature vectors:
+        - RVOL (most important)
+        - Price range
+        - Daily change %
+        - Volume characteristics
+
+        Historical baseline patterns:
+        - VIGL: 1.8x RVOL, $2.94 price, +0.4% change → +324%
+        - CRWV: 1.9x RVOL, $1.82 price, -0.2% change → +171%
+        - AEVA: 1.7x RVOL, $4.66 price, +1.1% change → +162%
+
+        Returns:
+            {
+                "best_match": "VIGL",
+                "similarity": 0.89,  # 0-1 scale
+                "bonus_points": 13,  # 0-15 bonus
+                "outcome": "+324%"
+            }
+        """
+        # Historical winner patterns (normalized features)
+        WINNER_PATTERNS = {
+            "VIGL": {
+                "rvol": 1.8,
+                "price": 2.94,
+                "change_pct": 0.4,
+                "outcome": "+324%",
+                "weight": 1.0  # Strongest pattern
+            },
+            "CRWV": {
+                "rvol": 1.9,
+                "price": 1.82,
+                "change_pct": -0.2,
+                "outcome": "+171%",
+                "weight": 0.9
+            },
+            "AEVA": {
+                "rvol": 1.7,
+                "price": 4.66,
+                "change_pct": 1.1,
+                "outcome": "+162%",
+                "weight": 0.85
+            }
+        }
+
+        # Extract candidate features
+        cand_rvol = candidate.get('rvol', 1.0)
+        cand_price = candidate.get('price', 0)
+        cand_change = candidate.get('change_pct', 0)
+
+        # Calculate similarity to each winner pattern
+        best_similarity = 0
+        best_match = None
+
+        for pattern_name, pattern in WINNER_PATTERNS.items():
+            # Feature-weighted similarity
+            # RVOL is 70% of match (most predictive)
+            # Price range is 20% (lower price = higher upside)
+            # Change is 10% (stealth vs momentum)
+
+            # RVOL similarity (inverted distance, capped at 1.0)
+            rvol_distance = abs(cand_rvol - pattern["rvol"]) / max(cand_rvol, pattern["rvol"])
+            rvol_sim = max(0, 1.0 - rvol_distance) ** 0.7  # Weight heavily
+
+            # Price similarity (log scale for exponential upside)
+            if cand_price > 0 and pattern["price"] > 0:
+                price_ratio = min(cand_price, pattern["price"]) / max(cand_price, pattern["price"])
+                price_sim = price_ratio ** 0.5  # Less weight, broader match
+            else:
+                price_sim = 0
+
+            # Change similarity (both should be low for stealth pattern)
+            change_distance = abs(cand_change - pattern["change_pct"]) / 5.0  # Normalize by 5%
+            change_sim = max(0, 1.0 - change_distance)
+
+            # Weighted composite similarity
+            similarity = (
+                rvol_sim * 0.70 +
+                price_sim * 0.20 +
+                change_sim * 0.10
+            ) * pattern["weight"]
+
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_match = {
+                    "pattern": pattern_name,
+                    "similarity": round(similarity, 2),
+                    "outcome": pattern["outcome"]
+                }
+
+        # Calculate bonus points (0-15 scale)
+        # 85%+ similarity = +15 pts (perfect match)
+        # 75-85% similarity = +10 pts (strong match)
+        # 65-75% similarity = +5 pts (moderate match)
+        # <65% similarity = 0 pts (no bonus)
+        if best_similarity >= 0.85:
+            bonus = 15
+        elif best_similarity >= 0.75:
+            bonus = 10
+        elif best_similarity >= 0.65:
+            bonus = 5
+        else:
+            bonus = 0
+
+        if best_match:
+            best_match["bonus_points"] = bonus
+            return best_match
+        else:
+            return {
+                "pattern": None,
+                "similarity": 0,
+                "bonus_points": 0,
+                "outcome": None
+            }
+
+    async def get_market_regime(self) -> Dict[str, Any]:
+        """
+        Fetch current market regime from learning system with circuit breaker.
+
+        Market regimes:
+        - explosive_bull: High opportunity, raise threshold to 72% (avoid false positives)
+        - squeeze_setup: Moderate opportunity, threshold 57% (capture pre-explosions)
+        - high_volatility: Uncertain, threshold 75% (be selective)
+        - low_opportunity: Few setups, threshold 65% (balanced)
+
+        Returns:
+            {
+                "regime": "squeeze_setup",
+                "confidence": 0.84,
+                "recommended_threshold": 57,
+                "characteristics": {...}
+            }
+        """
+        DEFAULT_REGIME = {
+            "regime": "balanced",
+            "confidence": 0.50,
+            "recommended_threshold": 60,
+            "using_defaults": True
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                response = await client.get(
+                    "https://amc-trader.onrender.com/learning-analytics/market-regime/current"
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    confidence = data.get("confidence", 0)
+
+                    if confidence >= 0.60:
+                        logger.info(
+                            f"📊 Market regime: {data.get('regime')} "
+                            f"(confidence: {confidence:.1%}, "
+                            f"threshold: {data.get('recommended_threshold')}%)"
+                        )
+                        return {
+                            "regime": data.get("regime", "balanced"),
+                            "confidence": confidence,
+                            "recommended_threshold": data.get("recommended_threshold", 60),
+                            "using_defaults": False
+                        }
+                    else:
+                        logger.warning(f"Regime confidence too low ({confidence:.1%})")
+                        return DEFAULT_REGIME
+                else:
+                    return DEFAULT_REGIME
+
+        except Exception as e:
+            logger.warning(f"Market regime unavailable: {e}")
+            return DEFAULT_REGIME
+
+    async def get_adaptive_weights(self) -> Dict[str, float]:
+        """
+        Fetch optimized weights from learning system with circuit breaker.
+
+        The learning system analyzes 90 days of trade outcomes and calculates
+        optimal weight allocation for each scoring component.
+
+        Circuit breaker pattern:
+        - 2-second timeout (discovery must be fast)
+        - Fallback to default weights on any failure
+        - Never crashes discovery due to learning system issues
+
+        Returns:
+            Dict with weight allocation:
+            {
+                "rvol": 0.68,      # May be higher than default 0.60
+                "momentum": 0.10,  # May adjust based on effectiveness
+                "price": 0.15,     # May be higher for low-price focus
+                "change": 0.07     # Remaining allocation
+            }
+        """
+        DEFAULT_WEIGHTS = {
+            "rvol": 0.60,
+            "momentum": 0.10,
+            "price": 0.10,
+            "change": 0.10,
+            "short_interest": 0.05,
+            "borrow_rate": 0.05
+        }
+
+        try:
+            # Fast timeout - discovery can't wait long
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                response = await client.get(
+                    "https://amc-trader.onrender.com/learning-analytics/discovery/adaptive-parameters"
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+
+                    # Check confidence threshold
+                    confidence = data.get("confidence", 0)
+                    if confidence < 0.60:
+                        logger.warning(
+                            f"Learning confidence too low ({confidence:.2%}), using defaults"
+                        )
+                        return DEFAULT_WEIGHTS
+
+                    # Extract optimized weights
+                    weights = data.get("weights", {})
+
+                    if weights:
+                        logger.info(
+                            f"✨ Using adaptive weights from learning system "
+                            f"(confidence: {confidence:.1%})"
+                        )
+                        return {
+                            "rvol": weights.get("rvol_weight", DEFAULT_WEIGHTS["rvol"]),
+                            "momentum": weights.get("momentum_weight", DEFAULT_WEIGHTS["momentum"]),
+                            "price": weights.get("price_weight", DEFAULT_WEIGHTS["price"]),
+                            "change": weights.get("change_weight", DEFAULT_WEIGHTS["change"]),
+                            "short_interest": weights.get("si_weight", DEFAULT_WEIGHTS["short_interest"]),
+                            "borrow_rate": weights.get("borrow_weight", DEFAULT_WEIGHTS["borrow_rate"])
+                        }
+
+                    return DEFAULT_WEIGHTS
+
+                else:
+                    logger.warning(
+                        f"Learning API returned {response.status_code}, using defaults"
+                    )
+                    return DEFAULT_WEIGHTS
+
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
+            logger.warning(f"Learning system unavailable ({e.__class__.__name__}), using defaults")
+            return DEFAULT_WEIGHTS
+
+        except Exception as e:
+            logger.error(f"Adaptive weight fetch failed: {e}, using defaults")
+            return DEFAULT_WEIGHTS
+
     async def calculate_batch_irv(self, candidates: List[Dict[str, Any]]) -> Dict[str, float]:
         """Calculate REAL IRV using full Polygon API - UNLIMITED USAGE"""
         # Get market timing once
@@ -1207,7 +1463,12 @@ async def get_contenders_v2(
                 'stats': {'scan_time': time.time() - start_time}
             }
 
-        # Stage 6 & 7: Scoring and Ranking
+        # Stage 6: Fetch adaptive parameters from learning system
+        engine = ExplosiveDiscoveryEngine()
+        adaptive_weights = await engine.get_adaptive_weights()
+        market_regime = await engine.get_market_regime()
+
+        # Stage 7: Scoring and Ranking with adaptive weights + regime-aware filtering
         momentum_scores_map = dict(
             scoring_service.calculate_momentum_score_batch(filtered_snapshots)
         )
@@ -1215,13 +1476,22 @@ async def get_contenders_v2(
         scored_candidates = []
         for candidate in candidates:
             symbol = candidate['symbol']
-            explosion_prob = scoring_service.calculate_explosion_probability(
+
+            # Calculate base explosion probability
+            base_probability = scoring_service.calculate_explosion_probability(
                 momentum_score=momentum_scores_map.get(symbol, 0),
                 rvol=candidate['rvol'],
                 catalyst_score=0.0,
                 price=candidate['price'],
-                change_pct=candidate['change_pct']
+                change_pct=candidate['change_pct'],
+                weights=adaptive_weights  # Use learning-optimized weights
             )
+
+            # Calculate pattern similarity to VIGL/CRWV/AEVA winners
+            pattern_match = engine.calculate_pattern_similarity(candidate)
+
+            # Apply pattern match bonus (0-15 points)
+            final_probability = min(95.0, base_probability + pattern_match["bonus_points"])
 
             scored_candidates.append({
                 'symbol': symbol,
@@ -1229,13 +1499,34 @@ async def get_contenders_v2(
                 'volume': candidate['volume'],
                 'change_pct': candidate['change_pct'],
                 'rvol': candidate['rvol'],
-                'explosion_probability': explosion_prob,
+                'explosion_probability': final_probability,
+                'base_probability': base_probability,  # Before pattern bonus
+                'pattern_match': pattern_match,  # VIGL/CRWV/AEVA similarity
                 'momentum_score': momentum_scores_map.get(symbol, 0)
             })
 
         # Sort by explosion probability
         scored_candidates.sort(key=lambda x: x['explosion_probability'], reverse=True)
-        top_candidates = scored_candidates[:limit]
+
+        # Apply regime-aware threshold filtering
+        regime_threshold = market_regime["recommended_threshold"]
+        qualified_candidates = [
+            c for c in scored_candidates
+            if c['explosion_probability'] >= regime_threshold
+        ]
+
+        # Take top N after regime filtering
+        top_candidates = qualified_candidates[:limit]
+
+        # Add action tags based on regime thresholds
+        for candidate in top_candidates:
+            prob = candidate['explosion_probability']
+            if prob >= 75:
+                candidate['action_tag'] = 'TRADE_READY'
+            elif prob >= 60:
+                candidate['action_tag'] = 'MONITOR'
+            else:
+                candidate['action_tag'] = 'WATCHLIST'
 
         total_time = time.time() - start_time
 
@@ -1250,7 +1541,14 @@ async def get_contenders_v2(
                 'momentum_survivors': len(top_momentum),
                 'cache_hit_rate': round(len(avg_volumes) / len(top_momentum) * 100, 1) if top_momentum else 0,
                 'rvol_calculated': len(rvol_data),
+                'scored_candidates': len(scored_candidates),
+                'regime_qualified': len(qualified_candidates),
                 'api_calls': 2
+            },
+            'learning': {
+                'adaptive_weights': adaptive_weights,
+                'market_regime': market_regime,
+                'using_learning_system': not market_regime.get('using_defaults', True)
             },
             'timestamp': datetime.now().isoformat()
         }

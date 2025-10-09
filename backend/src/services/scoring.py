@@ -305,6 +305,120 @@ class ScoringService:
 
         return top_symbols
 
+    def calculate_vigl_optimized_rvol_score(self, rvol: float) -> float:
+        """
+        VIGL-optimized non-linear RVOL scoring curve.
+
+        Historical validation:
+        - VIGL: 1.8x RVOL → +324% gain (should score ~95%)
+        - CRWV: 1.9x RVOL → +171% gain (should score ~98%)
+        - AEVA: 1.7x RVOL → +162% gain (should score ~92%)
+
+        The 1.5-2.0x range is the "stealth accumulation" sweet spot:
+        - Institutional buying without alerting the market
+        - High volume but stable price (<5% change)
+        - Precursor to explosive moves
+
+        Curve design:
+        - 1.0-1.5x: Linear ramp 0% → 85% (baseline to setup)
+        - 1.5-1.75x: Linear ramp 85% → 100% (sweet spot entry)
+        - 1.75-2.0x: Stay at 100% (perfect VIGL zone)
+        - 2.0-5.0x: Decay to 70% (stock is moving publicly)
+        - 5.0-10x: Decay to 50% (already hot, late entry)
+        - 10x+: Decay to 30% (already exploded, avoid)
+
+        Args:
+            rvol: Relative volume (today vs 30-day average)
+
+        Returns:
+            Normalized score 0.0-1.0 (multiply by weight for final component)
+        """
+        if rvol is None or rvol < 1.0:
+            return 0.0
+
+        # Zone 1: Building (1.0-1.5x) → 0-85%
+        if rvol < 1.5:
+            return (rvol - 1.0) / 0.5 * 0.85
+
+        # Zone 2: Sweet Spot Entry (1.5-1.75x) → 85-100%
+        elif rvol < 1.75:
+            return 0.85 + (rvol - 1.5) / 0.25 * 0.15
+
+        # Zone 3: Perfect VIGL Zone (1.75-2.0x) → 100%
+        elif rvol <= 2.0:
+            return 1.0
+
+        # Zone 4: Moving Publicly (2.0-5.0x) → 100-70%
+        elif rvol < 5.0:
+            return 1.0 - (rvol - 2.0) / 3.0 * 0.30
+
+        # Zone 5: Already Hot (5.0-10x) → 70-50%
+        elif rvol < 10.0:
+            return 0.70 - (rvol - 5.0) / 5.0 * 0.20
+
+        # Zone 6: Already Exploded (10x+) → 50-30%
+        else:
+            # Exponential decay beyond 10x (caps at 30%)
+            decay = max(0.30, 0.50 * math.exp(-(rvol - 10.0) / 10.0))
+            return decay
+
+    def calculate_price_upside_score(self, price: float) -> float:
+        """
+        Exponential price upside scoring.
+
+        Physics/Economics principle:
+        - $0.50 → $1.50 (+200%) requires $100M → $300M market cap
+        - $25 → $75 (+200%) requires $5B → $15B market cap
+        - Lower-priced stocks have exponentially easier path to high % returns
+
+        Historical validation:
+        - VIGL: $2.94 → $12.48 = +324% (moderate effort)
+        - CRWV: $1.82 → $4.94 = +171% (easier at lower price)
+        - AEVA: $4.66 → $12.21 = +162% (harder at higher price)
+
+        Curve design:
+        - $0.50-$1.00: 100% score (explosive upside zone)
+        - $1.00-$3.00: 95-90% score (VIGL sweet spot)
+        - $3.00-$5.00: 85-75% score (good upside)
+        - $5.00-$10.00: 70-50% score (moderate upside)
+        - $10.00-$25.00: 45-20% score (harder path)
+        - $25.00+: <20% score (difficult to 3x)
+
+        Args:
+            price: Current stock price
+
+        Returns:
+            Normalized score 0.0-1.0 (multiply by weight for final component)
+        """
+        if price is None or price <= 0:
+            return 0.0
+
+        # Zone 1: Explosive Upside ($0.50-$1.00) → 100%
+        if price < 1.0:
+            return 1.0
+
+        # Zone 2: VIGL Sweet Spot ($1.00-$3.00) → 95-90%
+        elif price < 3.0:
+            return 0.95 - (price - 1.0) / 2.0 * 0.05
+
+        # Zone 3: Good Upside ($3.00-$5.00) → 90-75%
+        elif price < 5.0:
+            return 0.90 - (price - 3.0) / 2.0 * 0.15
+
+        # Zone 4: Moderate Upside ($5.00-$10.00) → 75-50%
+        elif price < 10.0:
+            return 0.75 - (price - 5.0) / 5.0 * 0.25
+
+        # Zone 5: Harder Path ($10.00-$25.00) → 50-20%
+        elif price < 25.0:
+            return 0.50 - (price - 10.0) / 15.0 * 0.30
+
+        # Zone 6: Difficult to 3x ($25.00+) → Exponential decay to 5%
+        else:
+            # Exponential decay (caps at 5%)
+            decay = max(0.05, 0.20 * math.exp(-(price - 25.0) / 25.0))
+            return decay
+
     def calculate_explosion_probability(
         self,
         momentum_score: float,
@@ -314,7 +428,8 @@ class ScoringService:
         change_pct: float,
         short_interest: Optional[float] = None,
         float_size: Optional[float] = None,
-        borrow_rate: Optional[float] = None
+        borrow_rate: Optional[float] = None,
+        weights: Optional[Dict[str, float]] = None
     ) -> float:
         """
         Squeeze-Prophet explosion probability formula (Stage 7).
@@ -331,9 +446,9 @@ class ScoringService:
         - Float Size (5%): Smaller = more volatile
         - Catalyst (0%): V2 doesn't calculate catalyst data
 
-        VIGL Pattern: High RVOL (35x+) is more important than high absolute volume.
-        This ensures stocks with massive relative volume but moderate absolute volume
-        (like VIGL: 1.8x RVOL → +324%) get high scores.
+        VIGL Pattern: High RVOL (1.5-2.0x) is more important than high absolute volume.
+        This ensures stocks with stealth institutional accumulation
+        (like VIGL: 1.8x RVOL → +324%) get high scores (90-100%).
 
         CRITICAL: Uses ONLY real data provided.
         Missing optional data = 0.0 contribution (NO fake defaults).
@@ -341,6 +456,17 @@ class ScoringService:
         Returns:
             Explosion probability (0-100), capped at 95%
         """
+        # Use adaptive weights from learning system or defaults
+        if weights is None:
+            weights = {
+                "rvol": 0.60,
+                "momentum": 0.10,
+                "price": 0.10,
+                "change": 0.10,
+                "short_interest": 0.05,
+                "borrow_rate": 0.05
+            }
+
         # Normalize helper (0-1 range)
         def norm(value: float, min_val: float, max_val: float) -> float:
             if value is None:
@@ -348,24 +474,28 @@ class ScoringService:
             return max(0.0, min(1.0, (value - min_val) / (max_val - min_val + 1e-9)))
 
         # Required components (from real data)
-        # VIGL pattern: RVOL is the PRIMARY signal (60%)
-        # V2 doesn't use catalyst data, so give that 20% to RVOL
-        # This ensures high-RVOL stocks score high even with low absolute volume
-        momentum_component = norm(momentum_score, 0, 200) * 0.10
-        # VIGL pattern: 35x+ RVOL is explosive, so expand range to 1-50x
-        rvol_component = norm(rvol, 1, 50) * 0.60
+        # VIGL pattern: RVOL is the PRIMARY signal (default 60%, adaptive via learning)
+        # Learning system may increase RVOL weight to 0.68+ if historical data shows it's more predictive
+        momentum_component = norm(momentum_score, 0, 200) * weights["momentum"]
+
+        # VIGL-OPTIMIZED: Non-linear curve with 1.5-2.0x sweet spot scoring 90-100%
+        # Weight is adaptive - learning system optimizes based on 90-day outcomes
+        rvol_component = self.calculate_vigl_optimized_rvol_score(rvol) * weights["rvol"]
+
         # V2 doesn't calculate catalyst_score, so set to 0
         catalyst_component = 0.0
 
-        # Price component (inverse: lower price = higher score)
-        price_component = (1 - norm(price, 0, 50)) * 0.10
+        # Price component (exponential: lower price = exponentially higher % upside potential)
+        # Learning system may increase this weight if low-priced stocks outperform
+        price_component = self.calculate_price_upside_score(price) * weights["price"]
 
         # Change component (absolute value)
-        change_component = norm(abs(change_pct), 0, 100) * 0.10
+        # Weight is adaptive based on whether momentum predicts outcomes
+        change_component = norm(abs(change_pct), 0, 100) * weights["change"]
 
         # Optional squeeze components (only if real data provided)
-        si_component = norm(short_interest or 0, 0, 40) * 0.05
-        borrow_component = norm(borrow_rate or 0, 0, 100) * 0.05
+        si_component = norm(short_interest or 0, 0, 40) * weights["short_interest"]
+        borrow_component = norm(borrow_rate or 0, 0, 100) * weights["borrow_rate"]
 
         # Float size component (inverse: smaller = higher)
         if float_size and float_size > 0:
