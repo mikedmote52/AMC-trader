@@ -1528,14 +1528,29 @@ async def get_contenders_v2(
             scoring_service.calculate_momentum_score_batch(filtered_snapshots)
         )
 
+        # POST-EXPLOSION DETECTION: Batch fetch historical data for all candidates (PARALLEL)
+        # This is much faster than sequential fetching - all API calls happen concurrently
+        logger.info(f"Fetching historical data for {len(candidates)} candidates (parallel)...")
+        multi_day_tasks = [
+            calculate_multi_day_changes(candidate['symbol'], candidate['price'])
+            for candidate in candidates
+        ]
+        multi_day_results = await asyncio.gather(*multi_day_tasks, return_exceptions=True)
+
+        # Create lookup map: symbol -> multi_day_changes
+        multi_day_map = {}
+        for candidate, multi_day in zip(candidates, multi_day_results):
+            if isinstance(multi_day, Exception):
+                multi_day_map[candidate['symbol']] = None  # Error - allow through
+            else:
+                multi_day_map[candidate['symbol']] = multi_day
+
         scored_candidates = []
         for candidate in candidates:
             symbol = candidate['symbol']
+            multi_day = multi_day_map.get(symbol)
 
             # POST-EXPLOSION DETECTION GATES
-            # Check multi-day price changes to filter out stocks that already exploded
-            multi_day = await calculate_multi_day_changes(symbol, candidate['price'])
-
             if multi_day:
                 # Gate 1: Reject stocks that exploded in last 5 days (>30% gain)
                 # Example: TROO showed +104% move, we missed the opportunity
