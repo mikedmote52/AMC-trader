@@ -16,7 +16,7 @@ import os
 import httpx
 from decimal import Decimal
 from pathlib import Path
-from services.polygon_client import poly_singleton
+from backend.src.services.polygon_client import poly_singleton
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
