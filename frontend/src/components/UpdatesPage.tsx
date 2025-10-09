@@ -164,52 +164,6 @@ export default function UpdatesPage() {
       {/* Interactive Trade Outcome Tracker */}
       <InteractiveTradeTracker />
 
-      {/* Legacy Learning System Status Dashboard */}
-      {learningMetrics && (
-        <div style={learningDashboardStyle}>
-          <div style={dashboardHeaderStyle}>
-            <h2 style={dashboardTitleStyle}>🧠 Learning System Performance</h2>
-            <div style={healthScoreStyle}>
-              <span style={healthLabelStyle}>Health Score:</span>
-              <span style={{
-                ...healthValueStyle,
-                color: learningMetrics.overall_health_score > 0.8 ? '#22c55e' :
-                       learningMetrics.overall_health_score > 0.6 ? '#f59e0b' : '#ef4444'
-              }}>
-                {(learningMetrics.overall_health_score * 100).toFixed(1)}%
-              </span>
-            </div>
-          </div>
-
-          <div style={metricsGridStyle}>
-            <div style={metricCardStyle}>
-              <div style={metricLabelStyle}>Pattern Learning</div>
-              <div style={metricValueStyle}>{(learningMetrics.pattern_learning.success_rate * 100).toFixed(1)}%</div>
-              <div style={metricSubtextStyle}>
-                {learningMetrics.pattern_learning.total_patterns_tracked} patterns •
-                Max winner: {learningMetrics.pattern_learning.max_winner_return.toFixed(1)}%
-              </div>
-            </div>
-
-            <div style={metricCardStyle}>
-              <div style={metricLabelStyle}>Discovery Engine</div>
-              <div style={metricValueStyle}>{(learningMetrics.discovery_optimization.parameter_effectiveness * 100).toFixed(1)}%</div>
-              <div style={metricSubtextStyle}>
-                {(learningMetrics.discovery_optimization.explosion_rate * 100).toFixed(1)}% explosion rate
-              </div>
-            </div>
-
-            <div style={metricCardStyle}>
-              <div style={metricLabelStyle}>Thesis Accuracy</div>
-              <div style={metricValueStyle}>{(learningMetrics.thesis_accuracy.avg_accuracy_score * 100).toFixed(1)}%</div>
-              <div style={metricSubtextStyle}>
-                {learningMetrics.thesis_accuracy.total_predictions} predictions
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Real-Time Opportunities */}
       {liveOpportunities.length > 0 && (
         <div style={opportunitiesStyle}>
@@ -383,47 +337,6 @@ export default function UpdatesPage() {
         </div>
       </div>
 
-      {/* System Intelligence Summary */}
-      <div style={intelligenceSummaryStyle}>
-        <h3 style={intelligenceTitleStyle}>🎯 What My System Learned Today</h3>
-        <div style={intelligenceContentStyle}>
-          <div style={intelligenceItemStyle}>
-            <span style={intelligenceBulletStyle}>•</span>
-            <span>Early detection threshold optimized: 2.5x volume vs 20x (catching opportunities faster)</span>
-          </div>
-          <div style={intelligenceItemStyle}>
-            <span style={intelligenceBulletStyle}>•</span>
-            <span>VIGL-pattern similarity tracking: {performanceMetrics?.squeeze_analysis?.vigl_similarity_found ? 'Active matches found' : 'Scanning for patterns'}</span>
-          </div>
-          <div style={intelligenceItemStyle}>
-            <span style={intelligenceBulletStyle}>•</span>
-            <span>Market regime: {learningMetrics ? 'Adaptive parameters active' : 'Baseline parameters'}</span>
-          </div>
-          <div style={intelligenceItemStyle}>
-            <span style={intelligenceBulletStyle}>•</span>
-            <span>Win/loss learning: {learningMetrics ? `${(learningMetrics.pattern_learning.success_rate * 100).toFixed(0)}% pattern success rate` : 'Building database'}</span>
-          </div>
-        </div>
-        
-        <div style={nextStepsStyle}>
-          <div style={nextStepsHeaderStyle}>🚀 Next Actions</div>
-          <div style={actionGridStyle}>
-            {liveOpportunities.length > 0 && (
-              <div style={actionItemStyle}>
-                Monitor {liveOpportunities[0].symbol} for entry (${liveOpportunities[0].price.toFixed(2)})
-              </div>
-            )}
-            <div style={actionItemStyle}>
-              System learning from {learningMetrics?.pattern_learning?.total_patterns_tracked || 0} historical patterns
-            </div>
-            {performanceMetrics?.recovery?.recovery_status === 'BEHIND_SCHEDULE' && (
-              <div style={{...actionItemStyle, color: '#f59e0b'}}>
-                Focus: Accelerate discovery to match June-July performance
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

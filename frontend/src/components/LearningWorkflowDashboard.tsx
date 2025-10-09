@@ -58,93 +58,26 @@ export default function LearningWorkflowDashboard() {
 
       // Get learning workflow data
       const [workflowResponse, stepsResponse] = await Promise.all([
-        getJSON(`${API_BASE}/learning-analytics/workflow/overview`).catch(() => null),
-        getJSON(`${API_BASE}/learning-analytics/workflow/steps`).catch(() => null)
+        getJSON(`${API_BASE}/learning-analytics/workflow/overview`).catch((error) => {
+          console.error("Failed to load workflow overview:", error);
+          return null;
+        }),
+        getJSON(`${API_BASE}/learning-analytics/workflow/steps`).catch((error) => {
+          console.error("Failed to load workflow steps:", error);
+          return null;
+        })
       ]);
 
       if (workflowResponse?.success) {
         setWorkflow(workflowResponse.data);
       } else {
-        // Mock data for demonstration
-        setWorkflow({
-          discovery_to_trade: {
-            recent_discoveries: 12,
-            trades_executed: 8,
-            success_rate: 67
-          },
-          position_tracking: {
-            active_positions: [
-              {
-                symbol: "OPEN",
-                entry_price: 2.45,
-                quantity: 100,
-                entry_time: "2025-09-17T14:30:00Z",
-                current_return_pct: 12.4,
-                days_held: 1,
-                discovery_source: true
-              },
-              {
-                symbol: "SPRC",
-                entry_price: 3.80,
-                quantity: 75,
-                entry_time: "2025-09-17T15:45:00Z",
-                current_return_pct: -5.2,
-                days_held: 1,
-                discovery_source: true
-              }
-            ],
-            closed_positions_today: 3,
-            learning_data_collected: 15
-          },
-          pattern_learning: {
-            patterns_analyzed: 8,
-            winning_patterns_identified: 3,
-            algorithm_improvements: 2
-          },
-          user_experience: {
-            manual_entries_needed: 1,
-            automatic_data_collected: 14,
-            learning_accuracy: 87
-          }
-        });
+        setWorkflow(null);
       }
 
       if (stepsResponse?.success) {
         setWorkflowSteps(stepsResponse.data);
       } else {
-        // Mock workflow steps
-        setWorkflowSteps([
-          {
-            step: "Discovery System",
-            status: "completed",
-            description: "AI identifies 12 potential opportunities",
-            timestamp: "2025-09-17T16:00:00Z"
-          },
-          {
-            step: "Trade Execution",
-            status: "completed",
-            description: "8 trades executed automatically",
-            timestamp: "2025-09-17T16:15:00Z"
-          },
-          {
-            step: "Position Tracking",
-            status: "active",
-            description: "Monitoring 2 active positions",
-            timestamp: "2025-09-17T16:30:00Z"
-          },
-          {
-            step: "Outcome Learning",
-            status: "active",
-            description: "Collecting performance data for algorithm improvement",
-            timestamp: "2025-09-17T16:30:00Z"
-          },
-          {
-            step: "Algorithm Update",
-            status: "pending",
-            description: "Optimize discovery parameters based on results",
-            timestamp: null
-          }
-        ]);
+        setWorkflowSteps([]);
       }
 
     } catch (err) {
@@ -195,34 +128,40 @@ export default function LearningWorkflowDashboard() {
       {/* Workflow Steps */}
       <div style={workflowSectionStyle}>
         <h4 style={sectionTitleStyle}>🔄 Current Workflow Status</h4>
-        <div style={stepsContainerStyle}>
-          {workflowSteps.map((step, index) => (
-            <div key={index} style={{
-              ...stepItemStyle,
-              ...(step.status === 'active' && activeStepStyle),
-              ...(step.status === 'completed' && completedStepStyle),
-              ...(step.status === 'pending' && pendingStepStyle)
-            }}>
-              <div style={stepHeaderStyle}>
-                <span style={stepIndicatorStyle}>
-                  {step.status === 'completed' ? '✅' :
-                   step.status === 'active' ? '🔄' : '⏳'}
-                </span>
-                <span style={stepNameStyle}>{step.step}</span>
-              </div>
-              <div style={stepDescriptionStyle}>{step.description}</div>
-              {step.timestamp && (
-                <div style={stepTimestampStyle}>
-                  {new Date(step.timestamp).toLocaleTimeString()}
+        {workflowSteps.length > 0 ? (
+          <div style={stepsContainerStyle}>
+            {workflowSteps.map((step, index) => (
+              <div key={index} style={{
+                ...stepItemStyle,
+                ...(step.status === 'active' && activeStepStyle),
+                ...(step.status === 'completed' && completedStepStyle),
+                ...(step.status === 'pending' && pendingStepStyle)
+              }}>
+                <div style={stepHeaderStyle}>
+                  <span style={stepIndicatorStyle}>
+                    {step.status === 'completed' ? '✅' :
+                     step.status === 'active' ? '🔄' : '⏳'}
+                  </span>
+                  <span style={stepNameStyle}>{step.step}</span>
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
+                <div style={stepDescriptionStyle}>{step.description}</div>
+                {step.timestamp && (
+                  <div style={stepTimestampStyle}>
+                    {new Date(step.timestamp).toLocaleTimeString()}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={emptyStateStyle}>
+            No workflow data available yet. Learning system is initializing.
+          </div>
+        )}
       </div>
 
       {/* Live Data Overview */}
-      {workflow && (
+      {workflow ? (
         <div style={contentGridStyle}>
           {/* Discovery to Trade */}
           <div style={metricCardStyle}>
@@ -301,6 +240,10 @@ export default function LearningWorkflowDashboard() {
               </span>
             </div>
           </div>
+        </div>
+      ) : (
+        <div style={emptyStateStyle}>
+          No workflow metrics available. Learning system may not be deployed or is still collecting data.
         </div>
       )}
 
@@ -580,4 +523,14 @@ const impactDescStyle: React.CSSProperties = {
   fontSize: '12px',
   color: '#ccc',
   lineHeight: '1.4'
+};
+
+const emptyStateStyle: React.CSSProperties = {
+  padding: '24px',
+  textAlign: 'center',
+  color: '#666',
+  fontSize: '14px',
+  background: '#0a0a0a',
+  border: '1px solid #333',
+  borderRadius: '8px'
 };

@@ -100,11 +100,26 @@ export default function EnhancedLearningDashboard() {
           summaryResponse,
           parametersResponse
         ] = await Promise.all([
-          getJSON(`${API_BASE}/learning-analytics/market-regime/current`).catch(() => null),
-          getJSON(`${API_BASE}/learning-analytics/pattern-analysis/feature-importance`).catch(() => null),
-          getJSON(`${API_BASE}/learning-analytics/thesis/accuracy-analysis`).catch(() => null),
-          getJSON(`${API_BASE}/learning-analytics/learning/performance-summary`).catch(() => null),
-          getJSON(`${API_BASE}/learning-analytics/discovery/adaptive-parameters`).catch(() => null)
+          getJSON(`${API_BASE}/learning-analytics/market-regime/current`).catch((error) => {
+            console.error("Failed to load market regime:", error);
+            return null;
+          }),
+          getJSON(`${API_BASE}/learning-analytics/pattern-analysis/feature-importance`).catch((error) => {
+            console.error("Failed to load pattern analysis:", error);
+            return null;
+          }),
+          getJSON(`${API_BASE}/learning-analytics/thesis/accuracy-analysis`).catch((error) => {
+            console.error("Failed to load thesis accuracy:", error);
+            return null;
+          }),
+          getJSON(`${API_BASE}/learning-analytics/learning/performance-summary`).catch((error) => {
+            console.error("Failed to load learning summary:", error);
+            return null;
+          }),
+          getJSON(`${API_BASE}/learning-analytics/discovery/adaptive-parameters`).catch((error) => {
+            console.error("Failed to load adaptive parameters:", error);
+            return null;
+          })
         ]);
 
         if (regimeResponse?.success) {
