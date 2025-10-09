@@ -224,6 +224,60 @@ async def health():
             media_type="application/json"
         )
 
+@app.get("/news/{symbol}")
+async def get_news(symbol: str, limit: int = 3):
+    """Get recent news for a symbol from Polygon API"""
+    try:
+        import httpx
+
+        api_key = os.getenv("POLYGON_API_KEY")
+        if not api_key:
+            from fastapi import Response
+            return Response(
+                content='{"error":"Polygon API key not configured"}',
+                status_code=500,
+                media_type="application/json"
+            )
+
+        url = f"https://api.polygon.io/v2/reference/news"
+        params = {
+            "ticker": symbol.upper(),
+            "limit": min(limit, 10),  # Cap at 10
+            "order": "desc",
+            "sort": "published_utc",
+            "apiKey": api_key
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, params=params)
+
+            if response.status_code == 200:
+                from fastapi import Response
+                return Response(
+                    content=response.text,
+                    status_code=200,
+                    media_type="application/json"
+                )
+            else:
+                log.error(f"Polygon news API error: {response.status_code} - {response.text}")
+                from fastapi import Response
+                import json
+                return Response(
+                    content=json.dumps({"error": f"Polygon API error: {response.status_code}"}),
+                    status_code=response.status_code,
+                    media_type="application/json"
+                )
+
+    except Exception as e:
+        log.exception(f"Error fetching news for {symbol}")
+        from fastapi import Response
+        import json
+        return Response(
+            content=json.dumps({"error": str(e)}),
+            status_code=500,
+            media_type="application/json"
+        )
+
 # Include routers
 app.include_router(trades_router)
 app.include_router(polygon_debug, prefix="/debug")

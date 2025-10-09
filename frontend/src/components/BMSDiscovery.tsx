@@ -667,6 +667,8 @@ interface BMSAuditModalProps {
 const BMSAuditModal: React.FC<BMSAuditModalProps> = ({ candidate, onClose }) => {
   const [auditData, setAuditData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [newsData, setNewsData] = useState<any[]>([]);
+  const [loadingNews, setLoadingNews] = useState(true);
 
   // Calculate price target and timeframe
   const priceTarget = candidate.pattern_match
@@ -706,13 +708,46 @@ const BMSAuditModal: React.FC<BMSAuditModalProps> = ({ candidate, onClose }) => 
       }
     };
 
+    const fetchNews = async () => {
+      try {
+        const news = await getJSON(`/news/${candidate.symbol}?limit=3`);
+        if (news && news.results) {
+          setNewsData(news.results);
+        }
+      } catch (err) {
+        console.error('Error fetching news:', err);
+      } finally {
+        setLoadingNews(false);
+      }
+    };
+
     fetchAuditData();
+    fetchNews();
   }, [candidate.symbol]);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg max-w-4xl w-full m-4 max-h-[80vh] overflow-y-auto">
-        <div className="p-6">
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 50
+    }}>
+      <div style={{
+        backgroundColor: 'white',
+        borderRadius: '12px',
+        maxWidth: '900px',
+        width: '100%',
+        margin: '16px',
+        maxHeight: '80vh',
+        overflowY: 'auto'
+      }}>
+        <div style={{ padding: '24px' }}>
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-2xl font-bold">{candidate.symbol} - BMS Analysis</h3>
             <button
@@ -825,6 +860,87 @@ const BMSAuditModal: React.FC<BMSAuditModalProps> = ({ candidate, onClose }) => 
                   <li><strong>Risk/Reward:</strong> {priceTarget ? `1:${(priceTarget.gainPct / 7).toFixed(1)}` : '1:10+'} - Excellent asymmetric opportunity</li>
                 </ul>
               </div>
+            </div>
+
+            {/* News & Catalyst Section */}
+            <div style={{
+              background: 'linear-gradient(to bottom right, #fef3c7, #fde68a)',
+              border: '2px solid #fbbf24',
+              borderRadius: '12px',
+              padding: '24px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                <span style={{ fontSize: '24px' }}>📰</span>
+                <h4 style={{ fontSize: '20px', fontWeight: 'bold', color: '#111827', margin: 0 }}>Recent News & Catalyst</h4>
+              </div>
+
+              {loadingNews ? (
+                <p style={{ color: '#6b7280', textAlign: 'center', padding: '16px' }}>Loading news...</p>
+              ) : newsData.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {newsData.map((article: any, index: number) => (
+                    <div key={index} style={{
+                      backgroundColor: 'white',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      border: '1px solid #e5e7eb'
+                    }}>
+                      <h5 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px', color: '#111827', marginTop: 0 }}>
+                        {article.title}
+                      </h5>
+                      <p style={{ fontSize: '14px', color: '#6b7280', lineHeight: '1.5', marginBottom: '8px' }}>
+                        {article.description}
+                      </p>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                        <span style={{ color: '#9ca3af' }}>
+                          {new Date(article.published_utc).toLocaleDateString()}
+                        </span>
+                        {article.insights && article.insights[0] && (
+                          <span style={{
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            fontWeight: '600',
+                            backgroundColor: article.insights[0].sentiment === 'positive' ? '#dcfce7' :
+                                            article.insights[0].sentiment === 'negative' ? '#fee2e2' : '#f3f4f6',
+                            color: article.insights[0].sentiment === 'positive' ? '#166534' :
+                                   article.insights[0].sentiment === 'negative' ? '#991b1b' : '#4b5563'
+                          }}>
+                            {article.insights[0].sentiment.toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <a
+                        href={article.article_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: 'inline-block',
+                          marginTop: '8px',
+                          color: '#2563eb',
+                          fontSize: '13px',
+                          textDecoration: 'none',
+                          fontWeight: '600'
+                        }}
+                      >
+                        Read full article →
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{
+                  backgroundColor: 'white',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  border: '1px solid #e5e7eb',
+                  textAlign: 'center'
+                }}>
+                  <p style={{ color: '#6b7280', marginBottom: '8px', marginTop: 0 }}>No recent news available</p>
+                  <p style={{ fontSize: '14px', color: '#9ca3af', marginBottom: 0 }}>
+                    This stock was discovered through pattern-based analysis (volume + price action), not news catalysts
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Action Buttons */}
