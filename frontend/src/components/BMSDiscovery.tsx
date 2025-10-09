@@ -481,7 +481,7 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
                   </span>
                   {getActionBadge(candidate.action, candidate.confidence || 'MEDIUM')}
                 </div>
-                <span style={{ fontSize: '14px', fontWeight: '700', color: '#9ca3af', background: '#f3f4f6', padding: '4px 10px', borderRadius: '4px' }}>
+                <span style={{ fontSize: '14px', fontWeight: '700', color: '#1f2937', background: '#f3f4f6', padding: '4px 10px', borderRadius: '4px' }}>
                   {index === 0 ? '🥇 #1' : index === 1 ? '🥈 #2' : index === 2 ? '🥉 #3' : `#${index + 1}`}
                 </span>
               </div>
@@ -544,7 +544,7 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
                 display: 'flex',
                 gap: '12px',
                 fontSize: '12px',
-                color: '#6b7280',
+                color: '#374151',
                 marginBottom: '8px',
                 flexWrap: 'wrap'
               }}>
@@ -621,10 +621,10 @@ export const BMSDiscovery: React.FC<BMSDiscoveryProps> = ({
                     padding: '10px 16px',
                     fontSize: '13px',
                     fontWeight: '600',
-                    border: '2px solid #e5e7eb',
+                    border: '2px solid #d1d5db',
                     borderRadius: '6px',
                     background: 'white',
-                    color: '#6b7280',
+                    color: '#111827',
                     cursor: 'pointer'
                   }}
                 >
@@ -748,61 +748,69 @@ const BMSAuditModal: React.FC<BMSAuditModalProps> = ({ candidate, onClose }) => 
         overflowY: 'auto'
       }}>
         <div style={{ padding: '24px' }}>
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-2xl font-bold">{candidate.symbol} - BMS Analysis</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', margin: 0 }}>{candidate.symbol} - Investment Analysis</h3>
             <button
               onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 text-xl"
+              style={{
+                color: '#374151',
+                fontSize: '24px',
+                fontWeight: 'bold',
+                border: 'none',
+                background: 'none',
+                cursor: 'pointer',
+                padding: '4px 8px'
+              }}
             >
               ✕
             </button>
           </div>
 
-          <div className="space-y-6">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {/* Investment Thesis - Primary Section */}
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg p-6">
-              <h4 className="text-xl font-bold mb-4 text-gray-900">{candidate.symbol} Investment Thesis</h4>
+            <div style={{ background: 'linear-gradient(to bottom right, #eff6ff, #e0e7ff)', border: '2px solid #bfdbfe', borderRadius: '12px', padding: '24px' }}>
+              <h4 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '16px', color: '#111827', marginTop: 0 }}>{candidate.symbol} Investment Thesis</h4>
 
               {/* Pattern Match Summary */}
               {candidate.pattern_match && (
-                <div className="mb-6 bg-white rounded-lg p-4 border border-blue-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-2xl">⭐</span>
-                    <h5 className="font-bold text-lg text-gray-900">Pattern Match Analysis</h5>
+                <div style={{ marginBottom: '24px', backgroundColor: 'white', borderRadius: '8px', padding: '16px', border: '1px solid #bfdbfe' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '24px' }}>⭐</span>
+                    <h5 style={{ fontWeight: 'bold', fontSize: '18px', color: '#111827', margin: 0 }}>Pattern Match Analysis</h5>
                   </div>
-                  <p className="text-gray-700 leading-relaxed">
-                    <strong className="text-blue-700">{Math.round(candidate.pattern_match.similarity * 100)}% similarity</strong> to {candidate.pattern_match.pattern}'s explosive pattern that gained <strong className="text-green-600">{candidate.pattern_match.outcome}</strong> in 7 days.
+                  <p style={{ color: '#1f2937', lineHeight: '1.6', margin: 0 }}>
+                    <strong style={{ color: '#1d4ed8' }}>{Math.round(candidate.pattern_match.similarity * 100)}% similarity</strong> to {candidate.pattern_match.pattern}'s explosive pattern that gained <strong style={{ color: '#16a34a' }}>{candidate.pattern_match.outcome}</strong> in 7 days.
                   </p>
                 </div>
               )}
 
               {/* Why This Stock */}
-              <div className="mb-6">
-                <h5 className="font-bold text-lg mb-3 text-gray-900">Why This Stock:</h5>
-                <ul className="space-y-2">
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-600 font-bold">•</span>
-                    <span className="text-gray-700">
+              <div style={{ marginBottom: '24px' }}>
+                <h5 style={{ fontWeight: 'bold', fontSize: '18px', marginBottom: '12px', color: '#111827', marginTop: 0 }}>Why This Stock:</h5>
+                <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '8px', margin: 0 }}>
+                  <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                    <span style={{ color: '#2563eb', fontWeight: 'bold', fontSize: '16px' }}>•</span>
+                    <span style={{ color: '#1f2937' }}>
                       <strong>{candidate.volume_surge.toFixed(1)}x Volume Surge</strong> - Institutional accumulation detected
                       {candidate.pattern_match && ` (matches ${candidate.pattern_match.pattern}'s ${candidate.pattern_match.pattern === 'VIGL' ? '1.8x' : candidate.pattern_match.pattern === 'CRWV' ? '1.9x' : '1.7x'})`}
                     </span>
                   </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-600 font-bold">•</span>
-                    <span className="text-gray-700">
+                  <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                    <span style={{ color: '#2563eb', fontWeight: 'bold', fontSize: '16px' }}>•</span>
+                    <span style={{ color: '#1f2937' }}>
                       <strong>{candidate.momentum_1d >= 0 ? '+' : ''}{candidate.momentum_1d.toFixed(1)}% Price Change</strong> -
                       {Math.abs(candidate.momentum_1d) < 2 ? ' Stealth accumulation, not discovered by retail yet' : ' Momentum building'}
                     </span>
                   </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-600 font-bold">•</span>
-                    <span className="text-gray-700">
+                  <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                    <span style={{ color: '#2563eb', fontWeight: 'bold', fontSize: '16px' }}>•</span>
+                    <span style={{ color: '#1f2937' }}>
                       <strong>${candidate.price.toFixed(2)} Price</strong> - Low price = high % upside potential (easier path to multi-bagger)
                     </span>
                   </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-600 font-bold">•</span>
-                    <span className="text-gray-700">
+                  <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                    <span style={{ color: '#2563eb', fontWeight: 'bold', fontSize: '16px' }}>•</span>
+                    <span style={{ color: '#1f2937' }}>
                       <strong>{candidate.bms_score.toFixed(1)}% Explosion Probability</strong>
                       {candidate.base_probability && candidate.pattern_match && ` (${candidate.base_probability.toFixed(1)}% base + ${candidate.pattern_match.bonus_points} pts pattern bonus)`}
                     </span>
@@ -812,49 +820,49 @@ const BMSAuditModal: React.FC<BMSAuditModalProps> = ({ candidate, onClose }) => 
 
               {/* Historical Context */}
               {candidate.pattern_match && candidate.pattern_match.similarity >= 0.65 && (
-                <div className="mb-6 bg-white rounded-lg p-4 border border-green-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-2xl">📈</span>
-                    <h5 className="font-bold text-lg text-gray-900">Historical Context</h5>
+                <div style={{ marginBottom: '24px', backgroundColor: 'white', borderRadius: '8px', padding: '16px', border: '1px solid #bbf7d0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '24px' }}>📈</span>
+                    <h5 style={{ fontWeight: 'bold', fontSize: '18px', color: '#111827', margin: 0 }}>Historical Context</h5>
                   </div>
-                  <p className="text-gray-700 mb-3">
+                  <p style={{ color: '#1f2937', marginBottom: '12px', marginTop: 0 }}>
                     Stocks with {Math.round(candidate.pattern_match.similarity * 100)}%+ pattern match have historically moved:
                   </p>
-                  <ul className="space-y-1 text-sm text-gray-700">
-                    <li><strong>VIGL:</strong> 1.8x RVOL, +0.4% change → <span className="text-green-600 font-bold">+324% in 7 days</span></li>
-                    <li><strong>CRWV:</strong> 1.9x RVOL, -0.2% change → <span className="text-green-600 font-bold">+171% in 10 days</span></li>
-                    <li><strong>AEVA:</strong> 1.7x RVOL, +1.1% change → <span className="text-green-600 font-bold">+162% in 14 days</span></li>
+                  <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '14px', color: '#1f2937', margin: 0 }}>
+                    <li><strong>VIGL:</strong> 1.8x RVOL, +0.4% change → <span style={{ color: '#16a34a', fontWeight: 'bold' }}>+324% in 7 days</span></li>
+                    <li><strong>CRWV:</strong> 1.9x RVOL, -0.2% change → <span style={{ color: '#16a34a', fontWeight: 'bold' }}>+171% in 10 days</span></li>
+                    <li><strong>AEVA:</strong> 1.7x RVOL, +1.1% change → <span style={{ color: '#16a34a', fontWeight: 'bold' }}>+162% in 14 days</span></li>
                   </ul>
                 </div>
               )}
 
               {/* Price Target & Timeframe */}
               {priceTarget && (
-                <div className="grid grid-cols-3 gap-4 mb-6">
-                  <div className="bg-white rounded-lg p-4 text-center border border-gray-200">
-                    <div className="text-sm text-gray-600 mb-1">Current Price</div>
-                    <div className="text-2xl font-bold text-gray-900">${candidate.price.toFixed(2)}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                  <div style={{ backgroundColor: 'white', borderRadius: '8px', padding: '16px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
+                    <div style={{ fontSize: '14px', color: '#374151', marginBottom: '4px', fontWeight: '600' }}>Current Price</div>
+                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827' }}>${candidate.price.toFixed(2)}</div>
                   </div>
-                  <div className="bg-green-50 rounded-lg p-4 text-center border-2 border-green-300">
-                    <div className="text-sm text-green-700 font-semibold mb-1">Target Price</div>
-                    <div className="text-2xl font-bold text-green-600">${priceTarget.target.toFixed(2)}</div>
-                    <div className="text-xs text-green-600 font-semibold">+{priceTarget.gainPct}% avg</div>
+                  <div style={{ backgroundColor: '#f0fdf4', borderRadius: '8px', padding: '16px', textAlign: 'center', border: '2px solid #86efac' }}>
+                    <div style={{ fontSize: '14px', color: '#15803d', fontWeight: '600', marginBottom: '4px' }}>Target Price</div>
+                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>${priceTarget.target.toFixed(2)}</div>
+                    <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: '600' }}>+{priceTarget.gainPct}% avg</div>
                   </div>
-                  <div className="bg-blue-50 rounded-lg p-4 text-center border border-blue-200">
-                    <div className="text-sm text-blue-700 font-semibold mb-1">Timeframe</div>
-                    <div className="text-2xl font-bold text-blue-600">{priceTarget.timeframeDays}</div>
-                    <div className="text-xs text-blue-600">days</div>
+                  <div style={{ backgroundColor: '#eff6ff', borderRadius: '8px', padding: '16px', textAlign: 'center', border: '1px solid #bfdbfe' }}>
+                    <div style={{ fontSize: '14px', color: '#1d4ed8', fontWeight: '600', marginBottom: '4px' }}>Timeframe</div>
+                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#2563eb' }}>{priceTarget.timeframeDays}</div>
+                    <div style={{ fontSize: '12px', color: '#2563eb' }}>days</div>
                   </div>
                 </div>
               )}
 
               {/* Risk Assessment */}
-              <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xl">⚠️</span>
-                  <h5 className="font-bold text-gray-900">Risk Assessment</h5>
+              <div style={{ backgroundColor: '#fef3c7', borderRadius: '8px', padding: '16px', border: '1px solid #fbbf24' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '20px' }}>⚠️</span>
+                  <h5 style={{ fontWeight: 'bold', color: '#111827', margin: 0 }}>Risk Assessment</h5>
                 </div>
-                <ul className="space-y-1 text-sm text-gray-700">
+                <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '14px', color: '#1f2937', margin: 0 }}>
                   <li><strong>Stop-loss recommended:</strong> {candidate.bms_score >= 75 ? '5-7%' : '7-10%'} below entry (based on confidence level)</li>
                   <li><strong>Position size:</strong> {candidate.action === 'TRADE_READY' ? 'Standard' : 'Reduced'} (adjust based on your risk tolerance)</li>
                   <li><strong>Risk/Reward:</strong> {priceTarget ? `1:${(priceTarget.gainPct / 7).toFixed(1)}` : '1:10+'} - Excellent asymmetric opportunity</li>
@@ -875,7 +883,7 @@ const BMSAuditModal: React.FC<BMSAuditModalProps> = ({ candidate, onClose }) => 
               </div>
 
               {loadingNews ? (
-                <p style={{ color: '#6b7280', textAlign: 'center', padding: '16px' }}>Loading news...</p>
+                <p style={{ color: '#1f2937', textAlign: 'center', padding: '16px', fontWeight: '500' }}>Loading news...</p>
               ) : newsData.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {newsData.map((article: any, index: number) => (
@@ -888,11 +896,11 @@ const BMSAuditModal: React.FC<BMSAuditModalProps> = ({ candidate, onClose }) => 
                       <h5 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px', color: '#111827', marginTop: 0 }}>
                         {article.title}
                       </h5>
-                      <p style={{ fontSize: '14px', color: '#6b7280', lineHeight: '1.5', marginBottom: '8px' }}>
+                      <p style={{ fontSize: '14px', color: '#1f2937', lineHeight: '1.5', marginBottom: '8px' }}>
                         {article.description}
                       </p>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
-                        <span style={{ color: '#9ca3af' }}>
+                        <span style={{ color: '#374151', fontWeight: '500' }}>
                           {new Date(article.published_utc).toLocaleDateString()}
                         </span>
                         {article.insights && article.insights[0] && (
@@ -935,8 +943,8 @@ const BMSAuditModal: React.FC<BMSAuditModalProps> = ({ candidate, onClose }) => 
                   border: '1px solid #e5e7eb',
                   textAlign: 'center'
                 }}>
-                  <p style={{ color: '#6b7280', marginBottom: '8px', marginTop: 0 }}>No recent news available</p>
-                  <p style={{ fontSize: '14px', color: '#9ca3af', marginBottom: 0 }}>
+                  <p style={{ color: '#111827', marginBottom: '8px', marginTop: 0, fontWeight: '600' }}>No recent news available</p>
+                  <p style={{ fontSize: '14px', color: '#374151', marginBottom: 0 }}>
                     This stock was discovered through pattern-based analysis (volume + price action), not news catalysts
                   </p>
                 </div>
@@ -944,15 +952,36 @@ const BMSAuditModal: React.FC<BMSAuditModalProps> = ({ candidate, onClose }) => 
             </div>
 
             {/* Action Buttons */}
-            <div className="flex space-x-3 pt-4 border-t">
+            <div style={{ display: 'flex', gap: '12px', paddingTop: '16px', borderTop: '1px solid #e5e7eb' }}>
               <button
                 onClick={onClose}
-                className="px-6 py-3 border-2 border-gray-300 rounded-lg hover:bg-gray-50 font-semibold"
+                style={{
+                  padding: '12px 24px',
+                  border: '2px solid #e5e7eb',
+                  borderRadius: '8px',
+                  backgroundColor: 'white',
+                  color: '#111827',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  fontSize: '15px'
+                }}
               >
                 Close
               </button>
               {candidate.action === 'TRADE_READY' && (
-                <button className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold text-lg">
+                <button
+                  style={{
+                    flex: 1,
+                    padding: '12px 24px',
+                    backgroundColor: '#16a34a',
+                    color: 'white',
+                    borderRadius: '8px',
+                    border: 'none',
+                    fontWeight: 'bold',
+                    fontSize: '18px',
+                    cursor: 'pointer'
+                  }}
+                >
                   🚀 Buy Now
                 </button>
               )}
