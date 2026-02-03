@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SqueezeSeeker | Trading Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-brand">
+            <div class="logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                </svg>
+                <span>SqueezeSeeker</span>
+            </div>
+        </div>
+        <div class="nav-search">
+            <input type="text" id="stockSearch" placeholder="Search ticker (e.g., AAPL)..." autocomplete="off">
+            <button id="searchBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="m21 21-4.35-4.35"/>
+                </svg>
+            </button>
+        </div>
+        <div class="nav-links">
+            <a href="#portfolio" class="active">Portfolio</a>
+            <a href="#recommendations">Opportunities</a>
+            <a href="#orders">Orders</a>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-container">
+        <!-- Portfolio Section -->
+        <section id="portfolio" class="section">
+            <div class="portfolio-header">
+                <div class="portfolio-value">
+                    <h2>Portfolio Value</h2>
+                    <div class="value-amount" id="portfolioValue">$0.00</div>
+                    <div class="value-change" id="portfolioChange">
+                        <span class="change-amount">+$0.00</span>
+                        <span class="change-percent">(+0.00%)</span>
+                        <span class="change-label">Today</span>
+                    </div>
+                </div>
+                <div class="portfolio-stats">
+                    <div class="stat-card">
+                        <span class="stat-label">Buying Power</span>
+                        <span class="stat-value" id="buyingPower">$0.00</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Cash</span>
+                        <span class="stat-value" id="cashBalance">$0.00</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Positions</span>
+                        <span class="stat-value" id="positionCount">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Portfolio Chart -->
+            <div class="chart-container">
+                <canvas id="portfolioChart"></canvas>
+            </div>
+
+            <!-- Positions Table -->
+            <div class="positions-section">
+                <h3>Your Positions</h3>
+                <div class="positions-table-wrapper">
+                    <table class="positions-table" id="positionsTable">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Shares</th>
+                                <th>Avg Cost</th>
+                                <th>Current</th>
+                                <th>Value</th>
+                                <th>P&L ($)</th>
+                                <th>P&L (%)</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positionsBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Recommendations Section -->
+        <section id="recommendations" class="section">
+            <div class="section-header">
+                <h2>🔥 Top Opportunities</h2>
+                <p>Stocks scoring 7+ on our 10-factor system</p>
+            </div>
+            <div class="recommendations-grid" id="recommendationsGrid">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- Pending Orders Section -->
+        <section id="orders" class="section">
+            <div class="section-header">
+                <h2>Pending Orders</h2>
+            </div>
+            <div class="orders-list" id="ordersList">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Stock Analysis Modal -->
+    <div class="modal" id="analysisModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalSymbol">AAPL</h2>
+                <button class="modal-close" id="modalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="stock-header">
+                    <div class="stock-price">
+                        <span id="modalPrice">$0.00</span>
+                        <span class="price-change" id="modalChange">+0.00%</span>
+                    </div>
+                    <div class="stock-recommendation" id="modalRecommendation">BUY</div>
+                </div>
+                
+                <div class="stock-chart-container">
+                    <canvas id="stockChart"></canvas>
+                </div>
+
+                <div class="score-section">
+                    <h3>10-Factor Score: <span id="modalScore">0</span>/10</h3>
+                    <div class="score-bar">
+                        <div class="score-fill" id="scoreFill" style="width: 0%"></div>
+                    </div>
+                    <div class="score-factors" id="scoreFactors">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <div class="analysis-notes">
+                    <h3>Analysis</h3>
+                    <ul id="analysisNotes">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="btn-buy" id="modalBuyBtn">Buy Shares</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Buy Order Modal -->
+    <div class="modal" id="buyModal">
+        <div class="modal-content buy-modal">
+            <div class="modal-header">
+                <h2>Place Order</h2>
+                <button class="modal-close" id="buyModalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="buy-form">
+                    <div class="form-group">
+                        <label>Symbol</label>
+                        <input type="text" id="buySymbol" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label>Quantity</label>
+                        <input type="number" id="buyQuantity" value="10" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Estimated Cost</label>
+                        <div class="estimated-cost" id="estimatedCost">$0.00</div>
+                    </div>
+                    <button class="btn-confirm-buy" id="confirmBuyBtn">Confirm Purchase</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast">
+        <span id="toastMessage"></span>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
