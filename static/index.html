@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SqueezeSeeker | Trading Dashboard</title>
+    <title>SqueezeSeeker | Open Claw V4 Dashboard</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,6 +19,7 @@
                     <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
                 </svg>
                 <span>SqueezeSeeker</span>
+                <span class="version-badge">V4</span>
             </div>
         </div>
         <div class="nav-search">
@@ -32,13 +33,44 @@
         </div>
         <div class="nav-links">
             <a href="#portfolio" class="active">Portfolio</a>
-            <a href="#recommendations">Opportunities</a>
+            <a href="#scanner">Scanner</a>
+            <a href="#learning">Learning</a>
             <a href="#orders">Orders</a>
         </div>
     </nav>
 
     <!-- Main Content -->
     <main class="main-container">
+        <!-- Scanner Status Banner -->
+        <section class="scanner-banner" id="scannerBanner">
+            <div class="banner-left">
+                <div class="scanner-status-dot" id="scannerDot"></div>
+                <span class="scanner-version" id="scannerVersion">V4 Scanner</span>
+                <span class="scanner-status-text" id="scannerStatusText">Connecting...</span>
+            </div>
+            <div class="banner-center">
+                <div class="gate-funnel" id="gateFunnel">
+                    <div class="gate-step">
+                        <span class="gate-label">Gate A</span>
+                        <span class="gate-count" id="gateACount">--</span>
+                    </div>
+                    <span class="gate-arrow">&rarr;</span>
+                    <div class="gate-step">
+                        <span class="gate-label">Gate B</span>
+                        <span class="gate-count" id="gateBCount">--</span>
+                    </div>
+                    <span class="gate-arrow">&rarr;</span>
+                    <div class="gate-step">
+                        <span class="gate-label">Gate C</span>
+                        <span class="gate-count" id="gateCCount">--</span>
+                    </div>
+                </div>
+            </div>
+            <div class="banner-right">
+                <span class="last-scan" id="lastScan">Last scan: --</span>
+            </div>
+        </section>
+
         <!-- Portfolio Section -->
         <section id="portfolio" class="section">
             <div class="portfolio-header">
@@ -86,25 +118,80 @@
                                 <th>Value</th>
                                 <th>P&L ($)</th>
                                 <th>P&L (%)</th>
+                                <th>Thesis</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="positionsBody">
-                            <!-- Populated by JS -->
                         </tbody>
                     </table>
                 </div>
             </div>
         </section>
 
-        <!-- Recommendations Section -->
-        <section id="recommendations" class="section">
+        <!-- Scanner Section (V4 Candidates) -->
+        <section id="scanner" class="section">
             <div class="section-header">
-                <h2>🔥 Top Opportunities</h2>
-                <p>Stocks scoring 7+ on our 10-factor system</p>
+                <h2>V4 Scanner Candidates</h2>
+                <p>Stealth accumulation pattern detection - wide net, strict filter</p>
             </div>
-            <div class="recommendations-grid" id="recommendationsGrid">
+            <div class="scanner-philosophy" id="scannerPhilosophy">
+                <span class="philosophy-text">0 picks on a quiet day = system protecting capital</span>
+            </div>
+            <div class="tier-summary" id="tierSummary">
                 <!-- Populated by JS -->
+            </div>
+            <div class="candidates-grid" id="candidatesGrid">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- Learning System Section -->
+        <section id="learning" class="section">
+            <div class="section-header">
+                <h2>Learning System</h2>
+                <p>V4 performance tracking and weight optimization</p>
+            </div>
+            <div class="learning-grid">
+                <div class="learning-card" id="overallStats">
+                    <h3>Overall Performance</h3>
+                    <div class="learning-stats">
+                        <div class="learning-stat">
+                            <span class="learning-stat-value" id="totalTrades">--</span>
+                            <span class="learning-stat-label">Total Trades</span>
+                        </div>
+                        <div class="learning-stat">
+                            <span class="learning-stat-value" id="winRate">--%</span>
+                            <span class="learning-stat-label">Win Rate</span>
+                        </div>
+                        <div class="learning-stat">
+                            <span class="learning-stat-value" id="avgReturn">--%</span>
+                            <span class="learning-stat-label">Avg Return</span>
+                        </div>
+                        <div class="learning-stat">
+                            <span class="learning-stat-value" id="avgHoldDays">--</span>
+                            <span class="learning-stat-label">Avg Hold Days</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="learning-card" id="scoreRangeStats">
+                    <h3>Win Rate by Score</h3>
+                    <div class="score-range-bars" id="scoreRangeBars">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+                <div class="learning-card" id="viglStats">
+                    <h3>VIGL Pattern Performance</h3>
+                    <div class="vigl-pattern-stats" id="viglPatternStats">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+                <div class="learning-card" id="weightsCard">
+                    <h3>V4 Scoring Weights</h3>
+                    <div class="weights-breakdown" id="weightsBreakdown">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -114,7 +201,6 @@
                 <h2>Pending Orders</h2>
             </div>
             <div class="orders-list" id="ordersList">
-                <!-- Populated by JS -->
             </div>
         </section>
     </main>
@@ -132,28 +218,51 @@
                         <span id="modalPrice">$0.00</span>
                         <span class="price-change" id="modalChange">+0.00%</span>
                     </div>
-                    <div class="stock-recommendation" id="modalRecommendation">BUY</div>
+                    <div class="modal-badges">
+                        <div class="tier-badge" id="modalTier"></div>
+                        <div class="vigl-badge" id="modalVigl"></div>
+                    </div>
                 </div>
-                
+
                 <div class="stock-chart-container">
                     <canvas id="stockChart"></canvas>
                 </div>
 
-                <div class="score-section">
-                    <h3>10-Factor Score: <span id="modalScore">0</span>/10</h3>
-                    <div class="score-bar">
-                        <div class="score-fill" id="scoreFill" style="width: 0%"></div>
+                <!-- V4 Scanner Data (if available) -->
+                <div class="v4-section" id="v4Section" style="display:none;">
+                    <h3>V4 Scanner Analysis</h3>
+                    <div class="v4-metrics">
+                        <div class="v4-metric">
+                            <span class="v4-metric-label">V4 Score</span>
+                            <span class="v4-metric-value" id="modalV4Score">--</span>
+                        </div>
+                        <div class="v4-metric">
+                            <span class="v4-metric-label">Explosion Prob.</span>
+                            <span class="v4-metric-value" id="modalExplosion">--%</span>
+                        </div>
+                        <div class="v4-metric">
+                            <span class="v4-metric-label">RVOL</span>
+                            <span class="v4-metric-value" id="modalRvol">--x</span>
+                        </div>
+                        <div class="v4-metric">
+                            <span class="v4-metric-label">VIGL Bonus</span>
+                            <span class="v4-metric-value" id="modalViglBonus">--</span>
+                        </div>
                     </div>
-                    <div class="score-factors" id="scoreFactors">
-                        <!-- Populated by JS -->
+                    <div class="explosion-bar-container">
+                        <div class="explosion-bar">
+                            <div class="explosion-fill" id="explosionFill" style="width:0%"></div>
+                        </div>
+                        <span class="explosion-label" id="explosionLabel">0% Explosion Probability</span>
                     </div>
                 </div>
 
-                <div class="analysis-notes">
-                    <h3>Analysis</h3>
-                    <ul id="analysisNotes">
+                <!-- Yahoo Finance Data -->
+                <div class="yf-section">
+                    <h3>Market Data</h3>
+                    <div class="yf-metrics" id="yfMetrics">
                         <!-- Populated by JS -->
-                    </ul>
+                    </div>
                 </div>
 
                 <div class="action-buttons">
