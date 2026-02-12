@@ -36,6 +36,10 @@ else:
         ALPACA_API_SECRET = ''
         ALPACA_BASE_URL = 'https://paper-api.alpaca.markets'
 
+# Normalize base URL to include /v2
+if ALPACA_BASE_URL and not ALPACA_BASE_URL.rstrip('/').endswith('/v2'):
+    ALPACA_BASE_URL = ALPACA_BASE_URL.rstrip('/') + '/v2'
+
 # Alpaca headers
 ALPACA_HEADERS = {
     'APCA-API-KEY-ID': ALPACA_API_KEY,
