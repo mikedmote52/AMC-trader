@@ -5,6 +5,10 @@ let stockChart = null;
 let currentSymbol = null;
 let currentPrice = 0;
 let thesisData = {};
+let positionsData = [];
+let currentSort = { column: 'market_value', direction: 'desc' };
+let tradeSide = 'buy';
+let tradeOrderBy = 'shares';
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', async () => {
@@ -31,26 +35,75 @@ function setupEventListeners() {
         document.getElementById('analysisModal').classList.remove('active');
     });
 
-    document.getElementById('buyModalClose').addEventListener('click', () => {
-        document.getElementById('buyModal').classList.remove('active');
+    document.getElementById('tradeModalClose').addEventListener('click', () => {
+        document.getElementById('tradeModal').classList.remove('active');
     });
 
     document.getElementById('modalBuyBtn').addEventListener('click', () => {
-        showBuyModal(currentSymbol, currentPrice);
+        showTradeModal(currentSymbol, currentPrice, 'buy');
     });
 
-    document.getElementById('confirmBuyBtn').addEventListener('click', handleBuy);
-    document.getElementById('buyQuantity').addEventListener('input', updateEstimatedCost);
+    document.getElementById('modalSellBtn').addEventListener('click', () => {
+        showTradeModal(currentSymbol, currentPrice, 'sell');
+    });
 
+    document.getElementById('confirmTradeBtn').addEventListener('click', handleTrade);
+
+    // Side toggle (Buy/Sell)
+    document.querySelectorAll('#sideToggle .toggle-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('#sideToggle .toggle-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            tradeSide = btn.dataset.value;
+            updateTradeUI();
+        });
+    });
+
+    // Order-by toggle (Shares/Dollars)
+    document.querySelectorAll('#orderByToggle .toggle-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('#orderByToggle .toggle-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            tradeOrderBy = btn.dataset.value;
+            document.getElementById('sharesGroup').style.display = tradeOrderBy === 'shares' ? '' : 'none';
+            document.getElementById('dollarsGroup').style.display = tradeOrderBy === 'dollars' ? '' : 'none';
+            updateTradeEstimate();
+        });
+    });
+
+    document.getElementById('tradeShares').addEventListener('input', updateTradeEstimate);
+    document.getElementById('tradeDollars').addEventListener('input', updateTradeEstimate);
+
+    // Sortable column headers
+    document.querySelectorAll('.positions-table th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const column = th.dataset.sort;
+            if (currentSort.column === column) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = column;
+                currentSort.direction = column === 'symbol' ? 'asc' : 'desc';
+            }
+            renderPositions();
+            updateSortArrows();
+        });
+    });
+
+    // Thesis panel close
+    document.getElementById('thesisPanelClose').addEventListener('click', () => {
+        document.getElementById('thesisPanel').style.display = 'none';
+    });
+
+    // Modal backdrop click
     document.getElementById('analysisModal').addEventListener('click', (e) => {
         if (e.target.id === 'analysisModal') {
             document.getElementById('analysisModal').classList.remove('active');
         }
     });
 
-    document.getElementById('buyModal').addEventListener('click', (e) => {
-        if (e.target.id === 'buyModal') {
-            document.getElementById('buyModal').classList.remove('active');
+    document.getElementById('tradeModal').addEventListener('click', (e) => {
+        if (e.target.id === 'tradeModal') {
+            document.getElementById('tradeModal').classList.remove('active');
         }
     });
 }
@@ -109,51 +162,108 @@ async function loadAccount() {
 async function loadPositions() {
     try {
         const response = await fetch('/api/positions');
-        const positions = await response.json();
+        positionsData = await response.json();
 
-        document.getElementById('positionCount').textContent = positions.length;
-
-        const tbody = document.getElementById('positionsBody');
-        tbody.innerHTML = '';
-
-        if (positions.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-secondary);">No positions yet</td></tr>';
-            return;
-        }
-
-        positions.forEach(pos => {
-            const row = document.createElement('tr');
-            const unrealizedPL = parseFloat(pos.unrealized_pl || 0);
-            const unrealizedPLPC = parseFloat(pos.unrealized_plpc || 0);
-            const thesis = thesisData[pos.symbol];
-
-            row.innerHTML = `
-                <td><span class="symbol">${pos.symbol}</span></td>
-                <td>${parseFloat(pos.qty).toFixed(0)}</td>
-                <td>${formatCurrency(parseFloat(pos.avg_entry_price))}</td>
-                <td>${formatCurrency(parseFloat(pos.current_price))}</td>
-                <td>${formatCurrency(parseFloat(pos.market_value))}</td>
-                <td class="${unrealizedPL >= 0 ? 'positive' : 'negative'}">
-                    ${unrealizedPL >= 0 ? '+' : ''}${formatCurrency(unrealizedPL)}
-                </td>
-                <td class="${unrealizedPLPC >= 0 ? 'positive' : 'negative'}">
-                    ${unrealizedPLPC >= 0 ? '+' : ''}${unrealizedPLPC.toFixed(2)}%
-                </td>
-                <td class="thesis-cell">
-                    ${thesis ? `<span class="thesis-snippet" title="${thesis.entry_thesis}">${truncate(thesis.entry_thesis, 30)}</span>` : '<span class="no-thesis">--</span>'}
-                </td>
-                <td style="text-align:center;">
-                    <button class="btn-small btn-buy-small" onclick="viewStock('${pos.symbol}')">View</button>
-                </td>
-            `;
-
-            tbody.appendChild(row);
-        });
-
-        updatePortfolioChart(positions);
+        document.getElementById('positionCount').textContent = positionsData.length;
+        renderPositions();
+        updatePortfolioChart(positionsData);
     } catch (error) {
         console.error('Error loading positions:', error);
     }
+}
+
+// Render positions table with current sort
+function renderPositions() {
+    const tbody = document.getElementById('positionsBody');
+    tbody.innerHTML = '';
+
+    if (positionsData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-secondary);">No positions yet</td></tr>';
+        return;
+    }
+
+    // Sort positions
+    const sorted = [...positionsData].sort((a, b) => {
+        let valA, valB;
+        const col = currentSort.column;
+
+        if (col === 'symbol') {
+            valA = a.symbol || '';
+            valB = b.symbol || '';
+            return currentSort.direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+
+        valA = parseFloat(a[col] || 0);
+        valB = parseFloat(b[col] || 0);
+        return currentSort.direction === 'asc' ? valA - valB : valB - valA;
+    });
+
+    sorted.forEach(pos => {
+        const row = document.createElement('tr');
+        const unrealizedPL = parseFloat(pos.unrealized_pl || 0);
+        const unrealizedPLPC = parseFloat(pos.unrealized_plpc || 0);
+        const thesis = thesisData[pos.symbol];
+
+        row.innerHTML = `
+            <td><span class="symbol">${pos.symbol}</span></td>
+            <td>${parseFloat(pos.qty).toFixed(0)}</td>
+            <td>${formatCurrency(parseFloat(pos.avg_entry_price))}</td>
+            <td>${formatCurrency(parseFloat(pos.current_price))}</td>
+            <td>${formatCurrency(parseFloat(pos.market_value))}</td>
+            <td class="${unrealizedPL >= 0 ? 'positive' : 'negative'}">
+                ${unrealizedPL >= 0 ? '+' : ''}${formatCurrency(unrealizedPL)}
+            </td>
+            <td class="${unrealizedPLPC >= 0 ? 'positive' : 'negative'}">
+                ${unrealizedPLPC >= 0 ? '+' : ''}${unrealizedPLPC.toFixed(2)}%
+            </td>
+            <td class="thesis-cell">
+                ${thesis ? `<span class="thesis-snippet" onclick="expandThesis('${pos.symbol}')" title="Click to expand">${truncate(thesis.entry_thesis, 30)}</span>` : '<span class="no-thesis">--</span>'}
+            </td>
+            <td class="actions-cell">
+                <button class="btn-small btn-buy-small" onclick="showTradeModal('${pos.symbol}', ${parseFloat(pos.current_price)}, 'buy')">Buy</button>
+                <button class="btn-small btn-sell-small" onclick="showTradeModal('${pos.symbol}', ${parseFloat(pos.current_price)}, 'sell')">Sell</button>
+                <button class="btn-small btn-view-small" onclick="viewStock('${pos.symbol}')">Info</button>
+            </td>
+        `;
+
+        tbody.appendChild(row);
+    });
+}
+
+// Update sort arrow indicators
+function updateSortArrows() {
+    document.querySelectorAll('.positions-table th.sortable').forEach(th => {
+        const arrow = th.querySelector('.sort-arrow');
+        if (th.dataset.sort === currentSort.column) {
+            arrow.textContent = currentSort.direction === 'asc' ? ' \u25B2' : ' \u25BC';
+            th.classList.add('sorted');
+        } else {
+            arrow.textContent = '';
+            th.classList.remove('sorted');
+        }
+    });
+}
+
+// Expand thesis detail panel
+function expandThesis(symbol) {
+    const thesis = thesisData[symbol];
+    const panel = document.getElementById('thesisPanel');
+
+    if (!thesis) {
+        showToast('No thesis data for ' + symbol, 'info');
+        return;
+    }
+
+    document.getElementById('thesisPanelSymbol').textContent = symbol + ' - Investment Thesis';
+    document.getElementById('thesisPanelEntry').textContent = thesis.entry_thesis || 'No entry thesis recorded';
+    document.getElementById('thesisPanelStatus').textContent = thesis.current_status || thesis.status || 'Active';
+    document.getElementById('thesisPanelScore').textContent = thesis.scanner_score ? thesis.scanner_score.toFixed(1) : '--';
+    document.getElementById('thesisPanelVigl').textContent = thesis.vigl_match || thesis.vigl_pattern || '--';
+    document.getElementById('thesisPanelDate').textContent = thesis.entry_date || '--';
+    document.getElementById('thesisPanelTarget').textContent = thesis.price_target ? '$' + thesis.price_target.toFixed(2) : '--';
+
+    panel.style.display = 'block';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // Load thesis data from Open Claw
@@ -238,7 +348,6 @@ async function loadScannerResults() {
                 </div>
             `;
 
-            // Show scanner version info even with 0 results
             if (data.scanner_version && data.scanner_version !== 'OFFLINE') {
                 const philosophy = document.getElementById('scannerPhilosophy');
                 philosophy.querySelector('.philosophy-text').textContent =
@@ -263,7 +372,6 @@ async function loadScannerResults() {
             }
         });
 
-        // Total count
         const totalBadge = document.createElement('span');
         totalBadge.className = 'tier-summary-badge tier-total';
         totalBadge.textContent = `Total: ${candidates.length}`;
@@ -286,6 +394,7 @@ async function loadScannerResults() {
             const rvol = candidate.rvol || 0;
             const changePct = candidate.change_pct || 0;
             const price = candidate.price || 0;
+            const reasoning = candidate.reasoning || candidate.gate_reasons || '';
 
             card.innerHTML = `
                 <div class="candidate-header">
@@ -308,6 +417,7 @@ async function loadScannerResults() {
                     </div>
                     <span class="explosion-value">${explosion.toFixed(1)}% explosion</span>
                 </div>
+                ${reasoning ? `<div class="candidate-reasoning"><p>${reasoning}</p></div>` : ''}
                 <div class="candidate-metrics">
                     <div class="candidate-metric">
                         <span class="cm-label">RVOL</span>
@@ -319,7 +429,8 @@ async function loadScannerResults() {
                     </div>
                 </div>
                 <div class="candidate-actions">
-                    <button class="btn-rec-buy" onclick="showBuyModal('${candidate.symbol}', ${price})">Buy</button>
+                    <button class="btn-rec-buy" onclick="showTradeModal('${candidate.symbol}', ${price}, 'buy')">Buy</button>
+                    <button class="btn-rec-sell" onclick="showTradeModal('${candidate.symbol}', ${price}, 'sell')">Sell</button>
                     <button class="btn-rec-view" onclick="viewStock('${candidate.symbol}')">Details</button>
                 </div>
             `;
@@ -598,42 +709,112 @@ async function viewStock(symbol) {
     }
 }
 
-// Show buy modal
-function showBuyModal(symbol, price) {
+// Show trade modal (Buy or Sell, Shares or Dollars)
+function showTradeModal(symbol, price, side) {
     currentSymbol = symbol;
-    currentPrice = price;
+    currentPrice = price || 0;
+    tradeSide = side || 'buy';
+    tradeOrderBy = 'shares';
 
-    document.getElementById('buySymbol').value = symbol;
-    document.getElementById('buyQuantity').value = 10;
-    updateEstimatedCost();
+    document.getElementById('tradeSymbol').value = symbol;
+    document.getElementById('tradeShares').value = 10;
+    document.getElementById('tradeDollars').value = 100;
 
-    document.getElementById('buyModal').classList.add('active');
+    // Reset toggles
+    document.querySelectorAll('#sideToggle .toggle-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.value === tradeSide) btn.classList.add('active');
+    });
+
+    document.querySelectorAll('#orderByToggle .toggle-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.value === 'shares') btn.classList.add('active');
+    });
+
+    document.getElementById('sharesGroup').style.display = '';
+    document.getElementById('dollarsGroup').style.display = 'none';
+
+    updateTradeUI();
+    updateTradeEstimate();
+
+    // Close analysis modal if open
+    document.getElementById('analysisModal').classList.remove('active');
+    document.getElementById('tradeModal').classList.add('active');
 }
 
-// Update estimated cost
-function updateEstimatedCost() {
-    const qty = parseInt(document.getElementById('buyQuantity').value) || 0;
-    const cost = qty * currentPrice;
-    document.getElementById('estimatedCost').textContent = formatCurrency(cost);
+// Update trade UI colors and text
+function updateTradeUI() {
+    const btn = document.getElementById('confirmTradeBtn');
+    const title = document.getElementById('tradeModalTitle');
+
+    if (tradeSide === 'buy') {
+        btn.textContent = 'Confirm Buy';
+        btn.className = 'btn-confirm-trade buy';
+        title.textContent = 'Buy ' + (currentSymbol || '');
+    } else {
+        btn.textContent = 'Confirm Sell';
+        btn.className = 'btn-confirm-trade sell';
+        title.textContent = 'Sell ' + (currentSymbol || '');
+    }
+
+    updateTradeEstimate();
 }
 
-// Handle buy order
-async function handleBuy() {
-    const symbol = document.getElementById('buySymbol').value;
-    const qty = parseInt(document.getElementById('buyQuantity').value);
+// Update estimated cost/proceeds
+function updateTradeEstimate() {
+    const estimate = document.getElementById('tradeEstimate');
 
-    if (!symbol || !qty || qty < 1) {
+    if (tradeOrderBy === 'shares') {
+        const qty = parseInt(document.getElementById('tradeShares').value) || 0;
+        const total = qty * currentPrice;
+        estimate.textContent = tradeSide === 'buy'
+            ? `Cost: ${formatCurrency(total)}`
+            : `Proceeds: ${formatCurrency(total)}`;
+    } else {
+        const dollars = parseFloat(document.getElementById('tradeDollars').value) || 0;
+        const approxShares = currentPrice > 0 ? (dollars / currentPrice).toFixed(2) : '0';
+        estimate.textContent = `~${approxShares} shares at ${formatCurrency(currentPrice)}`;
+    }
+}
+
+// Handle trade order (buy or sell, shares or dollars)
+async function handleTrade() {
+    const symbol = document.getElementById('tradeSymbol').value;
+
+    if (!symbol) {
         showToast('Invalid order details', 'error');
         return;
+    }
+
+    const payload = {
+        symbol: symbol,
+        side: tradeSide,
+        order_type: 'market'
+    };
+
+    if (tradeOrderBy === 'shares') {
+        const qty = parseInt(document.getElementById('tradeShares').value);
+        if (!qty || qty < 1) {
+            showToast('Enter a valid number of shares', 'error');
+            return;
+        }
+        payload.qty = qty;
+    } else {
+        const notional = parseFloat(document.getElementById('tradeDollars').value);
+        if (!notional || notional < 1) {
+            showToast('Enter a valid dollar amount', 'error');
+            return;
+        }
+        payload.notional = notional;
     }
 
     try {
         showToast('Placing order...', 'info');
 
-        const response = await fetch('/api/buy', {
+        const response = await fetch('/api/trade', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ symbol, qty })
+            body: JSON.stringify(payload)
         });
 
         const result = await response.json();
@@ -643,8 +824,11 @@ async function handleBuy() {
             return;
         }
 
-        showToast(`Order placed: BUY ${qty} ${symbol}`, 'success');
-        document.getElementById('buyModal').classList.remove('active');
+        const desc = tradeOrderBy === 'shares'
+            ? `${payload.qty} shares`
+            : `$${payload.notional}`;
+        showToast(`Order placed: ${tradeSide.toUpperCase()} ${desc} of ${symbol}`, 'success');
+        document.getElementById('tradeModal').classList.remove('active');
 
         setTimeout(() => { loadDashboard(); }, 1000);
     } catch (error) {

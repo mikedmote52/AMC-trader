@@ -111,13 +111,13 @@
                     <table class="positions-table" id="positionsTable">
                         <thead>
                             <tr>
-                                <th>Symbol</th>
-                                <th>Shares</th>
-                                <th>Avg Cost</th>
-                                <th>Current</th>
-                                <th>Value</th>
-                                <th>P&L ($)</th>
-                                <th>P&L (%)</th>
+                                <th class="sortable" data-sort="symbol">Symbol <span class="sort-arrow"></span></th>
+                                <th class="sortable" data-sort="qty">Shares <span class="sort-arrow"></span></th>
+                                <th class="sortable" data-sort="avg_entry_price">Avg Cost <span class="sort-arrow"></span></th>
+                                <th class="sortable" data-sort="current_price">Current <span class="sort-arrow"></span></th>
+                                <th class="sortable" data-sort="market_value">Value <span class="sort-arrow"></span></th>
+                                <th class="sortable" data-sort="unrealized_pl">P&L ($) <span class="sort-arrow"></span></th>
+                                <th class="sortable" data-sort="unrealized_plpc">P&L (%) <span class="sort-arrow"></span></th>
                                 <th>Thesis</th>
                                 <th>Actions</th>
                             </tr>
@@ -125,6 +125,42 @@
                         <tbody id="positionsBody">
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <!-- Thesis Detail Panel (expands below table) -->
+            <div class="thesis-panel" id="thesisPanel" style="display:none;">
+                <div class="thesis-panel-header">
+                    <h3 id="thesisPanelSymbol">AAPL</h3>
+                    <button class="thesis-panel-close" id="thesisPanelClose">&times;</button>
+                </div>
+                <div class="thesis-panel-body">
+                    <div class="thesis-section">
+                        <h4>Entry Thesis</h4>
+                        <p id="thesisPanelEntry">--</p>
+                    </div>
+                    <div class="thesis-section">
+                        <h4>Current Status</h4>
+                        <p id="thesisPanelStatus">--</p>
+                    </div>
+                    <div class="thesis-metrics">
+                        <div class="thesis-metric">
+                            <span class="tm-label">Scanner Score</span>
+                            <span class="tm-value" id="thesisPanelScore">--</span>
+                        </div>
+                        <div class="thesis-metric">
+                            <span class="tm-label">VIGL Match</span>
+                            <span class="tm-value" id="thesisPanelVigl">--</span>
+                        </div>
+                        <div class="thesis-metric">
+                            <span class="tm-label">Entry Date</span>
+                            <span class="tm-value" id="thesisPanelDate">--</span>
+                        </div>
+                        <div class="thesis-metric">
+                            <span class="tm-label">Target</span>
+                            <span class="tm-value" id="thesisPanelTarget">--</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -266,34 +302,61 @@
                 </div>
 
                 <div class="action-buttons">
-                    <button class="btn-buy" id="modalBuyBtn">Buy Shares</button>
+                    <button class="btn-buy" id="modalBuyBtn">Buy</button>
+                    <button class="btn-sell" id="modalSellBtn">Sell</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Buy Order Modal -->
-    <div class="modal" id="buyModal">
-        <div class="modal-content buy-modal">
+    <!-- Trade Order Modal (Buy/Sell, Shares/Dollars) -->
+    <div class="modal" id="tradeModal">
+        <div class="modal-content trade-modal">
             <div class="modal-header">
-                <h2>Place Order</h2>
-                <button class="modal-close" id="buyModalClose">&times;</button>
+                <h2 id="tradeModalTitle">Place Order</h2>
+                <button class="modal-close" id="tradeModalClose">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="buy-form">
+                <div class="trade-form">
                     <div class="form-group">
                         <label>Symbol</label>
-                        <input type="text" id="buySymbol" readonly>
+                        <input type="text" id="tradeSymbol" readonly>
                     </div>
+
+                    <!-- Buy/Sell Toggle -->
                     <div class="form-group">
-                        <label>Quantity</label>
-                        <input type="number" id="buyQuantity" value="10" min="1">
+                        <label>Side</label>
+                        <div class="toggle-group" id="sideToggle">
+                            <button class="toggle-btn active buy" data-value="buy">Buy</button>
+                            <button class="toggle-btn sell" data-value="sell">Sell</button>
+                        </div>
                     </div>
+
+                    <!-- Shares/Dollars Toggle -->
                     <div class="form-group">
-                        <label>Estimated Cost</label>
-                        <div class="estimated-cost" id="estimatedCost">$0.00</div>
+                        <label>Order By</label>
+                        <div class="toggle-group" id="orderByToggle">
+                            <button class="toggle-btn active" data-value="shares">Shares</button>
+                            <button class="toggle-btn" data-value="dollars">Dollars</button>
+                        </div>
                     </div>
-                    <button class="btn-confirm-buy" id="confirmBuyBtn">Confirm Purchase</button>
+
+                    <div class="form-group" id="sharesGroup">
+                        <label>Number of Shares</label>
+                        <input type="number" id="tradeShares" value="10" min="1" step="1">
+                    </div>
+
+                    <div class="form-group" id="dollarsGroup" style="display:none;">
+                        <label>Dollar Amount</label>
+                        <input type="number" id="tradeDollars" value="100" min="1" step="0.01">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Estimated</label>
+                        <div class="estimated-cost" id="tradeEstimate">$0.00</div>
+                    </div>
+
+                    <button class="btn-confirm-trade" id="confirmTradeBtn">Confirm Buy</button>
                 </div>
             </div>
         </div>

@@ -285,17 +285,48 @@ def api_search():
     return jsonify(result)
 
 
-@app.route('/api/buy', methods=['POST'])
-def api_buy():
+@app.route('/api/trade', methods=['POST'])
+def api_trade():
+    """Place buy or sell order. Supports shares (qty) or dollars (notional)."""
     data = request.json
     symbol = data.get('symbol', '').upper()
-    qty = data.get('qty', 1)
+    side = data.get('side', 'buy').lower()
+    order_type = data.get('order_type', 'market')
 
     if not symbol:
         return jsonify({'error': 'Symbol required'}), 400
+    if side not in ('buy', 'sell'):
+        return jsonify({'error': 'Side must be buy or sell'}), 400
 
-    result = place_alpaca_order(symbol, qty, 'buy')
-    return jsonify(result)
+    url = f"{ALPACA_BASE_URL}/orders"
+    order_data = {
+        'symbol': symbol,
+        'side': side,
+        'type': order_type,
+        'time_in_force': 'day'
+    }
+
+    # Support either qty (shares) or notional (dollars)
+    if data.get('notional'):
+        order_data['notional'] = str(data['notional'])
+    elif data.get('qty'):
+        order_data['qty'] = str(data['qty'])
+    else:
+        return jsonify({'error': 'Must provide qty (shares) or notional (dollars)'}), 400
+
+    response = requests.post(url, headers=ALPACA_HEADERS, json=order_data)
+    if response.status_code in (200, 201):
+        return jsonify(response.json())
+    return jsonify({'error': response.text}), response.status_code
+
+
+@app.route('/api/buy', methods=['POST'])
+def api_buy():
+    """Legacy buy endpoint - redirects to /api/trade"""
+    data = request.json
+    data['side'] = 'buy'
+    with app.test_request_context(json=data):
+        return api_trade()
 
 
 @app.route('/api/historical/<symbol>')
