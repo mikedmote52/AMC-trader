@@ -63,6 +63,21 @@ def fetch_openclaw(endpoint, timeout=10):
         return {'error': str(e)}
 
 
+def post_openclaw(endpoint, payload, timeout=10):
+    """POST data to Open Claw API with error handling"""
+    try:
+        url = f"{OPENCLAW_API_URL}{endpoint}"
+        resp = requests.post(url, json=payload, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.ConnectionError:
+        return {'error': 'Open Claw API unavailable', 'offline': True}
+    except requests.exceptions.Timeout:
+        return {'error': 'Open Claw API timeout', 'offline': True}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 def get_alpaca_account():
     """Get account information from Alpaca"""
     url = f"{ALPACA_BASE_URL}/account"
@@ -347,6 +362,32 @@ def api_historical(symbol):
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/approval/queue')
+def api_approval_queue():
+    """Get pending approval queue from Open Claw"""
+    data = fetch_openclaw('/api/approval/queue')
+    return jsonify(data)
+
+
+@app.route('/api/approval/decide', methods=['POST'])
+def api_approval_decide():
+    """Submit approval/rejection decision to Open Claw"""
+    payload = request.json
+    data = post_openclaw('/api/approval/decide', payload)
+    if data.get('offline'):
+        return jsonify(data), 503
+    return jsonify(data)
+
+
+@app.route('/api/approval/history')
+def api_approval_history():
+    """Get approval history (optionally filtered by status) from Open Claw"""
+    status = request.args.get('status', '')
+    endpoint = f'/api/approval/history?status={status}' if status else '/api/approval/history'
+    data = fetch_openclaw(endpoint)
+    return jsonify(data)
 
 
 if __name__ == '__main__':

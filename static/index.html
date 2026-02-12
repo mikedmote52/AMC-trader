@@ -20,6 +20,7 @@
                 </svg>
                 <span>SqueezeSeeker</span>
                 <span class="version-badge">V4</span>
+                <span class="scanner-dot-nav" id="scannerDotNav" title="Scanner status"></span>
             </div>
         </div>
         <div class="nav-search">
@@ -31,48 +32,121 @@
                 </svg>
             </button>
         </div>
-        <div class="nav-links">
-            <a href="#portfolio" class="active">Portfolio</a>
-            <a href="#scanner">Scanner</a>
-            <a href="#learning">Learning</a>
-            <a href="#orders">Orders</a>
+        <div class="nav-tabs">
+            <button class="nav-tab active" data-view="command-center">
+                Command Center
+            </button>
+            <button class="nav-tab" data-view="portfolio">
+                Portfolio
+            </button>
+            <button class="nav-tab" data-view="research">
+                Research Lab
+                <span class="tab-badge" id="approvalBadge" style="display:none;">0</span>
+            </button>
+            <button class="nav-tab" data-view="brain">
+                My Brain
+            </button>
         </div>
     </nav>
 
     <!-- Main Content -->
     <main class="main-container">
-        <!-- Scanner Status Banner -->
-        <section class="scanner-banner" id="scannerBanner">
-            <div class="banner-left">
-                <div class="scanner-status-dot" id="scannerDot"></div>
-                <span class="scanner-version" id="scannerVersion">V4 Scanner</span>
-                <span class="scanner-status-text" id="scannerStatusText">Connecting...</span>
-            </div>
-            <div class="banner-center">
-                <div class="gate-funnel" id="gateFunnel">
-                    <div class="gate-step">
-                        <span class="gate-label">Gate A</span>
-                        <span class="gate-count" id="gateACount">--</span>
+
+        <!-- ============================================ -->
+        <!-- VIEW 1: Command Center (Home) -->
+        <!-- ============================================ -->
+        <div class="view active" id="view-command-center">
+            <!-- Portfolio Strip -->
+            <div class="cc-portfolio-strip">
+                <div class="cc-strip-main">
+                    <div class="cc-strip-value" id="ccPortfolioValue">$0.00</div>
+                    <div class="cc-strip-change" id="ccPortfolioChange">
+                        <span class="cc-change-amount">+$0.00</span>
+                        <span class="cc-change-percent">(+0.00%)</span>
+                        <span class="cc-change-label">Today</span>
                     </div>
-                    <span class="gate-arrow">&rarr;</span>
-                    <div class="gate-step">
-                        <span class="gate-label">Gate B</span>
-                        <span class="gate-count" id="gateBCount">--</span>
+                </div>
+                <div class="cc-strip-stats">
+                    <div class="cc-strip-stat">
+                        <span class="cc-stat-label">Buying Power</span>
+                        <span class="cc-stat-value" id="ccBuyingPower">$0.00</span>
                     </div>
-                    <span class="gate-arrow">&rarr;</span>
-                    <div class="gate-step">
-                        <span class="gate-label">Gate C</span>
-                        <span class="gate-count" id="gateCCount">--</span>
+                    <div class="cc-strip-stat">
+                        <span class="cc-stat-label">Cash</span>
+                        <span class="cc-stat-value" id="ccCash">$0.00</span>
+                    </div>
+                    <div class="cc-strip-stat">
+                        <span class="cc-stat-label">Positions</span>
+                        <span class="cc-stat-value" id="ccPositionCount">0</span>
                     </div>
                 </div>
             </div>
-            <div class="banner-right">
-                <span class="last-scan" id="lastScan">Last scan: --</span>
-            </div>
-        </section>
 
-        <!-- Portfolio Section -->
-        <section id="portfolio" class="section">
+            <div class="cc-two-col">
+                <!-- Left Column -->
+                <div class="cc-col-left">
+                    <!-- Actions Needed -->
+                    <div class="cc-card cc-actions-card">
+                        <h3 class="cc-card-title">Actions Needed</h3>
+                        <div class="cc-actions-list" id="ccActionsList">
+                            <div class="cc-action-empty">No pending actions</div>
+                        </div>
+                    </div>
+
+                    <!-- Top Positions -->
+                    <div class="cc-card">
+                        <h3 class="cc-card-title">Top Positions</h3>
+                        <div class="cc-top-positions" id="ccTopPositions">
+                            <div class="cc-action-empty">No positions yet</div>
+                        </div>
+                    </div>
+
+                    <!-- Compact Orders -->
+                    <div class="cc-card">
+                        <h3 class="cc-card-title">Pending Orders</h3>
+                        <div class="cc-orders" id="ccOrders">
+                            <div class="cc-action-empty">No pending orders</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column -->
+                <div class="cc-col-right">
+                    <!-- Open Claw Confidence -->
+                    <div class="cc-card cc-confidence-card">
+                        <h3 class="cc-card-title">Open Claw Confidence</h3>
+                        <div class="cc-confidence-ring-wrapper">
+                            <canvas id="confidenceRingChart" width="200" height="200"></canvas>
+                            <div class="cc-confidence-center" id="ccConfidenceCenter">--%</div>
+                        </div>
+                        <div class="cc-confidence-stats" id="ccConfidenceStats">
+                            <div class="cc-conf-stat">
+                                <span class="cc-conf-label">Total Trades</span>
+                                <span class="cc-conf-value" id="ccConfTrades">--</span>
+                            </div>
+                            <div class="cc-conf-stat">
+                                <span class="cc-conf-label">Avg Return</span>
+                                <span class="cc-conf-value" id="ccConfReturn">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Scanner Highlights -->
+                    <div class="cc-card">
+                        <h3 class="cc-card-title">Scanner Highlights</h3>
+                        <div class="cc-scanner-highlights" id="ccScannerHighlights">
+                            <div class="cc-action-empty">Scanner offline</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- VIEW 2: Portfolio Deep Dive -->
+        <!-- ============================================ -->
+        <div class="view" id="view-portfolio">
+            <!-- Portfolio Header -->
             <div class="portfolio-header">
                 <div class="portfolio-value">
                     <h2>Portfolio Value</h2>
@@ -118,6 +192,7 @@
                                 <th class="sortable" data-sort="market_value">Value <span class="sort-arrow"></span></th>
                                 <th class="sortable" data-sort="unrealized_pl">P&L ($) <span class="sort-arrow"></span></th>
                                 <th class="sortable" data-sort="unrealized_plpc">P&L (%) <span class="sort-arrow"></span></th>
+                                <th>Status</th>
                                 <th>Thesis</th>
                                 <th>Actions</th>
                             </tr>
@@ -135,6 +210,11 @@
                     <button class="thesis-panel-close" id="thesisPanelClose">&times;</button>
                 </div>
                 <div class="thesis-panel-body">
+                    <!-- Validation Status -->
+                    <div class="thesis-validation-section" id="thesisValidationSection" style="display:none;">
+                        <div class="validation-badge-row" id="validationBadgeRow"></div>
+                        <div class="thesis-critique" id="thesisCritique"></div>
+                    </div>
                     <div class="thesis-section">
                         <h4>Entry Thesis</h4>
                         <p id="thesisPanelEntry">--</p>
@@ -163,53 +243,143 @@
                     </div>
                 </div>
             </div>
-        </section>
+        </div>
 
-        <!-- Scanner Section (V4 Candidates) -->
-        <section id="scanner" class="section">
-            <div class="section-header">
-                <h2>V4 Scanner Candidates</h2>
-                <p>Stealth accumulation pattern detection - wide net, strict filter</p>
-            </div>
-            <div class="scanner-philosophy" id="scannerPhilosophy">
-                <span class="philosophy-text">0 picks on a quiet day = system protecting capital</span>
-            </div>
-            <div class="tier-summary" id="tierSummary">
-                <!-- Populated by JS -->
-            </div>
-            <div class="candidates-grid" id="candidatesGrid">
-                <!-- Populated by JS -->
-            </div>
-        </section>
-
-        <!-- Learning System Section -->
-        <section id="learning" class="section">
-            <div class="section-header">
-                <h2>Learning System</h2>
-                <p>V4 performance tracking and weight optimization</p>
-            </div>
-            <div class="learning-grid">
-                <div class="learning-card" id="overallStats">
-                    <h3>Overall Performance</h3>
-                    <div class="learning-stats">
-                        <div class="learning-stat">
-                            <span class="learning-stat-value" id="totalTrades">--</span>
-                            <span class="learning-stat-label">Total Trades</span>
+        <!-- ============================================ -->
+        <!-- VIEW 3: Research Lab (Scanner) -->
+        <!-- ============================================ -->
+        <div class="view" id="view-research">
+            <!-- Scanner Status Banner -->
+            <section class="scanner-banner" id="scannerBanner">
+                <div class="banner-left">
+                    <div class="scanner-status-dot" id="scannerDot"></div>
+                    <span class="scanner-version" id="scannerVersion">V4 Scanner</span>
+                    <span class="scanner-status-text" id="scannerStatusText">Connecting...</span>
+                </div>
+                <div class="banner-center">
+                    <div class="gate-funnel" id="gateFunnel">
+                        <div class="gate-step">
+                            <span class="gate-label">Gate A</span>
+                            <span class="gate-count" id="gateACount">--</span>
                         </div>
-                        <div class="learning-stat">
-                            <span class="learning-stat-value" id="winRate">--%</span>
-                            <span class="learning-stat-label">Win Rate</span>
+                        <span class="gate-arrow">&rarr;</span>
+                        <div class="gate-step">
+                            <span class="gate-label">Gate B</span>
+                            <span class="gate-count" id="gateBCount">--</span>
                         </div>
-                        <div class="learning-stat">
-                            <span class="learning-stat-value" id="avgReturn">--%</span>
-                            <span class="learning-stat-label">Avg Return</span>
-                        </div>
-                        <div class="learning-stat">
-                            <span class="learning-stat-value" id="avgHoldDays">--</span>
-                            <span class="learning-stat-label">Avg Hold Days</span>
+                        <span class="gate-arrow">&rarr;</span>
+                        <div class="gate-step">
+                            <span class="gate-label">Gate C</span>
+                            <span class="gate-count" id="gateCCount">--</span>
                         </div>
                     </div>
                 </div>
+                <div class="banner-right">
+                    <span class="last-scan" id="lastScan">Last scan: --</span>
+                </div>
+            </section>
+
+            <!-- Approval Queue (NEW - Key Feature) -->
+            <section class="approval-section">
+                <div class="section-header">
+                    <h2>Approval Queue</h2>
+                    <p>Scanner picks awaiting your decision - approve, reject, or approve &amp; buy</p>
+                </div>
+                <div class="approval-queue" id="approvalQueue">
+                    <div class="approval-empty" id="approvalEmpty">
+                        <div class="approval-empty-icon">&#x2705;</div>
+                        <h3>Queue clear</h3>
+                        <p>No picks pending your review. Open Claw will queue new picks when the scanner finds candidates.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Scanner Results -->
+            <section class="scanner-results-section">
+                <div class="section-header">
+                    <h2>All Scanner Results</h2>
+                    <p>Stealth accumulation pattern detection - wide net, strict filter</p>
+                </div>
+                <div class="scanner-philosophy" id="scannerPhilosophy">
+                    <span class="philosophy-text">0 picks on a quiet day = system protecting capital</span>
+                </div>
+                <div class="tier-summary" id="tierSummary">
+                    <!-- Populated by JS -->
+                </div>
+                <div class="candidates-grid" id="candidatesGrid">
+                    <!-- Populated by JS -->
+                </div>
+            </section>
+
+            <!-- Rejected Picks (NEW) -->
+            <section class="rejected-section">
+                <div class="section-header">
+                    <h2>Rejected Picks</h2>
+                    <p>Track what happened with picks you passed on</p>
+                </div>
+                <div class="rejected-summary-stats" id="rejectedSummaryStats"></div>
+                <div class="rejected-picks-table-wrapper">
+                    <table class="rejected-picks-table" id="rejectedPicksTable">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Rejected</th>
+                                <th>Price Then</th>
+                                <th>Price Now</th>
+                                <th>Would-Be Return</th>
+                                <th>Your Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rejectedPicksBody">
+                            <tr><td colspan="6" class="rejected-empty">No rejection history available</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- VIEW 4: My Brain (Learning) -->
+        <!-- ============================================ -->
+        <div class="view" id="view-brain">
+            <!-- Hero Stats Bar -->
+            <div class="brain-hero">
+                <div class="brain-hero-stat">
+                    <span class="brain-hero-value" id="brainWinRate">--%</span>
+                    <span class="brain-hero-label">Win Rate</span>
+                </div>
+                <div class="brain-hero-stat">
+                    <span class="brain-hero-value" id="brainAvgReturn">--%</span>
+                    <span class="brain-hero-label">Avg Return</span>
+                </div>
+                <div class="brain-hero-stat">
+                    <span class="brain-hero-value" id="brainTotalTrades">--</span>
+                    <span class="brain-hero-label">Total Trades</span>
+                </div>
+                <div class="brain-hero-stat">
+                    <span class="brain-hero-value" id="brainAvgHold">--</span>
+                    <span class="brain-hero-label">Avg Hold Days</span>
+                </div>
+            </div>
+
+            <!-- What's Working / What's NOT -->
+            <div class="brain-two-col">
+                <div class="brain-working">
+                    <h3>What's Working</h3>
+                    <div class="brain-insight-list" id="brainWorking">
+                        <p class="no-data-text">Analyzing patterns...</p>
+                    </div>
+                </div>
+                <div class="brain-not-working">
+                    <h3>What's NOT Working</h3>
+                    <div class="brain-insight-list" id="brainNotWorking">
+                        <p class="no-data-text">Analyzing patterns...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Existing Learning Cards -->
+            <div class="learning-grid">
                 <div class="learning-card" id="scoreRangeStats">
                     <h3>Win Rate by Score</h3>
                     <div class="score-range-bars" id="scoreRangeBars">
@@ -228,17 +398,18 @@
                         <!-- Populated by JS -->
                     </div>
                 </div>
-            </div>
-        </section>
 
-        <!-- Pending Orders Section -->
-        <section id="orders" class="section">
-            <div class="section-header">
-                <h2>Pending Orders</h2>
+                <!-- Decision Accuracy (NEW) -->
+                <div class="learning-card" id="decisionAccuracyCard">
+                    <h3>Your Decision Accuracy</h3>
+                    <p class="brain-card-subtitle">How well you filter Open Claw's picks</p>
+                    <div class="decision-accuracy" id="decisionAccuracy">
+                        <p class="no-data-text">No decision history yet</p>
+                    </div>
+                </div>
             </div>
-            <div class="orders-list" id="ordersList">
-            </div>
-        </section>
+        </div>
+
     </main>
 
     <!-- Stock Analysis Modal -->
@@ -361,6 +532,17 @@
             </div>
         </div>
     </div>
+
+    <!-- Orders Slide Panel -->
+    <div class="orders-slide-panel" id="ordersSlidePanel">
+        <div class="orders-slide-header">
+            <h3>All Orders</h3>
+            <button class="orders-slide-close" id="ordersSlideClose">&times;</button>
+        </div>
+        <div class="orders-slide-body" id="ordersSlideBody">
+        </div>
+    </div>
+    <div class="orders-slide-backdrop" id="ordersSlideBackdrop"></div>
 
     <!-- Toast Notification -->
     <div class="toast" id="toast">
