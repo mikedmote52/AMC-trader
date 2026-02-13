@@ -200,6 +200,7 @@ async function loadDashboard() {
                 promises.push(loadScannerResults());
                 promises.push(loadApprovalQueueBadge());
                 promises.push(loadCCConfidence());
+                promises.push(loadPerformanceProjections());
                 break;
             case 'research':
                 promises.push(loadScannerResults());
@@ -340,6 +341,30 @@ async function loadCCConfidence() {
         renderConfidenceRing(winRate);
     } catch (error) {
         console.error('Error loading confidence:', error);
+    }
+}
+
+async function loadPerformanceProjections() {
+    try {
+        const response = await fetch('/api/performance');
+        const data = await response.json();
+
+        if (data.error) {
+            console.error('Performance API error:', data.error);
+            return;
+        }
+
+        const perf = data.performance;
+        
+        // Update Command Center projections
+        document.getElementById('ccDailyAvg').textContent = `+${perf.daily_avg_pct.toFixed(3)}%`;
+        document.getElementById('ccMonthlyProj').textContent = formatCurrency(perf.monthly_projection);
+        document.getElementById('ccAnnualProj').textContent = formatCurrency(perf.annual_projection);
+        document.getElementById('ccAnnualPct').textContent = `+${perf.annual_projection_pct.toFixed(0)}% ROI`;
+        document.getElementById('ccDaysActive').textContent = perf.days_active;
+        
+    } catch (error) {
+        console.error('Error loading performance projections:', error);
     }
 }
 

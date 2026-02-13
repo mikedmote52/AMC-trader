@@ -1,0 +1,302 @@
+[
+  {
+    "symbol": "PIII",
+    "price": 1.95,
+    "volume": 1358194.0,
+    "change": 28.28947368421052
+  },
+  {
+    "symbol": "ANL",
+    "price": 11.26,
+    "volume": 4323404.0,
+    "change": 21.467098166127297
+  },
+  {
+    "symbol": "JBDI",
+    "price": 0.8797,
+    "volume": 19100481.0,
+    "change": 20.5068493150685
+  },
+  {
+    "symbol": "ULY",
+    "price": 2.71,
+    "volume": 4397521.0,
+    "change": 17.316017316017312
+  },
+  {
+    "symbol": "USAR",
+    "price": 25.91,
+    "volume": 40506097.0,
+    "change": 17.186793306196297
+  },
+  {
+    "symbol": "NXXT",
+    "price": 0.9929,
+    "volume": 2225505.0,
+    "change": 17.170167571394853
+  },
+  {
+    "symbol": "VELO",
+    "price": 14.74,
+    "volume": 2545417.0,
+    "change": 16.98412698412699
+  },
+  {
+    "symbol": "VGZ",
+    "price": 2.58,
+    "volume": 3074276.0,
+    "change": 16.742081447963805
+  },
+  {
+    "symbol": "ALM",
+    "price": 13.1642,
+    "volume": 5404233.0,
+    "change": 15.984140969162993
+  },
+  {
+    "symbol": "NB",
+    "price": 7.14,
+    "volume": 6140951.0,
+    "change": 15.909090909090901
+  },
+  {
+    "symbol": "MSTZ",
+    "price": 20.57,
+    "volume": 19468210.0,
+    "change": 15.432098765432098
+  },
+  {
+    "symbol": "CRML",
+    "price": 14.49,
+    "volume": 17970201.0,
+    "change": 15.091342335186658
+  },
+  {
+    "symbol": "UAMY",
+    "price": 9.035,
+    "volume": 16188658.0,
+    "change": 14.949109414758265
+  },
+  {
+    "symbol": "PZG",
+    "price": 2.02,
+    "volume": 2984528.0,
+    "change": 14.772727272727273
+  },
+  {
+    "symbol": "UVIX",
+    "price": 6.11,
+    "volume": 35409698.0,
+    "change": 14.634146341463419
+  },
+  {
+    "symbol": "CYN",
+    "price": 1.91,
+    "volume": 50783321.0,
+    "change": 14.37125748502994
+  },
+  {
+    "symbol": "GORO",
+    "price": 1.54,
+    "volume": 7466715.0,
+    "change": 14.074074074074069
+  },
+  {
+    "symbol": "SUUN",
+    "price": 1.76,
+    "volume": 3367413.0,
+    "change": 13.548387096774192
+  },
+  {
+    "symbol": "CDT",
+    "price": 1.2601,
+    "volume": 15938677.0,
+    "change": 13.522522522522513
+  },
+  {
+    "symbol": "ETHD",
+    "price": 80.78,
+    "volume": 1631693.0,
+    "change": 13.153102675444742
+  },
+  {
+    "symbol": "UUUU",
+    "price": 23.75,
+    "volume": 15219159.0,
+    "change": 13.04140885292717
+  },
+  {
+    "symbol": "HYMC",
+    "price": 39.77,
+    "volume": 4671391.0,
+    "change": 12.95086623118433
+  },
+  {
+    "symbol": "TGB",
+    "price": 8.66,
+    "volume": 9613709.0,
+    "change": 12.321660181582363
+  },
+  {
+    "symbol": "BMNZ",
+    "price": 29.3902,
+    "volume": 1380170.0,
+    "change": 12.262032085561499
+  },
+  {
+    "symbol": "LCTX",
+    "price": 1.725,
+    "volume": 1630681.0,
+    "change": 12.012987012987015
+  },
+  {
+    "symbol": "PDYN",
+    "price": 7.635,
+    "volume": 10352041.0,
+    "change": 11.950146627565974
+  },
+  {
+    "symbol": "PLTU",
+    "price": 55.4,
+    "volume": 5266302.0,
+    "change": 11.64852881902459
+  },
+  {
+    "symbol": "ASTX",
+    "price": 81.91,
+    "volume": 1564236.0,
+    "change": 11.47250952640173
+  },
+  {
+    "symbol": "PTIR",
+    "price": 20.16,
+    "volume": 13183819.0,
+    "change": 11.442786069651744
+  },
+  {
+    "symbol": "UGL",
+    "price": 69.73,
+    "volume": 10277500.0,
+    "change": 11.283115225023952
+  },
+  {
+    "symbol": "SOXS",
+    "price": 2.055,
+    "volume": 628710218.0,
+    "change": 11.081081081081084
+  },
+  {
+    "symbol": "UVXY",
+    "price": 38.45,
+    "volume": 9604223.0,
+    "change": 11.030898065261335
+  },
+  {
+    "symbol": "PLTG",
+    "price": 19.7303,
+    "volume": 1107988.0,
+    "change": 10.969066366704153
+  },
+  {
+    "symbol": "AREC",
+    "price": 3.25,
+    "volume": 6147372.0,
+    "change": 10.921501706484635
+  },
+  {
+    "symbol": "OPTX",
+    "price": 7.43,
+    "volume": 1497311.0,
+    "change": 10.73025335320417
+  },
+  {
+    "symbol": "TMQ",
+    "price": 5.465,
+    "volume": 5105839.0,
+    "change": 10.627530364372458
+  },
+  {
+    "symbol": "HUN",
+    "price": 12.675,
+    "volume": 6732286.0,
+    "change": 10.409407665505228
+  },
+  {
+    "symbol": "RKLX",
+    "price": 45.52,
+    "volume": 1484140.0,
+    "change": 9.660322813779825
+  },
+  {
+    "symbol": "QURE",
+    "price": 27.085,
+    "volume": 3370186.0,
+    "change": 9.655870445344137
+  },
+  {
+    "symbol": "ABVE",
+    "price": 1.99,
+    "volume": 2178670.0,
+    "change": 9.641873278236918
+  },
+  {
+    "symbol": "RKT",
+    "price": 20.555,
+    "volume": 39698810.0,
+    "change": 9.509856153436335
+  },
+  {
+    "symbol": "ASM",
+    "price": 10.355,
+    "volume": 7401259.0,
+    "change": 9.345300950369586
+  },
+  {
+    "symbol": "TECS",
+    "price": 18.32,
+    "volume": 3849674.0,
+    "change": 9.307875894988058
+  },
+  {
+    "symbol": "BTCZ",
+    "price": 5.46,
+    "volume": 29427301.0,
+    "change": 8.982035928143716
+  },
+  {
+    "symbol": "SBIT",
+    "price": 56.95,
+    "volume": 3164692.0,
+    "change": 8.849388379204898
+  },
+  {
+    "symbol": "INDO",
+    "price": 3.96,
+    "volume": 1020503.0,
+    "change": 8.791208791208787
+  },
+  {
+    "symbol": "BALL",
+    "price": 61.56,
+    "volume": 3641189.0,
+    "change": 8.590580349267956
+  },
+  {
+    "symbol": "EVTV",
+    "price": 2.2684,
+    "volume": 2266177.0,
+    "change": 8.535885167464132
+  },
+  {
+    "symbol": "METC",
+    "price": 20.1909,
+    "volume": 2136351.0,
+    "change": 8.320278969957073
+  },
+  {
+    "symbol": "AMPX",
+    "price": 14.225,
+    "volume": 11843439.0,
+    "change": 8.174904942965775
+  }
+]

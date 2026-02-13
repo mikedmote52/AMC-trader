@@ -1,0 +1,27 @@
+# OpenClaw Autonomous Trading Bot - Cron Schedule
+# Runs 6 checkpoints daily during market days (Monday-Friday)
+# All times in Pacific Time (PT)
+
+# Set PATH for cron environment
+PATH=/usr/bin:/bin:/usr/local/bin
+
+# 6:00 AM PT - Morning Briefing
+0 6 * * 1-5 /usr/bin/python3 /Users/mikeclawd/.openclaw/workspace/scripts/morning_briefing.py >> /Users/mikeclawd/.openclaw/logs/morning_briefing.log 2>&1
+
+# 6:30 AM PT - Premarket Scanner (before market opens)
+30 6 * * 1-5 /usr/bin/python3 /Users/mikeclawd/.openclaw/workspace/diamond_scanner.py >> /Users/mikeclawd/.openclaw/logs/premarket_scanner.log 2>&1
+
+# 6:30 AM PT / 9:30 AM ET - Market Open Position Check
+31 6 * * 1-5 /usr/bin/python3 /Users/mikeclawd/.openclaw/workspace/scripts/monitor_positions.py >> /Users/mikeclawd/.openclaw/logs/market_open.log 2>&1
+
+# 9:00 AM PT / 12:00 PM ET - Midday Check
+0 9 * * 1-5 /usr/bin/python3 /Users/mikeclawd/.openclaw/workspace/scripts/quick_check.py >> /Users/mikeclawd/.openclaw/logs/midday_check.log 2>&1
+
+# 12:00 PM PT / 3:00 PM ET - Power Hour Scanner
+0 12 * * 1-5 /usr/bin/python3 /Users/mikeclawd/.openclaw/workspace/diamond_scanner.py >> /Users/mikeclawd/.openclaw/logs/power_hour_scanner.log 2>&1
+
+# 1:00 PM PT / 4:00 PM ET - Market Close Review
+0 13 * * 1-5 /usr/bin/python3 /Users/mikeclawd/.openclaw/workspace/scripts/daily_portfolio_review.py >> /Users/mikeclawd/.openclaw/logs/market_close.log 2>&1
+
+# Health check - runs every hour to update status
+0 * * * * echo "$(date): OpenClaw heartbeat" >> /Users/mikeclawd/.openclaw/logs/heartbeat.log 2>&1

@@ -1,0 +1,15 @@
+[
+  {
+    "symbol": "WULF",
+    "score": 50,
+    "price": 14.55,
+    "volume": 36500605.0,
+    "float": 418681881,
+    "daily_change": 8.25892857142858,
+    "signals": [
+      "\u26a0\ufe0f  Large float: 418.7M (gamma only)",
+      "\u2705 IDEAL momentum: +8.3%",
+      "\u2705 Structure: 2/4 green days"
+    ]
+  }
+]

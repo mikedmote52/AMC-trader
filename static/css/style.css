@@ -2749,3 +2749,67 @@ body {
 .negative {
     color: var(--danger);
 }
+
+/* Performance Projections Card */
+.cc-projections-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.cc-projections-card .cc-card-title {
+    color: white;
+    opacity: 1;
+}
+
+.cc-projections-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.cc-proj-item {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.cc-proj-highlight {
+    background: rgba(255, 255, 255, 0.25);
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    grid-column: span 2;
+}
+
+.cc-proj-label {
+    font-size: 11px;
+    opacity: 0.9;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 500;
+}
+
+.cc-proj-value {
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.cc-proj-highlight .cc-proj-value {
+    font-size: 24px;
+}
+
+.cc-proj-subtext {
+    font-size: 13px;
+    opacity: 0.85;
+    margin-top: 2px;
+}
+
+.cc-proj-note {
+    margin-top: 12px;
+    text-align: center;
+    opacity: 0.8;
+    font-size: 11px;
+}

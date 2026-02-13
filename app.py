@@ -509,6 +509,57 @@ def api_approval_history():
     return jsonify(data)
 
 
+@app.route('/api/performance')
+def api_performance():
+    """Return performance projections based on current portfolio"""
+    try:
+        if not ALPACA_CONFIG['enabled']:
+            return jsonify({'error': 'Alpaca not configured'}), 503
+            
+        # Get account info
+        account_url = f"{ALPACA_CONFIG['base_url']}/v2/account"
+        account_resp = requests.get(account_url, headers=ALPACA_HEADERS, timeout=10)
+        
+        if account_resp.status_code != 200:
+            return jsonify({'error': f'Alpaca API error: {account_resp.status_code}'}), 500
+            
+        account = account_resp.json()
+        account_value = float(account['portfolio_value'])
+        starting_value = 101000.0  # TODO: Make this configurable
+        days_active = 10  # TODO: Calculate from actual trading history
+        
+        current_return = account_value - starting_value
+        current_return_pct = (current_return / starting_value) * 100
+        daily_avg = current_return_pct / days_active if days_active > 0 else 0
+        
+        # Annual projection (252 trading days)
+        annual_multiplier = (1 + daily_avg/100) ** 252
+        annual_ending = starting_value * annual_multiplier
+        annual_gain = annual_ending - starting_value
+        annual_return_pct = (annual_gain / starting_value) * 100
+        
+        # Monthly projection (21 trading days)
+        monthly_multiplier = (1 + daily_avg/100) ** 21
+        monthly_gain = starting_value * (monthly_multiplier - 1)
+        
+        return jsonify({
+            'performance': {
+                'account_value': round(account_value, 2),
+                'starting_value': round(starting_value, 2),
+                'total_return': round(current_return, 2),
+                'total_return_pct': round(current_return_pct, 2),
+                'days_active': days_active,
+                'daily_avg_pct': round(daily_avg, 4),
+                'annual_projection': round(annual_gain, 2),
+                'annual_projection_pct': round(annual_return_pct, 1),
+                'monthly_projection': round(monthly_gain, 2)
+            }
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
 if __name__ == '__main__':
     flask_debug = os.environ.get('FLASK_DEBUG', '').lower() in ('1', 'true', 'yes')
     app.run(debug=flask_debug, host='0.0.0.0', port=5000)

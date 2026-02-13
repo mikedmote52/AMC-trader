@@ -1,0 +1,26 @@
+[
+  {
+    "symbol": "CFLT",
+    "entry_date": "2026-02-03",
+    "entry_time": "12:17 PM PT",
+    "entry_price": 30.39,
+    "qty": 3,
+    "cost": 91.17,
+    "scanner_score": 105,
+    "scanner_notes": "PERFECT entry: -0.5% | Volume accelerating | Low float setup",
+    "status": "TRACKING",
+    "method": "Manual tracking (market closed)"
+  },
+  {
+    "symbol": "KRE",
+    "entry_date": "2026-02-03",
+    "entry_time": "12:17 PM PT",
+    "entry_price": 70.81,
+    "qty": 1,
+    "cost": 70.81,
+    "scanner_score": 95,
+    "scanner_notes": "Early stage: +1.1% | Building momentum | Watch for breakout",
+    "status": "TRACKING",
+    "method": "Manual tracking (market closed)"
+  }
+]
