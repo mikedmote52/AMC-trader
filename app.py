@@ -10,31 +10,61 @@ from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, render_template
 import requests
 import yfinance as yf
-from functools import lru_cache
 
 app = Flask(__name__, static_folder='static', template_folder='static')
 
-# Load Alpaca credentials (from env vars for production, file for local)
-if os.environ.get('ALPACA_API_KEY'):
-    # Production (Render)
-    ALPACA_API_KEY = os.environ['ALPACA_API_KEY']
-    ALPACA_API_SECRET = os.environ['ALPACA_API_SECRET']
-    ALPACA_BASE_URL = os.environ.get('ALPACA_BASE_URL', 'https://paper-api.alpaca.markets')
-else:
-    # Local development
-    ALPACA_CREDS_PATH = os.path.expanduser('~/.openclaw/secrets/alpaca.json')
-    with open(ALPACA_CREDS_PATH, 'r') as f:
-        alpaca_creds = json.load(f)
-    ALPACA_API_KEY = alpaca_creds['apiKey']
-    ALPACA_API_SECRET = alpaca_creds['apiSecret']
-    ALPACA_BASE_URL = alpaca_creds['baseUrl']
+def load_alpaca_config():
+    """Load Alpaca configuration from env vars or local OpenClaw secret file."""
+    env_key = os.environ.get('ALPACA_API_KEY')
+    env_secret = os.environ.get('ALPACA_API_SECRET')
+    env_base = os.environ.get('ALPACA_BASE_URL', 'https://paper-api.alpaca.markets')
 
-# Alpaca headers
+    def normalize_base_url(base_url):
+        cleaned = (base_url or 'https://paper-api.alpaca.markets').rstrip('/')
+        return cleaned[:-3] if cleaned.endswith('/v2') else cleaned
+
+    if env_key and env_secret:
+        return {
+            'enabled': True,
+            'source': 'env',
+            'api_key': env_key,
+            'api_secret': env_secret,
+            'base_url': normalize_base_url(env_base)
+        }
+
+    creds_path = os.path.expanduser('~/.openclaw/secrets/alpaca.json')
+    try:
+        with open(creds_path, 'r', encoding='utf-8') as file_handle:
+            alpaca_creds = json.load(file_handle)
+        return {
+            'enabled': True,
+            'source': creds_path,
+            'api_key': alpaca_creds['apiKey'],
+            'api_secret': alpaca_creds['apiSecret'],
+            'base_url': normalize_base_url(alpaca_creds.get('baseUrl', 'https://paper-api.alpaca.markets'))
+        }
+    except (FileNotFoundError, KeyError, json.JSONDecodeError) as exc:
+        return {
+            'enabled': False,
+            'source': creds_path,
+            'error': str(exc),
+            'api_key': '',
+            'api_secret': '',
+            'base_url': 'https://paper-api.alpaca.markets'
+        }
+
+
+ALPACA_CONFIG = load_alpaca_config()
+
+# Alpaca headers (empty when disabled)
 ALPACA_HEADERS = {
-    'APCA-API-KEY-ID': ALPACA_API_KEY,
-    'APCA-API-SECRET-KEY': ALPACA_API_SECRET,
+    'APCA-API-KEY-ID': ALPACA_CONFIG['api_key'],
+    'APCA-API-SECRET-KEY': ALPACA_CONFIG['api_secret'],
     'Content-Type': 'application/json'
-}
+} if ALPACA_CONFIG['enabled'] else {}
+
+STOCK_DATA_CACHE = {}
+STOCK_DATA_CACHE_TTL_SECONDS = int(os.environ.get('STOCK_DATA_CACHE_TTL_SECONDS', '300'))
 
 # 10-Factor Scoring System from STRATEGY.md
 SCORING_FACTORS = {
@@ -132,8 +162,18 @@ RECOMMENDED_STOCKS = [
 
 def get_alpaca_account():
     """Get account information from Alpaca"""
-    url = f"{ALPACA_BASE_URL}/account"
-    response = requests.get(url, headers=ALPACA_HEADERS)
+    if not ALPACA_CONFIG['enabled']:
+        return {
+            'cash': 100000,
+            'portfolio_value': 100000,
+            'buying_power': 100000,
+            'equity': 100000,
+            'status': 'SIMULATION',
+            'data_mode': 'offline'
+        }
+
+    url = f"{ALPACA_CONFIG['base_url']}/v2/account"
+    response = requests.get(url, headers=ALPACA_HEADERS, timeout=10)
     if response.status_code == 200:
         return response.json()
     return None
@@ -141,8 +181,11 @@ def get_alpaca_account():
 
 def get_alpaca_positions():
     """Get current positions from Alpaca"""
-    url = f"{ALPACA_BASE_URL}/positions"
-    response = requests.get(url, headers=ALPACA_HEADERS)
+    if not ALPACA_CONFIG['enabled']:
+        return []
+
+    url = f"{ALPACA_CONFIG['base_url']}/v2/positions"
+    response = requests.get(url, headers=ALPACA_HEADERS, timeout=10)
     if response.status_code == 200:
         positions = response.json()
         # Enrich with current prices and calculate P&L
@@ -154,16 +197,19 @@ def get_alpaca_positions():
                 pos['market_value'] = float(pos['qty']) * current_price
                 pos['unrealized_pl'] = pos['market_value'] - float(pos['cost_basis'])
                 pos['unrealized_plpc'] = (pos['unrealized_pl'] / float(pos['cost_basis'])) * 100 if float(pos['cost_basis']) > 0 else 0
-            except:
-                pass
+            except Exception as exc:
+                app.logger.warning('Failed to enrich position for %s: %s', pos.get('symbol', 'UNKNOWN'), exc)
         return positions
     return []
 
 
 def get_alpaca_orders():
     """Get pending orders from Alpaca"""
-    url = f"{ALPACA_BASE_URL}/orders?status=open"
-    response = requests.get(url, headers=ALPACA_HEADERS)
+    if not ALPACA_CONFIG['enabled']:
+        return []
+
+    url = f"{ALPACA_CONFIG['base_url']}/v2/orders?status=open"
+    response = requests.get(url, headers=ALPACA_HEADERS, timeout=10)
     if response.status_code == 200:
         return response.json()
     return []
@@ -171,7 +217,12 @@ def get_alpaca_orders():
 
 def place_alpaca_order(symbol, qty, side='buy', order_type='market'):
     """Place an order with Alpaca"""
-    url = f"{ALPACA_BASE_URL}/orders"
+    if not ALPACA_CONFIG['enabled']:
+        return {
+            'error': 'Trading unavailable: missing Alpaca credentials at ~/.openclaw/secrets/alpaca.json or ALPACA_API_KEY/ALPACA_API_SECRET env vars.'
+        }
+
+    url = f"{ALPACA_CONFIG['base_url']}/v2/orders"
     data = {
         'symbol': symbol,
         'qty': qty,
@@ -179,71 +230,137 @@ def place_alpaca_order(symbol, qty, side='buy', order_type='market'):
         'type': order_type,
         'time_in_force': 'day'
     }
-    response = requests.post(url, headers=ALPACA_HEADERS, json=data)
-    return response.json() if response.status_code == 200 else {'error': response.text}
+    response = requests.post(url, headers=ALPACA_HEADERS, json=data, timeout=10)
+    return response.json() if response.status_code in (200, 201) else {'error': response.text}
 
 
-@lru_cache(maxsize=100)
+def _build_offline_stock_data(symbol, error_message):
+    """Return deterministic fallback stock data when market data providers are unavailable."""
+    return {
+        'symbol': symbol,
+        'name': symbol,
+        'price': 0.0,
+        'previous_close': 0.0,
+        'change': 0.0,
+        'change_percent': 0.0,
+        'market_cap': 0,
+        'volume': 0,
+        'avg_volume': 0,
+        'pe_ratio': None,
+        'sector': 'Unknown',
+        'industry': 'Unknown',
+        'ma_50': None,
+        'ma_200': None,
+        'rsi': None,
+        'float': 0,
+        'short_ratio': 0,
+        '52w_high': 0,
+        '52w_low': 0,
+        'historical_data': [],
+        'data_source': 'offline_fallback',
+        'data_error': error_message,
+    }
+
+
 def get_stock_data(symbol):
-    """Get comprehensive stock data from Yahoo Finance"""
+    """Get comprehensive stock data from Yahoo Finance with success-only caching."""
+    symbol = symbol.upper().strip()
+    cached = STOCK_DATA_CACHE.get(symbol)
+    if cached:
+        cache_age = (datetime.utcnow() - cached['cached_at']).total_seconds()
+        if cache_age < STOCK_DATA_CACHE_TTL_SECONDS:
+            return cached['data']
+
     try:
         ticker = yf.Ticker(symbol)
-        info = ticker.info
-        
-        # Get historical data for charts
-        hist = ticker.history(period='6mo')
-        
-        # Calculate technical indicators
-        if len(hist) > 0:
-            current_price = hist['Close'].iloc[-1]
-            ma_50 = hist['Close'].rolling(window=50).mean().iloc[-1] if len(hist) >= 50 else None
-            ma_200 = hist['Close'].rolling(window=200).mean().iloc[-1] if len(hist) >= 200 else None
-            
-            # Calculate RSI
-            delta = hist['Close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            current_rsi = rsi.iloc[-1] if not rsi.empty else None
-        else:
-            current_price = info.get('currentPrice', 0)
-            ma_50 = None
-            ma_200 = None
-            current_rsi = None
-        
-        return {
+        hist = ticker.history(period='6mo', auto_adjust=False)
+        if hist.empty:
+            raise ValueError('No historical data returned for symbol')
+
+        fast_info = getattr(ticker, 'fast_info', {}) or {}
+        try:
+            info = ticker.info or {}
+        except Exception as exc:
+            app.logger.warning('ticker.info unavailable for %s: %s', symbol, exc)
+            info = {}
+
+        current_price = float(hist['Close'].iloc[-1])
+        previous_close = float(hist['Close'].iloc[-2]) if len(hist) > 1 else float(fast_info.get('previousClose', current_price) or current_price)
+        ma_50 = float(hist['Close'].rolling(window=50).mean().iloc[-1]) if len(hist) >= 50 else None
+        ma_200 = float(hist['Close'].rolling(window=200).mean().iloc[-1]) if len(hist) >= 200 else None
+
+        delta = hist['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        current_rsi = float(rsi.iloc[-1]) if not rsi.empty else None
+
+        avg_volume = float(hist['Volume'].tail(20).mean()) if len(hist) >= 20 else float(hist['Volume'].mean())
+        year_window = hist.tail(252) if len(hist) >= 252 else hist
+
+        historical_rows = []
+        for idx, row in hist.tail(120).iterrows():
+            historical_rows.append({
+                'date': idx.strftime('%Y-%m-%d'),
+                'open': float(row['Open']),
+                'high': float(row['High']),
+                'low': float(row['Low']),
+                'close': float(row['Close']),
+                'volume': int(row['Volume'])
+            })
+
+        stock_data = {
             'symbol': symbol,
             'name': info.get('longName', symbol),
             'price': current_price,
-            'previous_close': info.get('previousClose', current_price),
-            'change': current_price - info.get('previousClose', current_price),
-            'change_percent': ((current_price - info.get('previousClose', current_price)) / info.get('previousClose', current_price) * 100) if info.get('previousClose') else 0,
-            'market_cap': info.get('marketCap', 0),
-            'volume': info.get('volume', 0),
-            'avg_volume': info.get('averageVolume', 0),
-            'pe_ratio': info.get('trailingPE', None),
+            'previous_close': previous_close,
+            'change': current_price - previous_close,
+            'change_percent': ((current_price - previous_close) / previous_close * 100) if previous_close else 0,
+            'market_cap': int(info.get('marketCap') or fast_info.get('marketCap') or 0),
+            'volume': int(hist['Volume'].iloc[-1]) if len(hist) else 0,
+            'avg_volume': avg_volume,
+            'pe_ratio': info.get('trailingPE'),
             'sector': info.get('sector', 'Unknown'),
             'industry': info.get('industry', 'Unknown'),
             'ma_50': ma_50,
             'ma_200': ma_200,
             'rsi': current_rsi,
-            'float': info.get('floatShares', 0),
-            'short_ratio': info.get('shortRatio', 0),
-            '52w_high': info.get('fiftyTwoWeekHigh', 0),
-            '52w_low': info.get('fiftyTwoWeekLow', 0),
-            'historical_data': hist.reset_index().to_dict('records') if len(hist) > 0 else []
+            'float': int(info.get('floatShares') or 0),
+            'short_ratio': float(info.get('shortRatio') or 0),
+            '52w_high': float(info.get('fiftyTwoWeekHigh') or year_window['High'].max() or 0),
+            '52w_low': float(info.get('fiftyTwoWeekLow') or year_window['Low'].min() or 0),
+            'historical_data': historical_rows,
+            'data_source': 'yfinance',
         }
-    except Exception as e:
-        return {'error': str(e), 'symbol': symbol}
+
+        STOCK_DATA_CACHE[symbol] = {
+            'cached_at': datetime.utcnow(),
+            'data': stock_data,
+        }
+        return stock_data
+    except Exception as exc:
+        app.logger.warning('Stock data fetch failed for %s: %s', symbol, exc)
+        return _build_offline_stock_data(symbol, str(exc))
 
 
 def analyze_stock(symbol):
     """Perform 10-factor analysis on a stock"""
     data = get_stock_data(symbol)
-    
-    if 'error' in data:
-        return data
+
+    if data.get('data_source') == 'offline_fallback':
+        return {
+            'symbol': symbol,
+            'data': data,
+            'scores': {key: 0 for key in SCORING_FACTORS.keys()},
+            'total_score': 0,
+            'analysis_notes': [
+                'Live market data unavailable right now. Please retry in a moment.',
+                f"Provider error: {data.get('data_error', 'Unknown error')}"
+            ],
+            'recommendation': 'DATA UNAVAILABLE',
+            'scoring_factors': SCORING_FACTORS
+        }
     
     scores = {
         'fundamental_story': 0,
@@ -346,7 +463,9 @@ def api_account():
             'portfolio_value': float(account.get('portfolio_value', 0)),
             'buying_power': float(account.get('buying_power', 0)),
             'equity': float(account.get('equity', 0)),
-            'status': account.get('status', 'UNKNOWN')
+            'status': account.get('status', 'UNKNOWN'),
+            'alpaca_connected': ALPACA_CONFIG['enabled'],
+            'alpaca_source': ALPACA_CONFIG['source']
         })
     return jsonify({'error': 'Failed to fetch account'}), 500
 
@@ -376,7 +495,8 @@ def api_recommendations():
             stock['change_percent'] = ((current_price - stock['price']) / stock['price']) * 100
             stock['scores_detail'] = SCORING_FACTORS
             updated_recommendations.append(stock)
-        except:
+        except Exception as exc:
+            app.logger.warning('Failed to refresh recommendation for %s: %s', stock.get('symbol', 'UNKNOWN'), exc)
             updated_recommendations.append(stock)
     return jsonify(updated_recommendations)
 
@@ -425,4 +545,5 @@ def api_historical(symbol):
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    flask_debug = os.environ.get('FLASK_DEBUG', '').lower() in ('1', 'true', 'yes')
+    app.run(debug=flask_debug, host='0.0.0.0', port=5000)
