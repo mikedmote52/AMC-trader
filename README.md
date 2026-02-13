@@ -22,16 +22,23 @@ pip install -r requirements.txt
 
 ### 2. Verify Alpaca Credentials
 
-Make sure your Alpaca API credentials are in `~/.openclaw/secrets/alpaca.json`:
+The dashboard works in two modes:
+
+- **Connected mode** (recommended): uses Alpaca paper trading credentials
+- **Offline simulation mode**: auto-enabled when credentials are missing so the UI still runs
+
+For connected mode, set environment variables or create `~/.openclaw/secrets/alpaca.json`:
 
 ```json
 {
   "apiKey": "YOUR_API_KEY",
   "apiSecret": "YOUR_API_SECRET",
-  "baseUrl": "https://paper-api.alpaca.markets/v2",
+  "baseUrl": "https://paper-api.alpaca.markets",
   "paperTrading": true
 }
 ```
+
+The backend automatically targets Alpaca `/v2` endpoints.
 
 ### 3. Run the Dashboard
 
@@ -164,7 +171,8 @@ All styles are in `static/css/style.css`. Customize colors by editing CSS variab
 ## Troubleshooting
 
 **"Failed to fetch account"**
-- Verify Alpaca credentials in `~/.openclaw/secrets/alpaca.json`
+- If credentials are missing, the app now falls back to offline simulation mode
+- For live paper trading, verify credentials in `~/.openclaw/secrets/alpaca.json` or env vars
 - Check that `baseUrl` points to paper trading API
 - Ensure API keys are valid and active
 

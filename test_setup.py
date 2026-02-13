@@ -10,13 +10,18 @@ import sys
 def check_credentials():
     """Check if Alpaca credentials exist and are valid"""
     creds_path = os.path.expanduser('~/.openclaw/secrets/alpaca.json')
-    
+
     print("🔍 Checking Alpaca credentials...")
-    
+
+    if os.environ.get('ALPACA_API_KEY') and os.environ.get('ALPACA_API_SECRET'):
+        print("✅ Alpaca credentials found in environment variables")
+        print(f"   Base URL: {os.environ.get('ALPACA_BASE_URL', 'https://paper-api.alpaca.markets')}")
+        return True
+
     if not os.path.exists(creds_path):
-        print("❌ Alpaca credentials not found at:", creds_path)
-        print("   Please create the file with your API credentials.")
-        return False
+        print("⚠️  Alpaca credentials not found. Dashboard will run in offline simulation mode.")
+        print("   Add ~/.openclaw/secrets/alpaca.json or ALPACA_API_KEY/ALPACA_API_SECRET env vars to enable live paper trading.")
+        return True
     
     try:
         with open(creds_path, 'r') as f:
