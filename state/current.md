@@ -1,10 +1,10 @@
 # CURRENT STATE - Single Source of Truth
 
-**Last Updated:** 2026-02-17 10:00 AM PT
+**Last Updated:** 2026-02-17 12:01 PM PT (Power Hour Check)
 
 ## 📅 TODAY: TUESDAY FEB 17 - EARNINGS DAY (MARKET OPEN ✅)
 
-**137 companies reporting earnings** - Big opportunity day!
+**137 companies reporting earnings** - Active trading day with profit-taking!
 
 ---
 
@@ -15,105 +15,95 @@
 - ✅ **6:30 AM** - Premarket scan complete
 - ✅ **9:33 AM** - Portfolio check (stop-loss monitor)
 - ✅ **10:00 AM** - Profit-taking check (no action needed)
+- ✅ **12:01 PM** - **POWER HOUR PORTFOLIO CHECK**
 
 **Upcoming:**
-- **12:00 PM** - Power hour scanner
-- **1:00 PM** - Daily review
+- **1:00 PM** - Market close review
 
 ---
 
-## 📊 Portfolio Status (Market Open - 10:00 AM)
+## 📊 Portfolio Status (Power Hour - 12:01 PM)
 
-**Account Value:** $101,625.26 (live)  
-**Cash:** $99,387.19  
-**Positions:** 19 stocks (UUUU stop-loss triggered)  
+**Account Value:** $101,632.75 (live)  
+**Cash:** $99,438.16  
+**Positions:** 19 stocks  
 **Daily Budget:** $300 (fresh for Tuesday)
 
-**✅ PROFIT-TAKING CHECK COMPLETE (10:00 AM)**
-*No positions require scaling at this time*
+**Today's Realized Activity:**
+- ✅ **SSRM** - Sold 1 share @ $26.06 (profit-taking)
+- ✅ **PTNM** - Sold 1 share @ $10.15 (profit-taking)
+- ✅ **UEC** - Sold 1 share @ $14.76
 
 ---
 
-## 🔥 TOP PERFORMERS (Ready to Scale)
+## 🔥 PROFIT TARGET ALERTS
 
-| Symbol | Shares | Current | Gain | Action |
-|--------|--------|---------|------|--------|
-| PTNM | 1 | $10.31 | +368.6% | ✅ Already scaled (1 share remains) |
-| SSRM | 2 | $26.15 | +33.1% | ✅ Already scaled (trailing stop active) |
-| KSS | 7 | $19.68 | +27.7% | Watch for +30% target |
-| SPHR | 2 | $115.48 | +21.0% | Watch for +30% target |
-| RIG | 55 | $6.13 | +14.6% | Watch for +30% target |
+| Symbol | Shares | Current | Gain | Status | Action |
+|--------|--------|---------|------|--------|--------|
+| **SSRM** | 2 | $26.38 | **+34.2%** 🎯 | **TARGET HIT** | 1 share sold today, 2 remain |
+| **PTNM** | 1 | $10.31 | **+368.6%** 🚀 | **HUGE WINNER** | Already scaled, trailing stop |
+| **KSS** | 7 | $19.685 | **+27.7%** ⏳ | Near +30% | Watch for breakout |
+| **RIG** | 55 | $6.12 | **+14.4%** ⏳ | Building | Watch for +30% |
+| **SPHR** | 2 | $115.58 | **+21.1%** ⏳ | Building | Watch for +30% |
+| **RIVN** | 13 | $16.685 | **+15.9%** ⏳ | Building | Watch for +30% |
+| **KNOW** | 11 | $12.50 | **+9.4%** ⏳ | Building | Early momentum |
+
+**🎯 ALERT: SSRM hit +34% profit target - 1 share scaled out already!**
 
 ---
 
-## ⚠️ STOP-LOSS WATCH (10:00 AM Update)
+## ⚠️ STOP-LOSS WATCH (Power Hour)
 
-| Symbol | Status | Action Required |
-|--------|--------|-----------------|
-| **UUUU** | ✅ **STOPPED OUT** - Position closed at -16.6% | Loss absorbed, removed from watch |
-| **RGTI** | ⚠️ At -13.1% | Monitor throughout day |
-| **KOPN** | ✅ Safe at -5.9% | No action needed |
+| Symbol | Entry | Current | Loss | Stop Level | Status |
+|--------|-------|---------|------|------------|--------|
+| **RGTI** | $18.03 | $16.125 | **-10.6%** | $15.33 (-15%) | ⚠️ Monitor closely |
+| **UUUU** | $24.17 | $20.41 | **-15.6%** | Position mostly closed | ✅ Stopped out |
+| **KOPN** | $2.36 | $2.25 | **-4.7%** | $2.01 (-15%) | ✅ Safe |
+| **SERV** | $9.72 | $9.39 | **-3.4%** | $8.26 (-15%) | ✅ Safe |
+| **LGN** | $49.49 | $47.87 | **-3.3%** | $42.07 (-15%) | ✅ Safe |
 
 **✅ STOP-LOSS STATUS:**
-- **UUUU** - Stop-loss triggered, position closed automatically
-- **RGTI** - Still monitoring for -15% stop level
+- **RGTI** at -10.6% - approaching -15% stop level, monitor into close
+- **UUUU** - Mostly stopped out (fractional shares remain)
+- All other positions within safe ranges
 
 ---
 
-## 🎯 TUESDAY GAME PLAN (UPDATED 9:33 AM)
+## 🎯 POWER HOUR GAME PLAN (12:01 PM Update)
 
-**✅ Completed:**
-- Morning briefing delivered
-- Premarket scanner ran
-- Portfolio check complete (awaiting price verification)
+**🔥 IMMEDIATE ATTENTION:**
+- [x] **SSRM profit target hit** - 1 share sold @ $26.06 ✅
+- [x] **PTNM additional scaling** - 1 share sold @ $10.15 ✅
+- [ ] **Watch RGTI** - At -10.6%, approaching stop level
+- [ ] **Watch KSS** - At +27.7%, close to +30% target
 
-**🔥 ACTIVE NOW (Market Open 6:30 AM PT):**
-- [x] **UUUU stop-loss verified** - Position closed at -16.6%
-- [ ] Watch for earnings winners gapping up
-- [ ] Check diamonds.json for new setups
-
-**Throughout Day:**
-- [ ] Approve 1-2 best scanner picks (max $300)
-- [ ] Monitor RGTI stop-loss (-15%)
-- [ ] Watch RIG/KSS for +30% profit targets
-- [ ] Review midday scan at 12:00 PM
-
-**Key Events:**
-- **8:30 AM ET** - Empire State Manufacturing survey
-- **137 earnings** - Watch for big movers
+**Pre-Market Close (1:00 PM):**
+- [ ] Monitor RGTI for stop-loss trigger (-15% = $15.33)
+- [ ] Check if KSS breaks +30%
+- [ ] Review any earnings movers
+- [ ] Prepare daily P&L summary
 
 ---
 
-## 💰 PROFIT-TAKING CHECK (10:00 AM)
+## 💰 REALIZED PROFITS TODAY
 
-**Scan Results:** No positions >+30% requiring scale-out
+| Symbol | Action | Price | Profit |
+|--------|--------|-------|--------|
+| SSRM | Sold 1 share | $26.06 | ~+$6.41 |
+| PTNM | Sold 1 share | $10.15 | ~+$7.95 |
+| UEC | Sold 1 share | $14.76 | ~+$3.43 |
 
-| Symbol | Current Gain | Status | Action |
-|--------|-------------|--------|--------|
-| PTNM | +368.6% | ✅ Already scaled | 1 share remains, trailing stop |
-| SSRM | +33.1% | ✅ Already scaled | 2 shares remain, trailing stop |
-| KSS | +27.7% | ⏳ Near target | Watch for +30% |
-| SPHR | +21.0% | ⏳ Building | Watch for +30% |
-
-**Next Check:** 12:00 PM (midday scan)
+**Total Realized Today:** ~+$17.79
 
 ---
 
-## ✅ ALREADY LOCKED IN (Feb 13)
+## 🎯 FOCUS FOR MARKET CLOSE
 
-- PTNM: 50% sold @ +368.6% (1 share remains)
-- SSRM: 50% sold @ +41.9% (2 shares remain)
-- ~$50+ realized profits secured
-
----
-
-## 🎯 FOCUS FOR TUESDAY
-
-1. **Don't chase earnings gaps** - Wait for consolidation
-2. **Check scanner at 6:30 AM** - Best setups pre-market
-3. **Watch UUUU at open** - May hit stop-loss immediately
-4. **Budget: $300 max** - Quality over quantity
+1. **Watch RGTI closely** - Down -10.6%, stop at -15%
+2. **KSS approaching +30%** - May trigger profit-taking
+3. **No new entries** - Market closing in 1 hour
+4. **Prepare EOD summary** - Track all moves today
 
 ---
 
-_Ready to rock Tuesday! Market opens in ~5.5 hours._ 🚀
+_Ready for market close! Power hour monitoring active._ ⚡

@@ -604,3 +604,4 @@ scan_date,scan_time,symbol,price_at_scan,scanner_score,float_score,momentum_scor
 2026-02-12,09:21:06,PAAA,51.39,110,0,0,0,0,0,5,partial,4.058031387408377,0,0,6694333.0,,Yes,2026-02-12,51.395,"Scanner V3.1 top pick: 110pts, perfect 0% entry (pre-breakout), inverted momentum detected quiet accumulation, hot sector rotation",,,,,,,
 2026-02-12,09:21:06,IAUX,2.005,70,0,0,0,0,0,5,partial,2.0552298259976776,0,0,18138800.0,,No,,,,,,,,,,
 2026-02-12,09:21:06,NBIS,87.24,65,0,0,0,0,0,10,near,1.3173278685417673,0,0,17802724.0,,No,,,,,,,,,,
+2026-02-17,12:08:48,TSLG,7.56,100,0,0,0,0,0,0,none,1.2468235558856882,0,0,42413256.0,,No,,,,,,,,,,
