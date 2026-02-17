@@ -33,6 +33,35 @@ client = RESTClient(api_key=creds['apiKey'])
 CACHE_FILE = '/Users/mikeclawd/.openclaw/workspace/data/snapshot_cache.pkl'
 CACHE_MAX_AGE = 300  # 5 minutes
 
+# Hardcoded list of major ETFs to exclude (VIGL strategy = individual stocks only)
+EXCLUDED_ETFS = {
+    # Major Index ETFs
+    'SPY', 'QQQ', 'IWM', 'DIA', 'VOO', 'VTI', 'VEA', 'VWO', 'VTV', 'VUG', 'VB', 'VO', 'VV',
+    # Inverse/Bear ETFs
+    'SH', 'SDS', 'SPXU', 'SQQQ', 'PSQ', 'RWM', 'TWM', 'QID', 'SARK',
+    # Sector ETFs
+    'XLF', 'XLK', 'XLE', 'XLI', 'XLP', 'XLU', 'XLV', 'XLY', 'XLB', 'XLRE', 'XRT',
+    # Bond/Treasury ETFs
+    'TLT', 'IEF', 'SHY', 'LQD', 'HYG', 'AGG', 'BND', 'VCIT', 'VCLT', 'VGIT', 'VGLT',
+    # Commodity ETFs
+    'GLD', 'SLV', 'USO', 'UNG', 'DBC', 'GSG',
+    # Popular Fund Families
+    'SCHD', 'SCHX', 'SCHB', 'SCHA', 'SCHF', 'SCHE', 'SCHH', 'SCHP', 'SCHR', 'SCHV', 'SCHG',
+    'VIG', 'VYM', 'VCSH', 'VHT', 'VFH', 'VGT', 'VDE', 'VCR', 'VDC', 'VPU', 'VAW', 'VNQ', 'VGSLX',
+    'SDY', 'NOBL', 'DGRO', 'HDV', 'SPHD', 'QYLD', 'XYLD', 'JEPI', 'JEPQ',
+    # Leveraged ETFs
+    'TQQQ', 'UPRO', 'UDOW', 'URTY', 'SRTY', 'SDOW', 'SPXL', 'SPXS',
+    # Other common ETFs
+    'ARKK', 'ARKG', 'ARKF', 'ARKW', 'ARKQ', 'ARKX',
+    'IWF', 'IWD', 'IWB', 'IWM', 'IWN', 'IWO', 'IWP', 'IWS', 'IWR', 'IJR', 'IJJ', 'IJK',
+    'MDY', 'SLY', 'SLYG', 'SLYV', 'SPMD', 'SPSM',
+    'ACWI', 'VT', 'VXUS', 'VEU', 'IXUS', 'SCHC', 'SCHE', 'VSS', 'VWO', 'VPL', 'VGK', 'VNM',
+    'EMB', 'VWOB', 'PCY', 'EMLC', 'LEMB',
+    'BKLN', 'SRLN', 'FTSL', 'PGX', 'PFF', 'PSK', 'SPFF',
+    'MUB', 'TFI', 'PZA', 'MLN', 'ITM', 'VTEB', 'MUNI',
+    'REET', 'VNQI', 'RWX', 'DRW', 'FEZ', 'IEV', 'EWG', 'EWJ', 'EEM', 'EFA', 'IWM'
+}
+
 def get_cached_snapshots():
     """Use cached snapshots if recent enough"""
     if os.path.exists(CACHE_FILE):
@@ -401,7 +430,32 @@ def scan_for_diamonds():
             volume = snap.day.volume
 
             # Skip ETFs/funds
-            if any(x in symbol for x in ['-', '.', 'ETF', 'FUND']):
+            if any(x in symbol for x in ['-', '.']):
+                continue
+            
+            # Check hardcoded ETF list first (fast)
+            if symbol.upper() in EXCLUDED_ETFS:
+                continue
+            
+            # Check if it's an ETF by looking at ticker details
+            try:
+                ticker_details = client.get_ticker_details(symbol)
+                # Skip if it's an ETF, ETN, Fund, or Trust
+                if hasattr(ticker_details, 'type') and ticker_details.type:
+                    ticker_type = str(ticker_details.type).upper()
+                    if any(x in ticker_type for x in ['ETF', 'ETN', 'FUND', 'TRUST', 'INDEX']):
+                        continue
+                # Also check name for ETF indicators
+                ticker_name = str(ticker_details.name).upper() if hasattr(ticker_details, 'name') and ticker_details.name else ''
+                if any(x in ticker_name for x in ['ETF', 'ETN', 'TRUST', 'SHARES', 'FUND', 'INDEX', 'PROSHARES', 'VANGUARD', 'ISHARES', 'SPDR']):
+                    continue
+                # Check market type
+                if hasattr(ticker_details, 'market') and ticker_details.market:
+                    market_type = str(ticker_details.market).upper()
+                    if 'INDEX' in market_type:
+                        continue
+            except:
+                # If we can't get details, skip it to be safe
                 continue
 
             # Basic filters
