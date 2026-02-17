@@ -1,0 +1,21 @@
+{
+  "scaled_positions": [
+    {
+      "symbol": "PTNM",
+      "date_scaled": "2025-02-13",
+      "shares_sold": 1,
+      "shares_remaining": 1,
+      "profit_pct_at_scale": 368.6,
+      "total_shares_original": 2
+    },
+    {
+      "symbol": "SSRM", 
+      "date_scaled": "2025-02-13",
+      "shares_sold": 1,
+      "shares_remaining": 2,
+      "profit_pct_at_scale": 41.9,
+      "total_shares_original": 3
+    }
+  ],
+  "last_checked": "2026-02-17T10:00:00-08:00"
+}

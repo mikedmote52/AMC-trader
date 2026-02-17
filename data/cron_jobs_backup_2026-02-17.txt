@@ -1,0 +1,25 @@
+ID                                   Name                     Schedule                         Next       Last       Status    Target    Agent     
+e8c5496c-c0c2-414f-b7a2-c2211d0ead50 Midday Scan (Automated)  cron 0 12 * * 1-5 @ America/L... in 8m      -          idle      isolated  main
+6baea6ae-c188-487d-b02d-8360babd1ca3 Portfolio Check - Pow... cron 0 12 * * 1-5 @ America/L... in 8m      -          idle      isolated  main
+f6069ff2-02ba-41cb-bb05-bcb4ff024aee Profit Target Check      cron 0 10,12,14 * * 1-5 @ Ame... in 8m      2h ago     ok        isolated  main
+3ca1065e-be3c-4e10-891d-31c59d8def2e Stop Loss Check          cron 0 10,12,14 * * 1-5 @ Ame... in 8m      2h ago     ok        isolated  main
+4f9bbff9-bc54-4c77-a3fc-578c0e565336 SPDN Breakout Monitor    every 15m                        in 24m     36m ago    error     isolated  main
+74352513-ac4a-4b3a-bd35-d41df21ccf94 Scanner Results Alert    cron 35 6,12,14 * * 1-5 @ Ame... in 43m     5h ago     error     isolated  main
+62159e2e-af51-4cde-ab23-10ad635ebec9 Portfolio Health Check   cron 0 13 * * 1-5 @ America/L... in 1h      -          idle      isolated  main
+76efe96c-e6ae-4a34-9c95-f6ea2c90c540 Market Close Review      cron 0 13 * * 1-5 @ America/L... in 1h      -          idle      isolated  main
+ce03123b-2b42-4c4e-9689-e3c171a9fbe9 Portfolio Update - 1 PM  cron 0 13 * * 1-5 @ America/L... in 1h      -          idle      isolated  main
+e58a3c65-a9e7-4190-b6b2-2f532b612f37 Market Close - Telegram  cron 30 16 * * 1-5 @ America/... in 2h      -          idle      isolated  main
+ec4b3f23-4045-4164-9474-c6dacc73a433 Power Hour Scan (Auto... cron 0 14 * * 1-5 @ America/L... in 2h      13d ago    ok        isolated  main
+692a18e9-9be5-46c8-a4c2-0a1a1bff56d9 Profit Taking Check      cron 0 10,14 * * 1-5 @ Americ... in 2h      2h ago     error     isolated  main
+d46b7568-974c-43d3-832c-3c7a52abfb84 Portfolio Update - 2 PM  cron 0 14 * * 1-5 @ America/L... in 2h      -          idle      isolated  main
+a0c390a6-de7e-47bd-9c7f-9059b81bd9a7 Portfolio Update - 3 PM  cron 0 15 * * 1-5 @ America/L... in 3h      -          idle      isolated  main
+36b66413-b0cd-44e2-a859-39f3d624e46f Premarket Scan - Tele... cron 0 6 * * 1-5 @ America/Ne... in 15h     -          idle      isolated  main
+a526cf7d-0c04-42ef-bb8d-17997f4dacac Premarket Scan (Autom... cron 0 6 * * 1-5 @ America/Lo... in 18h     6h ago     ok        isolated  main
+7b096a32-a3f7-47d6-8381-c6ed809e3b19 Morning Briefing         cron 0 6 * * 1-5 @ America/Lo... in 18h     6h ago     error     isolated  main
+1a36912e-eebd-4cb8-bdf9-ea0a66fec223 Market Open - Telegram   cron 30 9 * * 1-5 @ America/N... in 19h     5h ago     error     isolated  main
+582e441f-b223-486e-a448-ad1186c66f76 Midday Check - Telegram  cron 0 12 * * 1-5 @ America/N... in 21h     3h ago     error     isolated  main
+90100069-9e27-40dc-89c9-468bd2c3d838 Execute Morning Trades   cron 30 9 * * 1-5 @ America/L... in 22h     2h ago     error     isolated  main
+6ec1ee77-6b6e-45b9-aeb7-5ee6da46ba37 Portfolio Check - Mor... cron 30 9 * * 1-5 @ America/L... in 22h     2h ago     ok        isolated  main
+c6e8a827-b95b-44e6-863b-2d1ecc4afbd3 Portfolio Update - 10 AM cron 0 10 * * 1-5 @ America/L... in 22h     2h ago     error     isolated  main
+49d6dace-6bb5-42cc-a5de-7f98c42c5dfb Portfolio Check - Midday cron 0 11 * * 1-5 @ America/L... in 23h     52m ago    ok        isolated  main
+12652696-4df8-4625-ae51-64a638708f5a Portfolio Update - 11 AM cron 0 11 * * 1-5 @ America/L... in 23h     51m ago    error     isolated  main

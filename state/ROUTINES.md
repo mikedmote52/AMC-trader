@@ -28,10 +28,11 @@
 ## 📊 Friday Evening (6:00 PM PT) - WEEKLY REVIEW
 
 1. **Run performance_projections.py** - MANDATORY
-2. **Send weekly performance report** - Annual projections to Telegram
-3. **Run scanner learning analysis** - Review week's picks
-4. **Update MEMORY.md** - Weekly lessons learned
-5. **Plan next week** - Strategy adjustments
+2. **👻 Run ghost_portfolio_tracker.py** - Check exited positions
+3. **Send weekly performance report** - Annual projections + ghost analysis to Telegram
+4. **Run scanner learning analysis** - Review week's picks
+5. **Update MEMORY.md** - Weekly lessons learned
+6. **Plan next week** - Strategy adjustments
 
 ## 📈 First Trading Day of Month - MONTHLY REVIEW
 
@@ -62,6 +63,12 @@
 - Scale out 50%
 - Trail remaining shares
 - Lock in profits
+- **👻 ADD TO GHOST PORTFOLIO** (track after exit)
+
+**Trigger: ANY position sold**
+- **Run:** `python3 ghost_portfolio_tracker.py add SYMBOL DATE PRICE ENTRY SHARES PCT REASON`
+- Auto-added to ghost tracking
+- Will show in Friday's report
 
 **Trigger: Daily spend approaching $300**
 - STOP all new trades

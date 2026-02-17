@@ -155,6 +155,16 @@ def generate_projection_report():
         f.write(json.dumps(report) + '\n')
     
     print(f'\n✅ Report saved to {report_file}')
+    
+    # Run ghost portfolio tracker
+    print('\n' + '='*80)
+    print('👻 GHOST PORTFOLIO CHECK')
+    print('='*80)
+    import subprocess
+    try:
+        subprocess.run(['python3', 'ghost_portfolio_tracker.py'], cwd='.')
+    except Exception as e:
+        print(f'Could not run ghost tracker: {e}')
 
 if __name__ == '__main__':
     generate_projection_report()

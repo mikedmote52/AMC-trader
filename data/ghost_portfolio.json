@@ -1,0 +1,22 @@
+[
+  {
+    "symbol": "PTNM",
+    "sell_date": "2026-02-13",
+    "sell_price": 10.31,
+    "original_entry": 2.2,
+    "shares_sold": 2,
+    "profit_at_exit": 368.6,
+    "exit_reason": "Scale out 50% at profit target",
+    "added": "2026-02-15T17:15:07.666781"
+  },
+  {
+    "symbol": "SSRM",
+    "sell_date": "2026-02-13",
+    "sell_price": 28.0,
+    "original_entry": 19.65,
+    "shares_sold": 2,
+    "profit_at_exit": 41.9,
+    "exit_reason": "Scale out 50% at profit target",
+    "added": "2026-02-15T17:15:11.177986"
+  }
+]

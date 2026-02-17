@@ -105,6 +105,28 @@ if trades:
         f.write(log_entry)
     
     print(f"✅ Logged to {memory_file}")
+    
+    # Add to ghost portfolio tracker
+    print(f"\n👻 Adding to ghost portfolio tracker...")
+    for trade in trades:
+        import subprocess
+        try:
+            # Get position details for ghost tracking
+            pos_resp = requests.get(f"{base_url}/v2/positions/{trade['symbol']}", headers=headers)
+            if pos_resp.status_code == 200:
+                pos = pos_resp.json()
+                subprocess.run([
+                    'python3', 'ghost_portfolio_tracker.py', 'add',
+                    trade['symbol'],
+                    datetime.now().strftime('%Y-%m-%d'),
+                    pos['current_price'],
+                    pos['avg_entry_price'],
+                    str(trade['qty']),
+                    str(trade['gain_pct']),
+                    'Scale out 50% at profit target'
+                ], check=True)
+        except Exception as e:
+            print(f"⚠️  Could not add {trade['symbol']} to ghost portfolio: {e}")
 
 print("\n" + "="*60)
 print("✅ SCALE OUT COMPLETE")

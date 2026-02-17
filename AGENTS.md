@@ -12,10 +12,13 @@ Before doing anything else:
 
 1. Read `SOUL.md` — this is who you are
 2. Read `USER.md` — this is who you're helping
-3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
-4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
+3. **Read `state/current.md`** — THIS IS CRITICAL - current state of everything
+4. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
+5. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
 
 Don't ask permission. Just do it.
+
+**CRITICAL:** When asked about portfolio, trades, or "what happened" → READ FILES FIRST, then answer. Don't guess.
 
 ## Memory
 
@@ -184,6 +187,45 @@ You are free to edit `HEARTBEAT.md` with a short checklist or reminders. Keep it
 - Late night (23:00-08:00) unless urgent
 - Human is clearly busy
 - Nothing new since last check
+
+---
+
+## 🕐 Automation Architecture (CRITICAL - READ THIS)
+
+**The trading system uses OpenClaw's built-in cron system (NOT launchd/macOS cron):**
+
+### How to Check Automation Status:
+```bash
+# This is the ONLY command that matters
+openclaw cron list
+```
+
+### Current Active Jobs (16 total):
+- Morning Briefing: 6:00 AM M-F
+- Premarket Scan: 6:00 AM M-F  
+- Market Open Check: 9:30 AM M-F
+- Midday Scan: 12:00 PM M-F
+- Power Hour Scan: 2:00 PM M-F
+- Market Close Review: 1:00 PM M-F
+- Plus 10 more monitoring jobs
+
+### What I Should NEVER Do:
+- ❌ Try to "fix" launchd plists (they don't exist anymore)
+- ❌ Assume automation is broken without checking `openclaw cron list`
+- ❌ Run random commands before verifying the actual architecture
+- ❌ Declare system failure without evidence
+
+### Before Claiming Something Is Broken:
+1. Run `openclaw cron list`
+2. Check `state/current.md`
+3. Check latest memory file
+4. Ask user what they see
+
+### Verification:
+- ✅ Morning briefing sent successfully (Feb 17, 1:31 AM)
+- ✅ 16 jobs configured and idle (waiting for next schedule)
+- ✅ All jobs set for M-F trading days
+- ✅ Next runs: Tuesday Feb 17 at scheduled times
 - You just checked &lt;30 minutes ago
 
 **Proactive work you can do without asking:**
