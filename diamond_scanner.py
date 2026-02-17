@@ -39,6 +39,8 @@ EXCLUDED_ETFS = {
     'SPY', 'QQQ', 'IWM', 'DIA', 'VOO', 'VTI', 'VEA', 'VWO', 'VTV', 'VUG', 'VB', 'VO', 'VV',
     # Inverse/Bear ETFs
     'SH', 'SDS', 'SPXU', 'SQQQ', 'PSQ', 'RWM', 'TWM', 'QID', 'SARK',
+    'SPDN', 'SPXS', 'SPXL', 'TZA', 'FAZ', 'ERY', 'DUST', 'NUGT', 'JDST', 'JUNG', 'YANG', 'YINN',
+    'LABD', 'LABU', 'CURE', 'DRN', 'DPST', 'FAS', 'FAZ', 'MIDU', 'MIDZ', 'RETL', 'SOXL', 'SOXS',
     # Sector ETFs
     'XLF', 'XLK', 'XLE', 'XLI', 'XLP', 'XLU', 'XLV', 'XLY', 'XLB', 'XLRE', 'XRT',
     # Bond/Treasury ETFs
@@ -47,7 +49,9 @@ EXCLUDED_ETFS = {
     'GLD', 'SLV', 'USO', 'UNG', 'DBC', 'GSG',
     # Popular Fund Families
     'SCHD', 'SCHX', 'SCHB', 'SCHA', 'SCHF', 'SCHE', 'SCHH', 'SCHP', 'SCHR', 'SCHV', 'SCHG',
+    'SCHM', 'SCHZ', 'FNDA', 'FNDB', 'FNDC', 'FNDE', 'FNDF', 'FNDX', 'SCHY',
     'VIG', 'VYM', 'VCSH', 'VHT', 'VFH', 'VGT', 'VDE', 'VCR', 'VDC', 'VPU', 'VAW', 'VNQ', 'VGSLX',
+    'VMBS', 'VGSH', 'VGIT', 'VCLT', 'VWOB', 'VTIP', 'VGSTX', 'VWINX', 'VFINX', 'VTSMX', 'VBMFX',
     'SDY', 'NOBL', 'DGRO', 'HDV', 'SPHD', 'QYLD', 'XYLD', 'JEPI', 'JEPQ',
     # Leveraged ETFs
     'TQQQ', 'UPRO', 'UDOW', 'URTY', 'SRTY', 'SDOW', 'SPXL', 'SPXS',
