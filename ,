@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""
+Morning Briefing Script
+Runs at 6:00 AM PT to provide daily market context and portfolio status
+"""
+
+import json
+import requests
+from datetime import datetime, timedelta
+import os
+import sys
+
+# Load Alpaca credentials
+with open('/Users/mikeclawd/.openclaw/secrets/alpaca.json', 'r') as f:
+    creds = json.load(f)
+
+base_url = creds['baseUrl'].rstrip('/v2').rstrip('/')
+headers = {
+    'APCA-API-KEY-ID': creds['apiKey'],
+    'APCA-API-SECRET-KEY': creds['apiSecret']
+}
+
+def get_account():
+    """Get account info"""
+    url = f"{base_url}/v2/account"
+    r = requests.get(url, headers=headers, timeout=10)
+    if r.status_code == 200:
+        return r.json()
+    return None
+
+def get_positions():
+    """Get all positions"""
+    url = f"{base_url}/v2/positions"
+    r = requests.get(url, headers=headers, timeout=10)
+    if r.status_code == 200:
+        return r.json()
+    return []
+
+def get_clock():
+    """Get market clock"""
+    url = f"{base_url}/v2/clock"
+    r = requests.get(url, headers=headers, timeout=10)
+    if r.status_code == 200:
+        return r.json()
+    return None
+
+def format_money(value):
+    """Format money with +/-"""
+    return f"${value:,.2f}"
+
+def main():
+    today = datetime.now().strftime('%A, %B %d, %Y')
+    
+    print("=" * 70)
+    print(f"📅 MORNING BRIEFING - {today}")
+    print("=" * 70)
+    print()
+    
+    # Get market clock
+    clock = get_clock()
+    if clock:
+        market_open = clock.get('is_open', False)
+        next_open = clock.get('next_open', '')
+        next_close = clock.get('next_close', '')
+        
+        if market_open:
+            print("🔓 MARKET STATUS: OPEN")
+        else:
+            print("🔒 MARKET STATUS: CLOSED")
+            if next_open:
+                open_time = datetime.fromisoformat(next_open.replace('Z', '+00:00'))
+                print(f"   Next Open: {open_time.strftime('%I:%M %p PT')}")
+    
+    print()
+    
+    # Get account info
+    account = get_account()
+    positions = get_positions()
+    
+    if account:
+        equity = float(account.get('equity', 0))
+        cash = float(account.get('cash', 0))
+        buying_power = float(account.get('buying_power', 0))
+        
+        print("💰 ACCOUNT SUMMARY")
+        print("-" * 70)
+        print(f"   Total Equity: {format_money(equity)}")
+        print(f"   Cash Available: {format_money(cash)}")
+        print(f"   Buying Power: {format_money(buying_power)}")
+        print(f"   Open Positions: {len(positions)}")
+        print()
+    
+    # Portfolio analysis
+    if positions:
+        total_pl = sum(float(p.get('unrealized_pl', 0)) for p in positions)
+        total_pl_pct = (total_pl / (equity - cash) * 100) if (equity - cash) > 0 else 0
+        
+        print("📊 PORTFOLIO STATUS")
+        print("-" * 70)
+        
+        # Winners
+        winners = [p for p in positions if float(p.get('unrealized_plpc', 0)) > 0]
+        losers = [p for p in positions if float(p.get('unrealized_plpc', 0)) <= 0]
+        
+        if winners:
+            print(f"   ✅ Winners: {len(winners)} positions")
+        if losers:
+            print(f"   🔴 Losers: {len(losers)} positions")
+        
+        print(f"   Total Unrealized P&L: {format_money(total_pl)} ({total_pl_pct:+.1f}%)")
+        print()
+        
+        # Position details sorted by performance
+        print("📋 POSITION BREAKDOWN")
+        print("-" * 70)
+        
+        sorted_positions = sorted(positions, key=lambda x: float(x.get('unrealized_plpc', 0)), reverse=True)
+        
+        urgent_actions = []
+        
+        for pos in sorted_positions[:10]:  # Top 10
+            symbol = pos.get('symbol', 'N/A')
+            qty = float(pos.get('qty', 0))
+            entry = float(pos.get('avg_entry_price', 0))
+            current = float(pos.get('current_price', 0))
+            pl_pct = float(pos.get('unrealized_plpc', 0)) * 100
+            pl = float(pos.get('unrealized_pl', 0))
+            
+            # Determine status
+            if pl_pct >= 30:
+                status = "🚀"
+                if pl_pct >= 50:
+                    status += " BIG WIN"
+                    urgent_actions.append(f"💰 {symbol}: Consider taking profits at +{pl_pct:.1f}%")
+            elif pl_pct >= 15:
+                status = "📈"
+            elif pl_pct >= 0:
+                status = "➡️"
+            elif pl_pct > -10:
+                status = "📉"
+            else:
+                status = "⚠️"
+                if pl_pct <= -15:
+                    urgent_actions.append(f"🚨 {symbol}: STOP-LOSS VIOLATION at {pl_pct:.1f}%")
+                elif pl_pct <= -12:
+                    urgent_actions.append(f"⚠️ {symbol}: Near stop-loss at {pl_pct:.1f}%")
+            
+            print(f"   {status} {symbol:6} | {qty:>5.0f} sh | ${entry:.2f} → ${current:.2f} | {pl_pct:>+6.1f}%")
+        
+        if len(positions) > 10:
+            print(f"   ... and {len(positions) - 10} more positions")
+        
+        print()
+        
+        # Urgent actions
+        print("=" * 70)
+        if urgent_actions:
+            print("🔥 URGENT ACTIONS NEEDED")
+            print("-" * 70)
+            for action in urgent_actions:
+                print(f"   {action}")
+        else:
+            print("✅ NO URGENT ACTIONS")
+            print("   Portfolio is within normal parameters. Monitor for +30% profit targets.")
+        
+        print("=" * 70)
+    else:
+        print("📭 No open positions")
+        print()
+        print("💡 Ready to trade - check scanners for new setups")
+        print("=" * 70)
+    
+    # Daily reminder
+    print()
+    print("📌 DAILY REMINDERS")
+    print("-" * 70)
+    print("   • Check earnings calendar for position impacts")
+    print("   • Set stop-losses: Cut losers at -15%")
+    print("   • Take profits: Scale out at +30%, full exit at +50%")
+    print("   • Daily budget: $300 max per day")
+    print("=" * 70)
+
+if __name__ == '__main__':
+    main()

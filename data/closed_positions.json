@@ -1,0 +1,32 @@
+[
+  {
+    "symbol": "NVDA",
+    "entry_date": "2024-01-15T14:30:00Z",
+    "entry_price": 120.50,
+    "exit_date": "2024-02-10T15:45:00Z",
+    "exit_price": 156.80,
+    "qty": 10,
+    "actual_gain": 363.00,
+    "actual_gain_percent": 30.12
+  },
+  {
+    "symbol": "TSLA",
+    "entry_date": "2024-01-20T10:00:00Z",
+    "entry_price": 185.00,
+    "exit_date": "2024-02-05T14:00:00Z",
+    "exit_price": 210.00,
+    "qty": 5,
+    "actual_gain": 125.00,
+    "actual_gain_percent": 13.51
+  },
+  {
+    "symbol": "AMD",
+    "entry_date": "2024-01-10T09:30:00Z",
+    "entry_price": 145.00,
+    "exit_date": "2024-01-25T16:00:00Z",
+    "exit_price": 162.50,
+    "qty": 8,
+    "actual_gain": 140.00,
+    "actual_gain_percent": 12.07
+  }
+]
