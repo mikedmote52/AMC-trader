@@ -8,7 +8,7 @@
     --bg-tertiary: #e6e9eb;
     --text: #1e2124;
     --text-secondary: #6f787e;
-    --text-muted: #9ba3a7;
+    --text-muted: #707070; /* Changed from #9ba3a7 for WCAG AA compliance (4.5:1 contrast) */
     --border: #e6e9eb;
     --card-shadow: 0 1px 4px rgba(0,0,0,0.08);
     --hover-shadow: 0 4px 12px rgba(0,0,0,0.12);
@@ -17,7 +17,7 @@
     --tier-s: #ffd700;
     --tier-a: #00c805;
     --tier-b: #4a9eff;
-    --tier-c: #9ba3a7;
+    --tier-c: #707070; /* Changed from #9ba3a7 for better contrast */
     --vigl-perfect: #ffd700;
     --vigl-near: #ff8c00;
     --vigl-partial: #4a9eff;
@@ -57,6 +57,7 @@ body {
 .nav-brand {
     display: flex;
     align-items: center;
+    gap: 16px;
 }
 
 .logo {
@@ -104,6 +105,271 @@ body {
     background: var(--danger);
 }
 
+/* Refresh Indicator */
+.refresh-indicator {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 4px 12px;
+    border-radius: 12px;
+    background: var(--bg-secondary);
+    white-space: nowrap;
+    font-weight: 500;
+}
+
+.refresh-indicator.live {
+    background: rgba(0, 200, 5, 0.1);
+    color: var(--primary);
+}
+
+.refresh-indicator.closed {
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+}
+
+/* Trailing Stop Display */
+.trailing-stop {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: var(--bg-secondary);
+}
+
+.stop-price {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text);
+}
+
+.stop-distance {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.trailing-stop.stop-warning {
+    background: var(--warning-bg);
+    border: 1px solid var(--warning);
+}
+
+.trailing-stop.stop-warning .stop-price {
+    color: var(--warning);
+}
+
+.trailing-stop.stop-warning .stop-distance {
+    color: var(--warning);
+    font-weight: 600;
+}
+
+/* VIGL Strategy Labels */
+.symbol-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.vigl-label {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.vigl-label.vigl-explosion {
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(255, 107, 107, 0.4);
+}
+
+.vigl-label.vigl-mega {
+    background: linear-gradient(135deg, #ff8c00 0%, #ff6347 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(255, 140, 0, 0.4);
+}
+
+.vigl-label.vigl-runner {
+    background: linear-gradient(135deg, #ffd700 0%, #ffb347 100%);
+    color: #1e2124;
+    box-shadow: 0 2px 8px rgba(255, 215, 0, 0.4);
+}
+
+.vigl-label.vigl-scale {
+    background: linear-gradient(135deg, #4a9eff 0%, #667eea 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(74, 158, 255, 0.4);
+}
+
+.vigl-label.vigl-candidate {
+    background: linear-gradient(135deg, #00c805 0%, #00a804 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(0, 200, 5, 0.4);
+}
+
+/* =============================================
+   GHOST PORTFOLIO
+   ============================================= */
+.ghost-portfolio-section {
+    margin-top: 32px;
+    padding: 24px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    border: 2px dashed #9ba3a7;
+}
+
+.ghost-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.ghost-header h3 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0;
+}
+
+.ghost-toggle {
+    padding: 8px 16px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.ghost-toggle:hover {
+    background: var(--primary-dark);
+}
+
+.ghost-content {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.ghost-summary {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.ghost-summary-card {
+    padding: 20px;
+    background: var(--bg);
+    border-radius: var(--radius);
+    box-shadow: var(--card-shadow);
+}
+
+.ghost-summary-card.delta {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.ghost-card-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.7;
+    margin-bottom: 8px;
+}
+
+.ghost-summary-card.delta .ghost-card-label {
+    opacity: 0.9;
+}
+
+.ghost-card-value {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.ghost-card-subtext {
+    font-size: 14px;
+    opacity: 0.8;
+}
+
+.ghost-table-wrapper {
+    overflow-x: auto;
+    background: var(--bg);
+    border-radius: var(--radius);
+    box-shadow: var(--card-shadow);
+}
+
+.ghost-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.ghost-table thead {
+    background: var(--bg-secondary);
+}
+
+.ghost-table th {
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    border-bottom: 2px solid var(--border);
+}
+
+.ghost-table td {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+}
+
+.ghost-table tbody tr:hover {
+    background: var(--bg-secondary);
+}
+
+.ghost-big-miss {
+    background: rgba(255, 80, 0, 0.05);
+}
+
+.ghost-big-miss:hover {
+    background: rgba(255, 80, 0, 0.1) !important;
+}
+
+.ghost-subtext {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.ghost-missed {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+.ghost-saved {
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.ghost-loading,
+.ghost-empty {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 32px;
+    font-style: italic;
+}
+
 .nav-search {
     display: flex;
     align-items: center;
@@ -143,6 +409,11 @@ body {
     background: var(--primary-dark);
 }
 
+.nav-search button:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
 .nav-search button svg {
     width: 18px;
     height: 18px;
@@ -173,6 +444,11 @@ body {
 
 .nav-tab:hover {
     color: var(--primary);
+}
+
+.nav-tab:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
 }
 
 .nav-tab.active {
@@ -2554,6 +2830,67 @@ body {
 /* =============================================
    RESPONSIVE
    ============================================= */
+
+/* Tablet breakpoint (between mobile and desktop) */
+@media (max-width: 1024px) and (min-width: 769px) {
+    .main-container {
+        padding: 20px;
+    }
+
+    /* Two-column layouts become single column on tablet */
+    .cc-two-col {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+
+    .brain-two-col {
+        grid-template-columns: 1fr;
+    }
+
+    .portfolio-header {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+
+    /* Candidate cards: 2 columns on tablet */
+    .candidates-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* Learning grid: 2 columns on tablet */
+    .learning-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* Reduce chart size on tablet */
+    .chart-container {
+        max-width: 400px;
+        margin: 0 auto;
+    }
+
+    /* Navbar adjustments */
+    .nav-search {
+        max-width: 300px;
+    }
+
+    .nav-tabs {
+        gap: 6px;
+    }
+
+    /* Table improvements */
+    .positions-table th,
+    .positions-table td {
+        padding: 12px;
+        font-size: 13px;
+    }
+
+    /* Modal width on tablet */
+    .modal-content {
+        max-width: 600px;
+    }
+}
+
+/* Mobile breakpoint */
 @media (max-width: 768px) {
     .navbar {
         flex-wrap: wrap;
@@ -2710,6 +3047,60 @@ body {
         width: 100%;
         right: -100%;
     }
+
+    /* Touch-friendly tap targets (minimum 44x44px) */
+    .btn-small,
+    .nav-tab,
+    .toggle-btn {
+        min-height: 44px;
+        min-width: 44px;
+        padding: 12px 16px;
+    }
+
+    /* Larger font sizes for better mobile readability */
+    body {
+        font-size: 16px;
+    }
+
+    /* Better spacing for mobile touch interactions */
+    .approval-card {
+        padding: 20px;
+    }
+
+    .candidate-card {
+        padding: 20px;
+    }
+
+    /* Modal improvements for mobile */
+    .modal-content {
+        max-width: 95vw;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    /* Hide less important columns on mobile tables */
+    .positions-table .thesis-cell {
+        display: none;
+    }
+
+    /* Improve scroll performance on mobile */
+    .nav-tabs,
+    .candidates-grid,
+    .positions-table-container {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Ghost portfolio mobile */
+    .ghost-summary {
+        grid-template-columns: 1fr;
+    }
+
+    .ghost-table th:nth-child(2),
+    .ghost-table td:nth-child(2),
+    .ghost-table th:nth-child(3),
+    .ghost-table td:nth-child(3) {
+        display: none;
+    }
 }
 
 /* =============================================
@@ -2812,4 +3203,136 @@ body {
     text-align: center;
     opacity: 0.8;
     font-size: 11px;
+}
+
+/* =============================================
+   ACCESSIBILITY - KEYBOARD FOCUS STYLES
+   ============================================= */
+/* Universal focus indicator for all interactive elements */
+button:focus,
+input:focus,
+textarea:focus,
+select:focus,
+[role="button"]:focus,
+.candidate-card:focus,
+.cc-highlight-card:focus,
+.cc-action-item:focus,
+.thesis-snippet:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* Skip to main content link for keyboard users */
+.skip-to-main {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: var(--primary);
+    color: white;
+    padding: 8px 16px;
+    text-decoration: none;
+    z-index: 1000;
+}
+
+.skip-to-main:focus {
+    top: 0;
+}
+
+/* Improve clickable area focus for small targets */
+.btn-small:focus,
+.toggle-btn:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* Ensure modal close buttons have visible focus */
+#modalClose:focus,
+#tradeModalClose:focus,
+#thesisPanelClose:focus,
+#ordersSlideClose:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* Interactive cards need cursor pointer and hover state */
+.cc-highlight-card,
+.cc-action-item,
+.thesis-snippet {
+    cursor: pointer;
+}
+
+.cc-highlight-card:hover,
+.cc-action-item:hover {
+    box-shadow: var(--hover-shadow);
+    transform: translateY(-2px);
+}
+
+.thesis-snippet:hover {
+    color: var(--primary);
+}
+
+/* =============================================
+   VENDOR PREFIXES FOR BROWSER COMPATIBILITY
+   ============================================= */
+/* Flexbox vendor prefixes (for older browsers) */
+.navbar,
+.nav-brand,
+.nav-search,
+.nav-tabs,
+.cc-portfolio-strip,
+.cc-strip-main,
+.cc-strip-stats,
+.portfolio-stats,
+.stat-card,
+.approval-actions,
+.brain-hero,
+.candidate-actions,
+.actions-cell {
+    display: -webkit-box;
+    display: -webkit-flex;
+    display: -moz-box;
+    display: -ms-flexbox;
+    display: flex;
+}
+
+/* Backdrop filter (still needs prefixes in some browsers) */
+.cc-proj-item {
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+}
+
+/* Transform vendor prefixes */
+.cc-highlight-card:hover,
+.cc-action-item:hover {
+    -webkit-transform: translateY(-2px);
+    -moz-transform: translateY(-2px);
+    -ms-transform: translateY(-2px);
+    transform: translateY(-2px);
+}
+
+/* User select (for better touch device experience) */
+.btn,
+button,
+.nav-tab,
+.cc-action-item,
+.cc-highlight-card {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* Appearance reset for inputs (better cross-browser styling) */
+input,
+textarea,
+select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+}
+
+/* Smooth scrolling for better UX */
+html {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
 }

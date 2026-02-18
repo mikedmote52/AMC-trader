@@ -11,6 +11,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
+    <!-- Skip to main content for keyboard navigation -->
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
     <!-- Navigation -->
     <nav class="navbar">
         <div class="nav-brand">
@@ -20,37 +23,40 @@
                 </svg>
                 <span>SqueezeSeeker</span>
                 <span class="version-badge">V4</span>
-                <span class="scanner-dot-nav" id="scannerDotNav" title="Scanner status"></span>
+                <span class="scanner-dot-nav" id="scannerDotNav" title="Scanner status" role="status" aria-label="Scanner status indicator"></span>
+            </div>
+            <div class="refresh-indicator" id="refreshIndicator" role="status" aria-live="polite">
+                🟢 Initializing...
             </div>
         </div>
-        <div class="nav-search">
-            <input type="text" id="stockSearch" placeholder="Search ticker (e.g., AAPL)..." autocomplete="off">
-            <button id="searchBtn">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <div class="nav-search" role="search">
+            <input type="text" id="stockSearch" placeholder="Search ticker (e.g., AAPL)..." autocomplete="off" aria-label="Search for stock ticker">
+            <button id="searchBtn" aria-label="Search stock">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <circle cx="11" cy="11" r="8"/>
                     <path d="m21 21-4.35-4.35"/>
                 </svg>
             </button>
         </div>
-        <div class="nav-tabs">
-            <button class="nav-tab active" data-view="command-center">
+        <div class="nav-tabs" role="navigation" aria-label="Main navigation">
+            <button class="nav-tab active" data-view="command-center" role="tab" aria-selected="true" aria-label="Command Center view">
                 Command Center
             </button>
-            <button class="nav-tab" data-view="portfolio">
+            <button class="nav-tab" data-view="portfolio" role="tab" aria-selected="false" aria-label="Portfolio view">
                 Portfolio
             </button>
-            <button class="nav-tab" data-view="research">
+            <button class="nav-tab" data-view="research" role="tab" aria-selected="false" aria-label="Research Lab view">
                 Research Lab
-                <span class="tab-badge" id="approvalBadge" style="display:none;">0</span>
+                <span class="tab-badge" id="approvalBadge" style="display:none;" aria-label="Pending approvals">0</span>
             </button>
-            <button class="nav-tab" data-view="brain">
+            <button class="nav-tab" data-view="brain" role="tab" aria-selected="false" aria-label="My Brain view">
                 My Brain
             </button>
         </div>
     </nav>
 
     <!-- Main Content -->
-    <main class="main-container">
+    <main class="main-container" id="main-content">
 
         <!-- ============================================ -->
         <!-- VIEW 1: Command Center (Home) -->
@@ -216,6 +222,7 @@
                                 <th class="sortable" data-sort="qty">Shares <span class="sort-arrow"></span></th>
                                 <th class="sortable" data-sort="avg_entry_price">Avg Cost <span class="sort-arrow"></span></th>
                                 <th class="sortable" data-sort="current_price">Current <span class="sort-arrow"></span></th>
+                                <th>Trailing Stop</th>
                                 <th class="sortable" data-sort="market_value">Value <span class="sort-arrow"></span></th>
                                 <th class="sortable" data-sort="unrealized_pl">P&L ($) <span class="sort-arrow"></span></th>
                                 <th class="sortable" data-sort="unrealized_plpc">P&L (%) <span class="sort-arrow"></span></th>
@@ -227,6 +234,54 @@
                         <tbody id="positionsBody">
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <!-- Ghost Portfolio Section -->
+            <div class="ghost-portfolio-section">
+                <div class="ghost-header">
+                    <h3>👻 Ghost Portfolio - What You Left on the Table</h3>
+                    <button class="ghost-toggle" id="ghostToggle">Show Ghost Portfolio</button>
+                </div>
+                <div class="ghost-content" id="ghostContent" style="display:none;">
+                    <!-- Summary Cards -->
+                    <div class="ghost-summary">
+                        <div class="ghost-summary-card total">
+                            <div class="ghost-card-label">Actual Realized Gains</div>
+                            <div class="ghost-card-value positive" id="ghostActualGains">$0</div>
+                        </div>
+                        <div class="ghost-summary-card ghost">
+                            <div class="ghost-card-label">If Still Holding (Ghost Value)</div>
+                            <div class="ghost-card-value" id="ghostTheoreticalValue">$0</div>
+                        </div>
+                        <div class="ghost-summary-card delta">
+                            <div class="ghost-card-label">Left on Table</div>
+                            <div class="ghost-card-value" id="ghostDelta">$0</div>
+                            <div class="ghost-card-subtext" id="ghostDeltaPercent">0%</div>
+                        </div>
+                    </div>
+
+                    <!-- Ghost Positions Table -->
+                    <div class="ghost-table-wrapper">
+                        <table class="ghost-table">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Exit Date</th>
+                                    <th>Exit Price</th>
+                                    <th>Actual Gain</th>
+                                    <th>Current Price</th>
+                                    <th>Would Be Gain</th>
+                                    <th>Missed Profit</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ghostPositionsBody">
+                                <tr>
+                                    <td colspan="7" class="ghost-loading">Loading ghost portfolio...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 

@@ -17,6 +17,10 @@ let tradeSide = 'buy';
 let tradeOrderBy = 'shares';
 let activeView = 'command-center';
 let scannerOnline = false;
+let refreshInterval = null;
+let refreshCountdown = 30;
+let lastUpdateTime = null;
+let ghostPortfolioData = [];
 
 // =============================================
 // INITIALIZATION
@@ -24,12 +28,88 @@ let scannerOnline = false;
 document.addEventListener('DOMContentLoaded', async () => {
     setupEventListeners();
     await loadDashboard();
-
-    // Refresh data every 30 seconds - only active view
-    setInterval(() => {
-        loadDashboard();
-    }, 30000);
+    startIntelligentRefresh();
 });
+
+// =============================================
+// INTELLIGENT AUTO-REFRESH
+// =============================================
+function isMarketHours() {
+    const now = new Date();
+    // Convert to ET (UTC-5 or UTC-4 depending on DST)
+    const etOffset = isDST(now) ? -4 : -5;
+    const etTime = new Date(now.getTime() + (etOffset * 60 * 60 * 1000) + (now.getTimezoneOffset() * 60 * 1000));
+
+    const day = etTime.getDay(); // 0 = Sunday, 6 = Saturday
+    const hours = etTime.getHours();
+    const minutes = etTime.getMinutes();
+    const timeInMinutes = hours * 60 + minutes;
+
+    // Market hours: Monday-Friday, 9:30 AM - 4:00 PM ET
+    const isWeekday = day >= 1 && day <= 5;
+    const marketOpen = 9 * 60 + 30; // 9:30 AM
+    const marketClose = 16 * 60; // 4:00 PM
+
+    return isWeekday && timeInMinutes >= marketOpen && timeInMinutes < marketClose;
+}
+
+function isDST(date) {
+    const jan = new Date(date.getFullYear(), 0, 1);
+    const jul = new Date(date.getFullYear(), 6, 1);
+    return date.getTimezoneOffset() < Math.max(jan.getTimezoneOffset(), jul.getTimezoneOffset());
+}
+
+function startIntelligentRefresh() {
+    // Update last refresh time
+    updateRefreshIndicator();
+
+    // Countdown timer (updates every second)
+    setInterval(() => {
+        refreshCountdown--;
+        if (refreshCountdown <= 0) {
+            refreshCountdown = 30;
+        }
+        updateRefreshIndicator();
+    }, 1000);
+
+    // Main refresh interval
+    refreshInterval = setInterval(async () => {
+        if (isMarketHours()) {
+            await loadDashboard();
+            lastUpdateTime = new Date();
+            refreshCountdown = 30;
+            updateRefreshIndicator();
+        }
+    }, 30000); // 30 seconds
+
+    // Initial update after 30 seconds
+    setTimeout(async () => {
+        if (isMarketHours()) {
+            await loadDashboard();
+            lastUpdateTime = new Date();
+            updateRefreshIndicator();
+        }
+    }, 30000);
+}
+
+function updateRefreshIndicator() {
+    const indicator = document.getElementById('refreshIndicator');
+    if (!indicator) return;
+
+    const marketOpen = isMarketHours();
+    const statusDot = marketOpen ? '🟢' : '🔴';
+    const statusText = marketOpen ? 'Live' : 'Market Closed';
+
+    if (lastUpdateTime) {
+        const elapsed = Math.floor((Date.now() - lastUpdateTime) / 1000);
+        const lastUpdateText = elapsed < 60 ? `${elapsed}s ago` : `${Math.floor(elapsed / 60)}m ago`;
+        indicator.innerHTML = `${statusDot} ${statusText} • Updated ${lastUpdateText} • Next: ${refreshCountdown}s`;
+    } else {
+        indicator.innerHTML = `${statusDot} ${statusText} • Next: ${refreshCountdown}s`;
+    }
+
+    indicator.className = marketOpen ? 'refresh-indicator live' : 'refresh-indicator closed';
+}
 
 // =============================================
 // VIEW SYSTEM
@@ -39,7 +119,9 @@ function switchView(viewName) {
 
     // Update tabs
     document.querySelectorAll('.nav-tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.view === viewName);
+        const isActive = tab.dataset.view === viewName;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
 
     // Update view containers
@@ -65,6 +147,10 @@ function onViewActivated(viewName) {
             loadAccount();
             loadPositions();
             loadThesis();
+            // Load ghost portfolio if it's visible
+            if (document.getElementById('ghostContent').style.display !== 'none') {
+                loadGhostPortfolio();
+            }
             break;
         case 'research':
             loadScannerStatus();
@@ -162,6 +248,9 @@ function setupEventListeners() {
     document.getElementById('thesisPanelClose').addEventListener('click', () => {
         document.getElementById('thesisPanel').style.display = 'none';
     });
+
+    // Ghost portfolio toggle
+    document.getElementById('ghostToggle').addEventListener('click', toggleGhostPortfolio);
 
     // Modal backdrop click
     document.getElementById('analysisModal').addEventListener('click', (e) => {
@@ -313,18 +402,35 @@ function loadCCActions() {
         return;
     }
 
-    list.innerHTML = actions.map(a => `
-        <div class="cc-action-item" onclick="(${a.onClick.toString()})()">
+    list.innerHTML = actions.map((a, idx) => `
+        <div class="cc-action-item" data-action-idx="${idx}" role="button" tabindex="0" aria-label="${a.text}">
             <span class="cc-action-icon">${a.icon}</span>
             <span class="cc-action-text">${a.text}</span>
             <span class="cc-action-count ${a.countClass}">${a.count}</span>
         </div>
     `).join('');
+
+    // Add event listeners to action items
+    document.querySelectorAll('.cc-action-item').forEach((item, idx) => {
+        if (actions[idx]) {
+            const clickHandler = actions[idx].onClick;
+            item.addEventListener('click', clickHandler);
+            item.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    clickHandler();
+                }
+            });
+        }
+    });
 }
 
 async function loadCCConfidence() {
     try {
         const response = await fetch('/api/learning/performance');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const perf = await response.json();
 
         if (perf.error || perf.offline) {
@@ -347,6 +453,9 @@ async function loadCCConfidence() {
 async function loadPerformanceProjections() {
     try {
         const response = await fetch('/api/performance');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const data = await response.json();
 
         if (data.error) {
@@ -461,6 +570,9 @@ function loadCCScannerHighlights() {
 async function loadScannerHighlightsFromAPI() {
     try {
         const response = await fetch('/api/scanner/results');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const data = await response.json();
         const candidates = data.candidates || [];
         const container = document.getElementById('ccScannerHighlights');
@@ -481,15 +593,32 @@ async function loadScannerHighlightsFromAPI() {
             highlights.push(...candidates.sort((a, b) => (b.total_score || 0) - (a.total_score || 0)).slice(0, 3));
         }
 
-        container.innerHTML = highlights.map(c => `
-            <div class="cc-highlight-card" onclick="viewStock('${c.symbol}')">
+        container.innerHTML = highlights.map(c => {
+            const escapedSymbol = escapeHtml(c.symbol);
+            return `
+            <div class="cc-highlight-card" data-symbol="${escapedSymbol}" role="button" tabindex="0" aria-label="View ${escapedSymbol} stock details">
                 <div class="cc-hl-left">
-                    <span class="cc-hl-symbol">${c.symbol}</span>
+                    <span class="cc-hl-symbol">${escapedSymbol}</span>
                     <span class="cc-hl-tier tier-${(c.tier || 'c').toLowerCase()}">${c.tier || 'C'}</span>
                 </div>
                 <span class="cc-hl-score">${(c.total_score || 0).toFixed(1)}/100</span>
             </div>
-        `).join('');
+        `}).join('');
+
+        // Add event listeners to highlight cards
+        container.querySelectorAll('.cc-highlight-card').forEach(card => {
+            const clickHandler = () => {
+                const symbol = card.getAttribute('data-symbol');
+                viewStock(symbol);
+            };
+            card.addEventListener('click', clickHandler);
+            card.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    clickHandler();
+                }
+            });
+        });
     } catch (error) {
         console.error('Error loading scanner highlights:', error);
     }
@@ -520,6 +649,9 @@ function loadCCOrders() {
 async function loadApprovalQueue() {
     try {
         const response = await fetch('/api/approval/queue');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const data = await response.json();
 
         if (data.error || data.offline) {
@@ -646,6 +778,10 @@ async function approveCandidate(idx) {
             })
         });
 
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
         const result = await response.json();
 
         if (result.error || result.offline) {
@@ -656,6 +792,7 @@ async function approveCandidate(idx) {
         showToast(`Approved ${item.symbol}`, 'success');
         removeFromApprovalQueue(idx);
     } catch (error) {
+        console.error('Error submitting approval:', error);
         showToast('Error submitting approval', 'error');
     }
 }
@@ -678,6 +815,10 @@ async function rejectCandidate(idx) {
             })
         });
 
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
         const result = await response.json();
 
         if (result.error || result.offline) {
@@ -688,6 +829,7 @@ async function rejectCandidate(idx) {
         showToast(`Rejected ${item.symbol}`, 'info');
         removeFromApprovalQueue(idx);
     } catch (error) {
+        console.error('Error submitting rejection:', error);
         showToast('Error submitting rejection', 'error');
     }
 }
@@ -700,7 +842,7 @@ async function approveAndBuy(idx) {
 
     // First approve
     try {
-        await fetch('/api/approval/decide', {
+        const response = await fetch('/api/approval/decide', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -710,7 +852,11 @@ async function approveAndBuy(idx) {
                 price_at_decision: item.price
             })
         });
+        if (!response.ok) {
+            console.warn('Approval recording failed:', response.status);
+        }
     } catch (e) {
+        console.error('Error recording approval:', e);
         // Continue even if approval recording fails
     }
 
@@ -741,6 +887,9 @@ async function loadApprovalQueueBadge() {
     // Try fetching if we don't have data yet
     try {
         const response = await fetch('/api/approval/queue');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const data = await response.json();
 
         if (data.error || data.offline) {
@@ -767,6 +916,9 @@ async function loadApprovalQueueBadge() {
 async function loadRejectedPicks() {
     try {
         const response = await fetch('/api/approval/history?status=rejected');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const data = await response.json();
 
         if (data.error || data.offline) {
@@ -853,6 +1005,35 @@ function getThesisValidationIcon(thesis) {
 }
 
 // =============================================
+// VIGL STRATEGY LABELS
+// =============================================
+function getVIGLLabel(unrealizedPLPC, thesis) {
+    // Momentum breakdown levels
+    if (unrealizedPLPC >= 200) {
+        return { type: 'explosion', text: '🚀 +200% RUNNER' };
+    }
+    if (unrealizedPLPC >= 100) {
+        return { type: 'mega', text: '🔥 +100% MEGA' };
+    }
+    if (unrealizedPLPC >= 50) {
+        return { type: 'runner', text: '💎 RUNNER' };
+    }
+    if (unrealizedPLPC >= 25) {
+        return { type: 'scale', text: '📊 Scale 25%' };
+    }
+
+    // Check if VIGL candidate from thesis data
+    if (thesis && thesis.vigl_match) {
+        const viglMatch = thesis.vigl_match.toLowerCase();
+        if (viglMatch.includes('perfect') || viglMatch.includes('near')) {
+            return { type: 'candidate', text: '⭐ VIGL Candidate' };
+        }
+    }
+
+    return null; // No special label
+}
+
+// =============================================
 // BRAIN / LEARNING INSIGHTS (View 4)
 // =============================================
 function renderBrainInsights(perf) {
@@ -927,9 +1108,13 @@ function renderBrainInsights(perf) {
 async function loadApprovalHistory() {
     try {
         const response = await fetch('/api/approval/history');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const data = await response.json();
         return data.decisions || data.history || [];
     } catch (error) {
+        console.error('Error loading approval history:', error);
         return [];
     }
 }
@@ -977,6 +1162,9 @@ async function renderDecisionAccuracy() {
 async function loadAccount() {
     try {
         const response = await fetch('/api/account');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const data = await response.json();
 
         if (data.error) throw new Error(data.error);
@@ -1015,6 +1203,9 @@ async function loadAccount() {
 async function loadPositions() {
     try {
         const response = await fetch('/api/positions');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         positionsData = await response.json();
 
         const countEl = document.getElementById('positionCount');
@@ -1035,7 +1226,7 @@ function renderPositions() {
     tbody.innerHTML = '';
 
     if (positionsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-secondary);">No positions yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-secondary);">No positions yet</td></tr>';
         return;
     }
 
@@ -1058,12 +1249,39 @@ function renderPositions() {
         const unrealizedPLPC = parseFloat(pos.unrealized_plpc || 0);
         const thesis = thesisData[pos.symbol];
         const validationIcon = getThesisValidationIcon(thesis);
+        const escapedSymbol = escapeHtml(pos.symbol);
+        const currentPrice = parseFloat(pos.current_price);
+        const avgEntry = parseFloat(pos.avg_entry_price);
+
+        // Calculate trailing stop (25% below highest price reached)
+        // For now, use entry price as baseline, backend should provide high water mark
+        const highWaterMark = pos.high_water_mark || Math.max(currentPrice, avgEntry);
+        const trailingStopPrice = highWaterMark * 0.75; // 25% trailing stop
+        const stopDistance = ((currentPrice - trailingStopPrice) / currentPrice) * 100;
+        const stopWarning = stopDistance < 5; // Warn if within 5% of stop
+
+        const trailingStopHtml = `
+            <div class="trailing-stop ${stopWarning ? 'stop-warning' : ''}">
+                <div class="stop-price">${formatCurrency(trailingStopPrice)}</div>
+                <div class="stop-distance">${stopDistance.toFixed(1)}% away</div>
+            </div>
+        `;
+
+        // VIGL Strategy Labels
+        const viglLabel = getVIGLLabel(unrealizedPLPC, thesis);
+        const viglBadgeHtml = viglLabel ? `<span class="vigl-label vigl-${viglLabel.type}">${viglLabel.text}</span>` : '';
 
         row.innerHTML = `
-            <td><span class="symbol">${pos.symbol}</span></td>
+            <td>
+                <div class="symbol-cell">
+                    <span class="symbol">${escapedSymbol}</span>
+                    ${viglBadgeHtml}
+                </div>
+            </td>
             <td>${parseFloat(pos.qty).toFixed(0)}</td>
-            <td>${formatCurrency(parseFloat(pos.avg_entry_price))}</td>
-            <td>${formatCurrency(parseFloat(pos.current_price))}</td>
+            <td>${formatCurrency(avgEntry)}</td>
+            <td>${formatCurrency(currentPrice)}</td>
+            <td>${trailingStopHtml}</td>
             <td>${formatCurrency(parseFloat(pos.market_value))}</td>
             <td class="${unrealizedPL >= 0 ? 'positive' : 'negative'}">
                 ${unrealizedPL >= 0 ? '+' : ''}${formatCurrency(unrealizedPL)}
@@ -1073,14 +1291,39 @@ function renderPositions() {
             </td>
             <td>${validationIcon}</td>
             <td class="thesis-cell">
-                ${thesis ? `<span class="thesis-snippet" onclick="expandThesis('${pos.symbol}')" title="Click to expand">${truncate(thesis.entry_thesis, 30)}</span>` : '<span class="no-thesis">--</span>'}
+                ${thesis ? `<span class="thesis-snippet" data-symbol="${escapedSymbol}" title="Click to expand">${escapeHtml(truncate(thesis.entry_thesis, 30))}</span>` : '<span class="no-thesis">--</span>'}
             </td>
             <td class="actions-cell">
-                <button class="btn-small btn-buy-small" onclick="showTradeModal('${pos.symbol}', ${parseFloat(pos.current_price)}, 'buy')">Buy</button>
-                <button class="btn-small btn-sell-small" onclick="showTradeModal('${pos.symbol}', ${parseFloat(pos.current_price)}, 'sell')">Sell</button>
-                <button class="btn-small btn-view-small" onclick="viewStock('${pos.symbol}')">Info</button>
+                <button class="btn-small btn-buy-small" data-symbol="${escapedSymbol}" data-price="${currentPrice}" data-side="buy">Buy</button>
+                <button class="btn-small btn-sell-small" data-symbol="${escapedSymbol}" data-price="${currentPrice}" data-side="sell">Sell</button>
+                <button class="btn-small btn-view-small" data-symbol="${escapedSymbol}">Info</button>
             </td>
         `;
+
+        // Add event listeners to thesis snippet if it exists
+        const thesisSnippet = row.querySelector('.thesis-snippet');
+        if (thesisSnippet) {
+            thesisSnippet.setAttribute('role', 'button');
+            thesisSnippet.setAttribute('tabindex', '0');
+            const expandHandler = () => expandThesis(pos.symbol);
+            thesisSnippet.addEventListener('click', expandHandler);
+            thesisSnippet.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    expandHandler();
+                }
+            });
+        }
+
+        // Add event listeners to action buttons
+        const buyBtn = row.querySelector('.btn-buy-small');
+        const sellBtn = row.querySelector('.btn-sell-small');
+        const viewBtn = row.querySelector('.btn-view-small');
+
+        buyBtn.addEventListener('click', () => showTradeModal(pos.symbol, currentPrice, 'buy'));
+        sellBtn.addEventListener('click', () => showTradeModal(pos.symbol, currentPrice, 'sell'));
+        viewBtn.addEventListener('click', () => viewStock(pos.symbol));
+
         tbody.appendChild(row);
     });
 }
@@ -1148,6 +1391,9 @@ function expandThesis(symbol) {
 async function loadThesis() {
     try {
         const response = await fetch('/api/thesis');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const data = await response.json();
 
         thesisData = {};
@@ -1167,6 +1413,9 @@ async function loadThesis() {
 async function loadScannerStatus() {
     try {
         const response = await fetch('/api/scanner/status');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const data = await response.json();
 
         // Update navbar dot
@@ -1227,6 +1476,9 @@ async function loadScannerStatus() {
 async function loadScannerResults() {
     try {
         const response = await fetch('/api/scanner/results');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const data = await response.json();
 
         const grid = document.getElementById('candidatesGrid');
@@ -1293,11 +1545,12 @@ async function loadScannerResults() {
             const changePct = candidate.change_pct || 0;
             const price = candidate.price || 0;
             const reasoning = candidate.reasoning || candidate.gate_reasons || '';
+            const escapedSymbol = escapeHtml(candidate.symbol);
 
             card.innerHTML = `
                 <div class="candidate-header">
                     <div>
-                        <div class="candidate-symbol">${candidate.symbol}</div>
+                        <div class="candidate-symbol">${escapedSymbol}</div>
                         <div class="candidate-price">$${price.toFixed(2)}</div>
                     </div>
                     <div class="candidate-tier-badge ${tierClass}">${tier}</div>
@@ -1315,7 +1568,7 @@ async function loadScannerResults() {
                     </div>
                     <span class="explosion-value">${explosion.toFixed(1)}% explosion</span>
                 </div>
-                ${reasoning ? `<div class="candidate-reasoning"><p>${reasoning}</p></div>` : ''}
+                ${reasoning ? `<div class="candidate-reasoning"><p>${escapeHtml(reasoning)}</p></div>` : ''}
                 <div class="candidate-metrics">
                     <div class="candidate-metric">
                         <span class="cm-label">RVOL</span>
@@ -1327,11 +1580,21 @@ async function loadScannerResults() {
                     </div>
                 </div>
                 <div class="candidate-actions">
-                    <button class="btn-rec-buy" onclick="showTradeModal('${candidate.symbol}', ${price}, 'buy')">Buy</button>
-                    <button class="btn-rec-sell" onclick="showTradeModal('${candidate.symbol}', ${price}, 'sell')">Sell</button>
-                    <button class="btn-rec-view" onclick="viewStock('${candidate.symbol}')">Details</button>
+                    <button class="btn-rec-buy" data-symbol="${escapedSymbol}" data-price="${price}" data-side="buy">Buy</button>
+                    <button class="btn-rec-sell" data-symbol="${escapedSymbol}" data-price="${price}" data-side="sell">Sell</button>
+                    <button class="btn-rec-view" data-symbol="${escapedSymbol}">Details</button>
                 </div>
             `;
+
+            // Add event listeners to buttons
+            const buyBtn = card.querySelector('.btn-rec-buy');
+            const sellBtn = card.querySelector('.btn-rec-sell');
+            const viewBtn = card.querySelector('.btn-rec-view');
+
+            buyBtn.addEventListener('click', () => showTradeModal(candidate.symbol, price, 'buy'));
+            sellBtn.addEventListener('click', () => showTradeModal(candidate.symbol, price, 'sell'));
+            viewBtn.addEventListener('click', () => viewStock(candidate.symbol));
+
             grid.appendChild(card);
         });
     } catch (error) {
@@ -1348,6 +1611,13 @@ async function loadLearning() {
             fetch('/api/learning/performance'),
             fetch('/api/learning/weights')
         ]);
+
+        if (!perfResponse.ok) {
+            throw new Error(`Performance API: HTTP ${perfResponse.status}`);
+        }
+        if (!weightsResponse.ok) {
+            throw new Error(`Weights API: HTTP ${weightsResponse.status}`);
+        }
 
         const perf = await perfResponse.json();
         const weights = await weightsResponse.json();
@@ -1478,6 +1748,9 @@ async function loadLearning() {
 async function loadOrders() {
     try {
         const response = await fetch('/api/orders');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         ordersData = await response.json();
     } catch (error) {
         console.error('Error loading orders:', error);
@@ -1543,7 +1816,10 @@ async function viewStock(symbol) {
     try {
         showToast('Analyzing ' + symbol + '...', 'info');
 
-        const response = await fetch(`/api/search?symbol=${symbol}`);
+        const response = await fetch(`/api/search?symbol=${encodeURIComponent(symbol)}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const analysis = await response.json();
 
         if (analysis.error) {
@@ -1711,6 +1987,10 @@ async function handleTrade() {
             body: JSON.stringify(payload)
         });
 
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
         const result = await response.json();
         if (result.error) { showToast('Error: ' + result.error, 'error'); return; }
 
@@ -1722,6 +2002,117 @@ async function handleTrade() {
         console.error('Error placing order:', error);
         showToast('Error placing order', 'error');
     }
+}
+
+// =============================================
+// GHOST PORTFOLIO
+// =============================================
+function toggleGhostPortfolio() {
+    const content = document.getElementById('ghostContent');
+    const button = document.getElementById('ghostToggle');
+
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        button.textContent = 'Hide Ghost Portfolio';
+        loadGhostPortfolio();
+    } else {
+        content.style.display = 'none';
+        button.textContent = 'Show Ghost Portfolio';
+    }
+}
+
+async function loadGhostPortfolio() {
+    try {
+        const response = await fetch('/api/ghost/portfolio');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const data = await response.json();
+
+        if (data.error) {
+            renderGhostPortfolioEmpty('Ghost portfolio tracking not available');
+            return;
+        }
+
+        ghostPortfolioData = data.closed_positions || [];
+        const summary = data.summary || {};
+
+        // Update summary cards
+        document.getElementById('ghostActualGains').textContent = formatCurrency(summary.total_realized_gains || 0);
+        document.getElementById('ghostTheoreticalValue').textContent = formatCurrency(summary.theoretical_current_value || 0);
+
+        const delta = (summary.theoretical_current_value || 0) - (summary.total_realized_gains || 0);
+        const deltaPercent = summary.total_realized_gains > 0
+            ? ((delta / summary.total_realized_gains) * 100).toFixed(1)
+            : 0;
+
+        const deltaEl = document.getElementById('ghostDelta');
+        deltaEl.textContent = formatCurrency(Math.abs(delta));
+        deltaEl.className = delta >= 0 ? 'ghost-card-value positive' : 'ghost-card-value negative';
+
+        document.getElementById('ghostDeltaPercent').textContent =
+            `${delta >= 0 ? '+' : ''}${deltaPercent}% ${delta >= 0 ? 'missed' : 'saved'}`;
+
+        renderGhostPositions();
+    } catch (error) {
+        console.error('Error loading ghost portfolio:', error);
+        renderGhostPortfolioEmpty('Failed to load ghost portfolio');
+    }
+}
+
+function renderGhostPortfolioEmpty(message) {
+    const tbody = document.getElementById('ghostPositionsBody');
+    tbody.innerHTML = `<tr><td colspan="7" class="ghost-empty">${message}</td></tr>`;
+}
+
+function renderGhostPositions() {
+    const tbody = document.getElementById('ghostPositionsBody');
+
+    if (ghostPortfolioData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="ghost-empty">No closed positions yet - all positions still active!</td></tr>';
+        return;
+    }
+
+    // Sort by missed profit (biggest regrets first)
+    const sorted = [...ghostPortfolioData].sort((a, b) => {
+        const missedA = (a.theoretical_gain || 0) - (a.actual_gain || 0);
+        const missedB = (b.theoretical_gain || 0) - (b.actual_gain || 0);
+        return missedB - missedA;
+    });
+
+    tbody.innerHTML = sorted.map(pos => {
+        const actualGain = pos.actual_gain || 0;
+        const actualGainPct = pos.actual_gain_percent || 0;
+        const theoreticalGain = pos.theoretical_gain || 0;
+        const theoreticalGainPct = pos.theoretical_gain_percent || 0;
+        const missedProfit = theoreticalGain - actualGain;
+        const missedProfitPct = theoreticalGainPct - actualGainPct;
+
+        const exitDate = pos.exit_date ? new Date(pos.exit_date).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric'
+        }) : '--';
+
+        return `
+            <tr class="${missedProfit > 1000 ? 'ghost-big-miss' : ''}">
+                <td><strong>${escapeHtml(pos.symbol)}</strong></td>
+                <td>${exitDate}</td>
+                <td>${formatCurrency(pos.exit_price || 0)}</td>
+                <td class="positive">
+                    ${formatCurrency(actualGain)}
+                    <div class="ghost-subtext">${actualGainPct >= 0 ? '+' : ''}${actualGainPct.toFixed(1)}%</div>
+                </td>
+                <td>${formatCurrency(pos.current_price || 0)}</td>
+                <td class="${theoreticalGain >= actualGain ? 'positive' : 'negative'}">
+                    ${formatCurrency(theoreticalGain)}
+                    <div class="ghost-subtext">${theoreticalGainPct >= 0 ? '+' : ''}${theoreticalGainPct.toFixed(1)}%</div>
+                </td>
+                <td class="${missedProfit >= 0 ? 'ghost-missed' : 'ghost-saved'}">
+                    ${missedProfit >= 0 ? '😢' : '✅'} ${formatCurrency(Math.abs(missedProfit))}
+                    <div class="ghost-subtext">${missedProfit >= 0 ? '+' : ''}${missedProfitPct.toFixed(1)}%</div>
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
 
 // =============================================
@@ -1772,7 +2163,10 @@ function updatePortfolioChart(positions) {
 async function updateStockChart(symbol, historicalData) {
     try {
         if (!historicalData || historicalData.length === 0) {
-            const response = await fetch(`/api/historical/${symbol}`);
+            const response = await fetch(`/api/historical/${encodeURIComponent(symbol)}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
             historicalData = await response.json();
         }
 
@@ -1874,4 +2268,13 @@ function formatTimeAgo(dateStr) {
     } catch {
         return dateStr;
     }
+}
+
+// =============================================
+// SECURITY HELPER
+// =============================================
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
