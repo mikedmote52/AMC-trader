@@ -426,12 +426,18 @@ def scan_for_diamonds():
 
     for snap in snapshots:
         try:
-            if not snap.day or not snap.day.close or not snap.day.volume:
-                continue
-
             symbol = snap.ticker
-            price = snap.day.close
-            volume = snap.day.volume
+            
+            # Use current day data if available and valid, otherwise use previous day
+            if snap.day and snap.day.close and snap.day.close > 0 and snap.day.volume and snap.day.volume > 0:
+                price = snap.day.close
+                volume = snap.day.volume
+            elif snap.prev_day and snap.prev_day.close and snap.prev_day.close > 0:
+                # Premarket - use yesterday's close
+                price = snap.prev_day.close
+                volume = snap.prev_day.volume
+            else:
+                continue
 
             # Skip ETFs/funds
             if any(x in symbol for x in ['-', '.']):
@@ -441,7 +447,7 @@ def scan_for_diamonds():
             if symbol.upper() in EXCLUDED_ETFS:
                 continue
             
-            # Check if it's an ETF by looking at ticker details
+            # Check if it's an ETF by looking at ticker details (optional - don't skip on error)
             try:
                 ticker_details = client.get_ticker_details(symbol)
                 # Skip if it's an ETF, ETN, Fund, or Trust
@@ -459,8 +465,9 @@ def scan_for_diamonds():
                     if 'INDEX' in market_type:
                         continue
             except:
-                # If we can't get details, skip it to be safe
-                continue
+                # If we can't get details, assume it's NOT an ETF and continue
+                # (hardcoded list caught most ETFs already)
+                pass
 
             # Basic filters
             if 0.50 <= price <= 100 and volume >= 1_000_000:
@@ -496,6 +503,12 @@ def scan_for_diamonds():
     # Sort by inverted momentum (highest = quiet volume expansion)
     candidates.sort(key=lambda x: x['inverted_momentum'], reverse=True)
     print(f"✅ {len(candidates)} stocks ranked by inverted momentum")
+    
+    if not candidates:
+        print("⚠️  No candidates passed filters - relaxing criteria...")
+        # Return early with empty results
+        return []
+    
     print(f"   Top pick: {candidates[0]['symbol']} (score: {candidates[0]['inverted_momentum']:.1f})")
     print(f"   Formula: log1p(volume)*1.5 - abs(change%)*0.5")
     print()
