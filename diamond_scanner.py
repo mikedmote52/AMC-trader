@@ -447,27 +447,10 @@ def scan_for_diamonds():
             if symbol.upper() in EXCLUDED_ETFS:
                 continue
             
-            # Check if it's an ETF by looking at ticker details (optional - don't skip on error)
-            try:
-                ticker_details = client.get_ticker_details(symbol)
-                # Skip if it's an ETF, ETN, Fund, or Trust
-                if hasattr(ticker_details, 'type') and ticker_details.type:
-                    ticker_type = str(ticker_details.type).upper()
-                    if any(x in ticker_type for x in ['ETF', 'ETN', 'FUND', 'TRUST', 'INDEX']):
-                        continue
-                # Also check name for ETF indicators
-                ticker_name = str(ticker_details.name).upper() if hasattr(ticker_details, 'name') and ticker_details.name else ''
-                if any(x in ticker_name for x in ['ETF', 'ETN', 'TRUST', 'SHARES', 'FUND', 'INDEX', 'PROSHARES', 'VANGUARD', 'ISHARES', 'SPDR']):
-                    continue
-                # Check market type
-                if hasattr(ticker_details, 'market') and ticker_details.market:
-                    market_type = str(ticker_details.market).upper()
-                    if 'INDEX' in market_type:
-                        continue
-            except:
-                # If we can't get details, assume it's NOT an ETF and continue
-                # (hardcoded list caught most ETFs already)
-                pass
+            # Check if it's an ETF using FAST methods only (no API calls per stock)
+            # Method 1: Hardcoded list (comprehensive, includes 200+ ETFs)
+            # Method 2: Symbol pattern matching (catches obvious ones)
+            # Note: API-based checking removed - too slow for 12,000 stocks
 
             # Basic filters
             if 0.50 <= price <= 100 and volume >= 1_000_000:
