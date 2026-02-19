@@ -274,34 +274,40 @@ function setupEventListeners() {
 // =============================================
 async function loadDashboard() {
     try {
+        console.log('Loading dashboard...');
+
         // Always load account + positions + thesis + scanner status (shared data)
         const promises = [
-            loadAccount(),
-            loadPositions(),
-            loadThesis(),
-            loadScannerStatus(),
-            loadOrders()
+            loadAccount().catch(err => console.error('Account load failed:', err)),
+            loadPositions().catch(err => console.error('Positions load failed:', err)),
+            loadThesis().catch(err => console.error('Thesis load failed:', err)),
+            loadScannerStatus().catch(err => console.error('Scanner status load failed:', err)),
+            loadOrders().catch(err => console.error('Orders load failed:', err))
         ];
 
         // Load view-specific data
         switch (activeView) {
             case 'command-center':
-                promises.push(loadScannerResults());
-                promises.push(loadApprovalQueueBadge());
-                promises.push(loadCCConfidence());
-                promises.push(loadPerformanceProjections());
+                promises.push(loadScannerResults().catch(err => console.error('Scanner results failed:', err)));
+                promises.push(loadApprovalQueueBadge().catch(err => console.error('Approval queue badge failed:', err)));
+                promises.push(loadCCConfidence().catch(err => console.error('CC confidence failed:', err)));
+                promises.push(loadPerformanceProjections().catch(err => console.error('Performance projections failed:', err)));
                 break;
             case 'research':
-                promises.push(loadScannerResults());
-                promises.push(loadApprovalQueue());
-                promises.push(loadRejectedPicks());
+                promises.push(loadScannerResults().catch(err => console.error('Scanner results failed:', err)));
+                promises.push(loadApprovalQueue().catch(err => console.error('Approval queue failed:', err)));
+                promises.push(loadRejectedPicks().catch(err => console.error('Rejected picks failed:', err)));
                 break;
             case 'brain':
-                promises.push(loadLearning());
+                promises.push(loadLearning().catch(err => console.error('Learning failed:', err)));
                 break;
         }
 
-        await Promise.all(promises);
+        // Wait for all promises (even if some fail)
+        await Promise.allSettled(promises);
+
+        console.log('Dashboard loaded, accountData:', accountData);
+        console.log('Positions count:', positionsData.length);
 
         // Populate Command Center if active
         if (activeView === 'command-center') {
@@ -325,25 +331,64 @@ function loadCommandCenter() {
 }
 
 function loadCCPortfolioStrip() {
-    if (!accountData.portfolio_value) return;
+    updateCommandCenterPortfolio();
+}
 
-    document.getElementById('ccPortfolioValue').textContent = formatCurrency(accountData.portfolio_value);
-    document.getElementById('ccBuyingPower').textContent = formatCurrency(accountData.buying_power);
-    document.getElementById('ccCash').textContent = formatCurrency(accountData.cash);
-    document.getElementById('ccPositionCount').textContent = positionsData.length;
+function updateCommandCenterPortfolio() {
+    // Check if accountData is loaded and has required properties
+    if (!accountData || typeof accountData.portfolio_value === 'undefined') {
+        console.log('Account data not yet loaded for Command Center');
+        return;
+    }
 
+    console.log('Updating Command Center with account data:', accountData);
+
+    // Update portfolio value
+    const ccPortfolioValue = document.getElementById('ccPortfolioValue');
+    if (ccPortfolioValue) {
+        ccPortfolioValue.textContent = formatCurrency(accountData.portfolio_value || 0);
+    }
+
+    // Update buying power
+    const ccBuyingPower = document.getElementById('ccBuyingPower');
+    if (ccBuyingPower) {
+        ccBuyingPower.textContent = formatCurrency(accountData.buying_power || 0);
+    }
+
+    // Update cash
+    const ccCash = document.getElementById('ccCash');
+    if (ccCash) {
+        ccCash.textContent = formatCurrency(accountData.cash || 0);
+    }
+
+    // Update position count
+    const ccPositionCount = document.getElementById('ccPositionCount');
+    if (ccPositionCount) {
+        ccPositionCount.textContent = positionsData.length;
+    }
+
+    // Calculate and display daily change
     const lastEquity = accountData.last_equity || accountData.portfolio_value;
     const dailyChange = accountData.portfolio_value - lastEquity;
     const dailyChangePercent = lastEquity > 0 ? (dailyChange / lastEquity) * 100 : 0;
 
     const changeEl = document.getElementById('ccPortfolioChange');
-    changeEl.querySelector('.cc-change-amount').textContent = formatCurrency(dailyChange);
-    changeEl.querySelector('.cc-change-percent').textContent = `(${dailyChangePercent >= 0 ? '+' : ''}${dailyChangePercent.toFixed(2)}%)`;
+    if (changeEl) {
+        const changeAmount = changeEl.querySelector('.cc-change-amount');
+        const changePercent = changeEl.querySelector('.cc-change-percent');
 
-    if (dailyChange < 0) {
-        changeEl.classList.add('negative');
-    } else {
-        changeEl.classList.remove('negative');
+        if (changeAmount) {
+            changeAmount.textContent = formatCurrency(dailyChange);
+        }
+        if (changePercent) {
+            changePercent.textContent = `(${dailyChangePercent >= 0 ? '+' : ''}${dailyChangePercent.toFixed(2)}%)`;
+        }
+
+        if (dailyChange < 0) {
+            changeEl.classList.add('negative');
+        } else {
+            changeEl.classList.remove('negative');
+        }
     }
 }
 
@@ -1170,8 +1215,9 @@ async function loadAccount() {
         if (data.error) throw new Error(data.error);
 
         accountData = data;
+        console.log('Account data loaded:', accountData);
 
-        // Portfolio view elements
+        // Update Portfolio view elements
         const portfolioValueEl = document.getElementById('portfolioValue');
         if (portfolioValueEl) {
             portfolioValueEl.textContent = formatCurrency(data.portfolio_value);
@@ -1195,8 +1241,12 @@ async function loadAccount() {
                 changeElement.classList.remove('negative');
             }
         }
+
+        // Update Command Center elements directly
+        updateCommandCenterPortfolio();
     } catch (error) {
         console.error('Error loading account:', error);
+        showToast('Failed to load account data', 'error');
     }
 }
 
@@ -1207,16 +1257,24 @@ async function loadPositions() {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         positionsData = await response.json();
+        console.log('Positions loaded:', positionsData.length, 'positions');
 
+        // Update position count in Portfolio view
         const countEl = document.getElementById('positionCount');
         if (countEl) countEl.textContent = positionsData.length;
 
+        // Update position count in Command Center
+        const ccPositionCount = document.getElementById('ccPositionCount');
+        if (ccPositionCount) ccPositionCount.textContent = positionsData.length;
+
+        // Render positions table if in portfolio view
         if (activeView === 'portfolio') {
             renderPositions();
             updatePortfolioChart(positionsData);
         }
     } catch (error) {
         console.error('Error loading positions:', error);
+        showToast('Failed to load positions', 'error');
     }
 }
 
