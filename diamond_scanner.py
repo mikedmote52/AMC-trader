@@ -246,6 +246,12 @@ def full_analysis(symbol, price, volume, prev_close, sector_data):
 
         # 2. Float (50 pts - CRITICAL)
         ticker_details = client.get_ticker_details(symbol)
+        
+        # NEW: Market cap filter - skip large caps (>$5B)
+        market_cap = getattr(ticker_details, 'market_cap', 0) or 0
+        if market_cap > 5_000_000_000:  # $5 billion max
+            return 0, None  # Skip large caps - they don't squeeze +300%
+        
         float_shares = ticker_details.share_class_shares_outstanding or 0
 
         if float_shares == 0:
