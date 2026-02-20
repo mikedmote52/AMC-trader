@@ -41,6 +41,7 @@ EXCLUDED_ETFS = {
     'SH', 'SDS', 'SPXU', 'SQQQ', 'PSQ', 'RWM', 'TWM', 'QID', 'SARK',
     'SPDN', 'SPXS', 'SPXL', 'TZA', 'FAZ', 'ERY', 'DUST', 'NUGT', 'JDST', 'JUNG', 'YANG', 'YINN',
     'LABD', 'LABU', 'CURE', 'DRN', 'DPST', 'FAS', 'FAZ', 'MIDU', 'MIDZ', 'RETL', 'SOXL', 'SOXS',
+    'DRIP', 'GUSH', 'USOI', 'AMLP', 'MLPA', 'IEZ', 'OIH', 'XES', 'XOP', 'PSCE',
     # Sector ETFs
     'XLF', 'XLK', 'XLE', 'XLI', 'XLP', 'XLU', 'XLV', 'XLY', 'XLB', 'XLRE', 'XRT',
     # Bond/Treasury ETFs
@@ -55,6 +56,8 @@ EXCLUDED_ETFS = {
     'SDY', 'NOBL', 'DGRO', 'HDV', 'SPHD', 'QYLD', 'XYLD', 'JEPI', 'JEPQ',
     # Leveraged ETFs
     'TQQQ', 'UPRO', 'UDOW', 'URTY', 'SRTY', 'SDOW', 'SPXL', 'SPXS',
+    # Income/Option Strategy ETFs
+    'QQQI', 'YMAX', 'OARK', 'NVDY', 'TSLY', 'CONY', 'MSFO', 'AMDY', 'GOOY', 'XOMO', 'JPMO',
     # Other common ETFs
     'ARKK', 'ARKG', 'ARKF', 'ARKW', 'ARKQ', 'ARKX',
     'IWF', 'IWD', 'IWB', 'IWM', 'IWN', 'IWO', 'IWP', 'IWS', 'IWR', 'IJR', 'IJJ', 'IJK',
