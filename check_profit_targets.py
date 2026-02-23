@@ -9,8 +9,16 @@ import sys
 import time
 import requests
 
-# Load Alpaca credentials
+# Load Alpaca credentials - absolute path for cron compatibility
 ALPACA_CREDS_PATH = os.path.expanduser('~/.openclaw/secrets/alpaca.json')
+if not os.path.exists(ALPACA_CREDS_PATH):
+    ALPACA_CREDS_PATH = '/Users/mikeclawd/.openclaw/secrets/alpaca.json'
+
+if not os.path.exists(ALPACA_CREDS_PATH):
+    print(f"❌ ERROR: Alpaca credentials not found at {ALPACA_CREDS_PATH}")
+    print("   Ensure ~/.openclaw/secrets/alpaca.json exists")
+    sys.exit(1)
+
 with open(ALPACA_CREDS_PATH, 'r') as f:
     alpaca_creds = json.load(f)
 

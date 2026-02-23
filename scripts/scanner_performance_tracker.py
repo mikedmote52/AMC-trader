@@ -35,6 +35,7 @@ ALPACA_HEADERS = {
     'APCA-API-SECRET-KEY': creds['apiSecret']
 }
 BASE_URL = 'https://paper-api.alpaca.markets/v2'
+DATA_URL = 'https://data.alpaca.markets/v2'
 
 # CSV structure
 SCANNER_PERFORMANCE_FILE = WORKSPACE / 'data/scanner_performance.csv'
@@ -45,8 +46,82 @@ SCANNER_PERFORMANCE_HEADERS = [
     'float_shares', 'change_pct', 'volume', 'catalyst_text',
     'entered', 'entry_date', 'entry_price', 'entry_thesis',
     'exit_date', 'exit_price', 'hold_days', 'return_pct', 'return_dollars',
+    'spy_return', 'alpha', 'sector_return',  # NEW: Market-adjusted returns
     'outcome', 'notes'
 ]
+
+
+def get_spy_return(start_date, end_date):
+    """
+    Get SPY return for a date range using Alpaca Data API
+
+    Args:
+        start_date: Start date string (YYYY-MM-DD)
+        end_date: End date string (YYYY-MM-DD)
+
+    Returns:
+        Float: SPY return percentage, or None if data unavailable
+    """
+    try:
+        # Convert to datetime objects for date math
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+
+        # Need to get the close from day before start_date (or start_date itself)
+        # and the close from end_date
+        url = f"{DATA_URL}/stocks/bars"
+        params = {
+            'symbols': 'SPY',
+            'timeframe': '1Day',
+            'start': (start_dt - timedelta(days=7)).strftime('%Y-%m-%d'),  # Extra days for safety
+            'end': end_dt.strftime('%Y-%m-%d'),
+            'limit': 1000,
+            'adjustment': 'all'
+        }
+
+        response = requests.get(url, headers=ALPACA_HEADERS, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        if 'bars' not in data or 'SPY' not in data['bars']:
+            print(f"⚠️  No SPY data available for {start_date} to {end_date}")
+            return None
+
+        bars = data['bars']['SPY']
+
+        if len(bars) < 2:
+            print(f"⚠️  Insufficient SPY data for period {start_date} to {end_date}")
+            return None
+
+        # Find the bar closest to (but not after) start date
+        start_bar = None
+        for bar in bars:
+            bar_date = bar['t'][:10]  # Extract YYYY-MM-DD from timestamp
+            if bar_date <= start_date:
+                start_bar = bar
+            else:
+                break
+
+        # Find the bar for end date
+        end_bar = None
+        for bar in reversed(bars):
+            bar_date = bar['t'][:10]
+            if bar_date <= end_date:
+                end_bar = bar
+                break
+
+        if not start_bar or not end_bar:
+            print(f"⚠️  Could not find SPY data for date range")
+            return None
+
+        # Calculate return using close prices
+        spy_return = ((end_bar['c'] - start_bar['c']) / start_bar['c']) * 100
+
+        return spy_return
+
+    except Exception as e:
+        print(f"⚠️  Error fetching SPY data: {e}")
+        return None
 
 
 def log_scanner_picks(scan_results):
@@ -94,11 +169,13 @@ def log_scanner_picks(scan_results):
                 'entry_price': '',
                 'entry_thesis': '',
                 'exit_date': '',
-                'exit_date': '',
                 'exit_price': '',
                 'hold_days': '',
                 'return_pct': '',
                 'return_dollars': '',
+                'spy_return': '',
+                'alpha': '',
+                'sector_return': '',
                 'outcome': '',
                 'notes': ''
             }
@@ -186,6 +263,23 @@ def update_trade_outcome(symbol, exit_price, exit_date=None, notes=''):
             # Note: return_dollars would need quantity, which we don't have here
             # Could fetch from portfolio tracking CSV
 
+            # Calculate market-adjusted returns (alpha)
+            spy_return = get_spy_return(row['entry_date'], exit_date)
+            alpha = None
+
+            if spy_return is not None:
+                alpha = return_pct - spy_return
+                row['spy_return'] = f"{spy_return:.2f}"
+                row['alpha'] = f"{alpha:.2f}"
+                print(f"   📊 Alpha calculation: Stock {return_pct:+.1f}% - SPY {spy_return:+.1f}% = {alpha:+.1f}%")
+            else:
+                row['spy_return'] = ''
+                row['alpha'] = ''
+                print(f"   ⚠️  Could not calculate alpha (SPY data unavailable)")
+
+            # Sector return placeholder (requires sector mapping - future enhancement)
+            row['sector_return'] = ''
+
             row['exit_date'] = exit_date
             row['exit_price'] = exit_price
             row['hold_days'] = hold_days
@@ -237,6 +331,17 @@ def analyze_performance(days=30):
     avg_loss = sum(float(t['return_pct']) for t in losses) / len(losses) if losses else 0
     avg_return = sum(float(t['return_pct']) for t in completed_trades) / total_trades if total_trades > 0 else 0
 
+    # Alpha statistics (market-adjusted returns)
+    trades_with_alpha = [t for t in completed_trades if t.get('alpha') and t['alpha'] != '']
+    avg_alpha = None
+    avg_spy_return = None
+    positive_alpha_count = 0
+
+    if trades_with_alpha:
+        avg_alpha = sum(float(t['alpha']) for t in trades_with_alpha) / len(trades_with_alpha)
+        avg_spy_return = sum(float(t['spy_return']) for t in trades_with_alpha) / len(trades_with_alpha)
+        positive_alpha_count = len([t for t in trades_with_alpha if float(t['alpha']) > 0])
+
     # Score range analysis
     score_ranges = {
         '150+': [t for t in completed_trades if float(t['scanner_score']) >= 150],
@@ -265,6 +370,11 @@ def analyze_performance(days=30):
         'avg_return': avg_return,
         'avg_win': avg_win,
         'avg_loss': avg_loss,
+        'avg_alpha': avg_alpha,
+        'avg_spy_return': avg_spy_return,
+        'trades_with_alpha': len(trades_with_alpha) if trades_with_alpha else 0,
+        'positive_alpha_count': positive_alpha_count,
+        'positive_alpha_rate': (positive_alpha_count / len(trades_with_alpha) * 100) if trades_with_alpha else None,
         'score_performance': score_performance,
         'best_trade': max(completed_trades, key=lambda t: float(t['return_pct'])),
         'worst_trade': min(completed_trades, key=lambda t: float(t['return_pct']))
@@ -381,6 +491,19 @@ def print_performance_report(days=30):
     print(f"   Win Rate: {analysis['win_rate']:.1f}%")
     print(f"   Avg Return: {analysis['avg_return']:+.1f}%")
     print(f"   Avg Win: {analysis['avg_win']:+.1f}% | Avg Loss: {analysis['avg_loss']:+.1f}%")
+
+    # Market-adjusted performance (alpha)
+    if analysis['avg_alpha'] is not None:
+        print(f"\n🎯 Market-Adjusted Performance (Alpha):")
+        print(f"   Trades with Alpha Data: {analysis['trades_with_alpha']}")
+        print(f"   Avg Alpha: {analysis['avg_alpha']:+.1f}% (outperformance vs SPY)")
+        print(f"   Avg SPY Return: {analysis['avg_spy_return']:+.1f}%")
+        print(f"   Positive Alpha Rate: {analysis['positive_alpha_rate']:.1f}% ({analysis['positive_alpha_count']}/{analysis['trades_with_alpha']} trades)")
+
+        if analysis['avg_alpha'] > 0:
+            print(f"   ✅ Strategy is generating alpha (beating the market)")
+        else:
+            print(f"   ⚠️  Strategy is underperforming the market")
 
     print(f"\n🎯 Performance by Scanner Score:")
     for range_name, perf in analysis['score_performance'].items():

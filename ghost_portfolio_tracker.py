@@ -10,9 +10,22 @@ import requests
 from datetime import datetime
 import os
 
-# Load Alpaca credentials
-with open('/Users/mikeclawd/.openclaw/secrets/alpaca.json', 'r') as f:
-    creds = json.load(f)
+# Load Alpaca credentials - robust path handling for cron
+creds_paths = [
+    os.path.expanduser('~/.openclaw/secrets/alpaca.json'),
+    '/Users/mikeclawd/.openclaw/secrets/alpaca.json'
+]
+
+creds = None
+for path in creds_paths:
+    if os.path.exists(path):
+        with open(path, 'r') as f:
+            creds = json.load(f)
+        break
+
+if not creds:
+    print("❌ ERROR: Alpaca credentials not found")
+    exit(1)
 
 base_url = creds['baseUrl'].rstrip('/v2').rstrip('/')
 headers = {

@@ -5,12 +5,23 @@ Market Open Check - Portfolio Status & Scanner
 
 import requests
 import json
+import os
 from datetime import datetime, timedelta
 
-# Alpaca credentials
-ALPACA_CREDS_PATH = '/Users/mikeclawd/.openclaw/secrets/alpaca.json'
-with open(ALPACA_CREDS_PATH, 'r') as f:
-    creds = json.load(f)
+# Alpaca credentials - use absolute path for cron compatibility
+ALPACA_CREDS_PATH = os.path.expanduser('~/.openclaw/secrets/alpaca.json')
+if not os.path.exists(ALPACA_CREDS_PATH):
+    # Fallback for isolated cron sessions
+    ALPACA_CREDS_PATH = '/Users/mikeclawd/.openclaw/secrets/alpaca.json'
+
+try:
+    with open(ALPACA_CREDS_PATH, 'r') as f:
+        creds = json.load(f)
+except FileNotFoundError:
+    print(f"❌ ERROR: Alpaca credentials not found at {ALPACA_CREDS_PATH}")
+    print("   Ensure ~/.openclaw/secrets/alpaca.json exists")
+    import sys
+    sys.exit(1)
 
 ALPACA_HEADERS = {
     'APCA-API-KEY-ID': creds['apiKey'],
@@ -166,7 +177,7 @@ if filled_orders:
     for order in filled_orders:
         symbol = order.get('symbol', 'N/A')
         side = order.get('side', 'unknown')
-        qty = order.get('filled_qty', 0)
+        qty = float(order.get('filled_qty', 0))
         price = float(order.get('filled_avg_price', 0))
         value = qty * price
         

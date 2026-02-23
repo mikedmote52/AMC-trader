@@ -1,0 +1,149 @@
+{
+  "timestamp": "2026-02-19 02:17 PM PT",
+  "portfolio_value": 101629.22,
+  "cash": 99500.95,
+  "buying_power": 402861.78,
+  "position_count": 17,
+  "unrealized_pl": 134.697895,
+  "positions": [
+    {
+      "symbol": "CFLT",
+      "qty": 3,
+      "avg_entry": 30.45,
+      "current": 30.67,
+      "pl_pct": 0.722,
+      "value": 92.01
+    },
+    {
+      "symbol": "IPCX",
+      "qty": 9,
+      "avg_entry": 10.15,
+      "current": 10.17,
+      "pl_pct": 0.197,
+      "value": 91.53
+    },
+    {
+      "symbol": "ITOS",
+      "qty": 9,
+      "avg_entry": 10.151111,
+      "current": 10.15,
+      "pl_pct": -0.011000000000000001,
+      "value": 91.35
+    },
+    {
+      "symbol": "KNOW",
+      "qty": 11,
+      "avg_entry": 11.427273,
+      "current": 12.496,
+      "pl_pct": 9.352,
+      "value": 137.456
+    },
+    {
+      "symbol": "KOPN",
+      "qty": 43,
+      "avg_entry": 2.36,
+      "current": 2.32,
+      "pl_pct": -1.695,
+      "value": 99.76
+    },
+    {
+      "symbol": "KRE",
+      "qty": 1,
+      "avg_entry": 70.81,
+      "current": 71.04,
+      "pl_pct": 0.325,
+      "value": 71.04
+    },
+    {
+      "symbol": "KSS",
+      "qty": 7,
+      "avg_entry": 15.411429,
+      "current": 19.26,
+      "pl_pct": 24.972,
+      "value": 134.82
+    },
+    {
+      "symbol": "LGN",
+      "qty": 3,
+      "avg_entry": 49.49,
+      "current": 47.28,
+      "pl_pct": -4.466,
+      "value": 141.84
+    },
+    {
+      "symbol": "MMCA",
+      "qty": 4,
+      "avg_entry": 21.75,
+      "current": 22.18,
+      "pl_pct": 1.9769999999999999,
+      "value": 88.72
+    },
+    {
+      "symbol": "PAAA",
+      "qty": 3,
+      "avg_entry": 51.4,
+      "current": 51.44,
+      "pl_pct": 0.078,
+      "value": 154.32
+    },
+    {
+      "symbol": "PAII.U",
+      "qty": 9,
+      "avg_entry": 10.22,
+      "current": 10.26,
+      "pl_pct": 0.391,
+      "value": 92.34
+    },
+    {
+      "symbol": "RGTI",
+      "qty": 3,
+      "avg_entry": 18.03,
+      "current": 16.5104,
+      "pl_pct": -8.427999999999999,
+      "value": 49.5312
+    },
+    {
+      "symbol": "RIG",
+      "qty": 55,
+      "avg_entry": 5.35,
+      "current": 6.3006,
+      "pl_pct": 17.768,
+      "value": 346.533
+    },
+    {
+      "symbol": "RIVN",
+      "qty": 13,
+      "avg_entry": 14.4,
+      "current": 15.48,
+      "pl_pct": 7.5,
+      "value": 201.24
+    },
+    {
+      "symbol": "SERV",
+      "qty": 10,
+      "avg_entry": 9.72,
+      "current": 9.77,
+      "pl_pct": 0.514,
+      "value": 97.7
+    },
+    {
+      "symbol": "SPHR",
+      "qty": 2,
+      "avg_entry": 95.48,
+      "current": 115.29,
+      "pl_pct": 20.748,
+      "value": 230.58
+    },
+    {
+      "symbol": "UUUU",
+      "qty": 0,
+      "avg_entry": 24.17,
+      "current": 21.86,
+      "pl_pct": -9.557,
+      "value": 7.4977
+    }
+  ],
+  "stops_triggered": [],
+  "near_stops": [],
+  "profit_targets": []
+}

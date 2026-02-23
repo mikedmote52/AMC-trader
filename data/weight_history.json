@@ -1,0 +1,129 @@
+{
+  "metadata": {
+    "created": "2026-02-21T00:00:00Z",
+    "purpose": "Track all scanner weight changes for rollback capability and learning analysis",
+    "format_version": "1.0"
+  },
+  "weight_changes": [
+    {
+      "version": "v3.2_explosive",
+      "date": "2026-02-21",
+      "applied_by": "claude_code_agent",
+      "method": "comprehensive_upgrade",
+      "changes": {
+        "max_score": {
+          "old": 230,
+          "new": 305,
+          "note": "Added short interest (+30), explosive volume (+30), gap detection (+20), market cap tiers (+15), ultra-low float tier (+10)"
+        },
+        "float_scoring": {
+          "ultra_tiny_5m": {
+            "old": null,
+            "new": 60,
+            "note": "NEW tier for <5M shares - jackpot squeeze potential"
+          },
+          "ultra_low_10m": {
+            "old": 50,
+            "new": 50,
+            "note": "Maintained - still excellent"
+          },
+          "very_low_20m": {
+            "old": 40,
+            "new": 35,
+            "note": "Reduced to emphasize ultra-low tiers"
+          },
+          "low_30m": {
+            "old": 30,
+            "new": 20,
+            "note": "Reduced to emphasize ultra-low tiers"
+          },
+          "moderate_50m": {
+            "old": 20,
+            "new": 10,
+            "note": "Reduced to emphasize ultra-low tiers"
+          },
+          "large_over_50m": {
+            "old": 5,
+            "new": 0,
+            "note": "No points for large floats"
+          }
+        },
+        "short_interest_scoring": {
+          "extreme_10_dtc": 30,
+          "high_7_dtc": 25,
+          "moderate_5_dtc": 20,
+          "some_3_dtc": 15,
+          "low_under_3_dtc": 5,
+          "bonus_low_float_high_short": 15,
+          "note": "NEW - Professional hedge fund short squeeze detection"
+        },
+        "explosive_volume_scoring": {
+          "mega_100x": 30,
+          "explosive_50x": 25,
+          "major_20x": 20,
+          "strong_10x": 15,
+          "spike_5x": 10,
+          "moderate_2x": 5,
+          "note": "NEW - Multi-tier detection for both VIGL stealth and CDIO explosions"
+        },
+        "gap_detection_scoring": {
+          "huge_gap_15pct": 20,
+          "big_gap_10pct": 15,
+          "gap_up_5pct": 10,
+          "gap_down_10pct": 10,
+          "dip_5pct": 5,
+          "note": "NEW - Premarket momentum and recovery signals"
+        },
+        "market_cap_scoring": {
+          "ideal_500m_1b": 15,
+          "micro_100m_500m": 10,
+          "nano_50m_100m": 5,
+          "hard_cutoff": "1B",
+          "note": "NEW - Phase 1 early filtering + Phase 3 tiered scoring. $1B max aligns with hedge fund $500M-$1.5B sweet spot"
+        },
+        "etf_filtering": {
+          "hardcoded_list": 235,
+          "api_type_check": "CS only",
+          "note": "Enhanced - Added 20+ ETFs (FXI, IEFA, KWEB, MSTU, etc.) + API verification"
+        }
+      },
+      "rationale": "V3.2 Explosive Edition designed to find stocks like ChatGPT's winners: VIGL +324%, CRWV +171%, AEVA +162%, CRDO +108%. Integrates professional hedge fund strategies: short squeeze detection, explosive volume analysis, micro-cap targeting.",
+      "validation": {
+        "scanner_validation": "passed",
+        "data_integrity": "passed",
+        "hedge_fund_alignment": "A/A- grade",
+        "production_testing": "passed",
+        "bugs_fixed": 4
+      },
+      "expected_performance": {
+        "target_trades": "100-300% explosive moves",
+        "ideal_candidates": "Micro-caps <$1B, ultra-low float <10M, high short interest >25%, volume spikes 10-100x",
+        "win_rate_target": "60-70%",
+        "avg_return_target": "20-30%",
+        "risk": "Higher volatility due to micro-cap focus, managed with 15% stops"
+      },
+      "rollback_to": "v3.1",
+      "previous_weights_backup": {
+        "max_score": 230,
+        "float_ultra_low": 50,
+        "float_very_low": 40,
+        "market_cap_max": "5B",
+        "note": "V3.1 weights - revert here if V3.2 underperforms"
+      }
+    }
+  ],
+  "performance_tracking": {
+    "note": "Add entries here as scanner performance data accumulates",
+    "format": {
+      "date": "YYYY-MM-DD",
+      "days_since_change": 0,
+      "trades_executed": 0,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "avg_return": 0.0,
+      "sharpe_ratio": 0.0,
+      "vs_baseline": "comparison to v3.1 performance"
+    }
+  }
+}

@@ -9,9 +9,23 @@ import requests
 from datetime import datetime
 
 def check_stop_losses():
-    # Load credentials
-    with open('/Users/mikeclawd/.openclaw/secrets/alpaca.json', 'r') as f:
-        creds = json.load(f)
+    import os
+    # Load credentials - try multiple paths for cron compatibility
+    creds_paths = [
+        os.path.expanduser('~/.openclaw/secrets/alpaca.json'),
+        '/Users/mikeclawd/.openclaw/secrets/alpaca.json'
+    ]
+    
+    creds = None
+    for path in creds_paths:
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                creds = json.load(f)
+            break
+    
+    if not creds:
+        print(f"❌ ERROR: Alpaca credentials not found")
+        return 0
     
     base_url = creds['baseUrl'].rstrip('/v2').rstrip('/')
     headers = {
