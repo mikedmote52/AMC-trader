@@ -26,6 +26,16 @@ let ghostPortfolioData = [];
 // INITIALIZATION
 // =============================================
 document.addEventListener('DOMContentLoaded', async () => {
+    // Chart.js dark theme defaults
+    if (typeof Chart !== 'undefined') {
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.borderColor = 'rgba(71, 85, 105, 0.3)';
+        Chart.defaults.font.family = "'DM Sans', sans-serif";
+        Chart.defaults.plugins.tooltip.backgroundColor = '#1a2230';
+        Chart.defaults.plugins.tooltip.titleColor = '#f1f5f9';
+        Chart.defaults.plugins.tooltip.bodyColor = '#94a3b8';
+        Chart.defaults.plugins.tooltip.borderColor = 'rgba(71, 85, 105, 0.5)';
+    }
     setupEventListeners();
     await loadDashboard();
     startIntelligentRefresh();
@@ -539,8 +549,8 @@ function renderConfidenceRing(winRate) {
             datasets: [{
                 data: [rate, remaining],
                 backgroundColor: [
-                    rate >= 60 ? '#00c805' : rate >= 40 ? '#f59e0b' : '#ff5000',
-                    '#e6e9eb'
+                    rate >= 60 ? '#10b981' : rate >= 40 ? '#f59e0b' : '#ef4444',
+                    'rgba(30, 41, 59, 0.8)'
                 ],
                 borderWidth: 0
             }]
@@ -2185,8 +2195,8 @@ function updatePortfolioChart(positions) {
 
     const labels = positions.map(p => p.symbol);
     const values = positions.map(p => parseFloat(p.market_value));
-    const colors = ['#00c805', '#00a804', '#008803', '#006802', '#004801',
-        '#10c815', '#20c825', '#30c835', '#40c845', '#50c855'];
+    const colors = ['#10b981', '#059669', '#047857', '#065f46', '#064e3b',
+        '#34d399', '#6ee7b7', '#a7f3d0', '#5eead4', '#2dd4bf'];
 
     portfolioChart = new Chart(ctx, {
         type: 'doughnut',
@@ -2200,9 +2210,13 @@ function updatePortfolioChart(positions) {
             plugins: {
                 legend: {
                     position: 'right',
-                    labels: { padding: 12, usePointStyle: true, font: { family: 'Inter', size: 12 } }
+                    labels: { padding: 12, usePointStyle: true, font: { family: 'DM Sans', size: 12 }, color: '#94a3b8' }
                 },
                 tooltip: {
+                    backgroundColor: '#1a2230',
+                    titleColor: '#f1f5f9',
+                    bodyColor: '#94a3b8',
+                    borderColor: 'rgba(71, 85, 105, 0.5)',
                     callbacks: {
                         label: function(context) {
                             const label = context.label || '';
@@ -2245,8 +2259,8 @@ async function updateStockChart(symbol, historicalData) {
                 datasets: [{
                     label: symbol,
                     data: prices,
-                    borderColor: '#00c805',
-                    backgroundColor: 'rgba(0, 200, 5, 0.1)',
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
                     borderWidth: 2,
                     fill: true,
                     tension: 0.4,
@@ -2261,16 +2275,21 @@ async function updateStockChart(symbol, historicalData) {
                 plugins: {
                     legend: { display: false },
                     tooltip: {
+                        backgroundColor: '#1a2230',
+                        titleColor: '#f1f5f9',
+                        bodyColor: '#94a3b8',
+                        borderColor: 'rgba(71, 85, 105, 0.5)',
                         callbacks: { label: function(context) { return `$${context.parsed.y.toFixed(2)}`; } }
                     }
                 },
                 scales: {
-                    x: { grid: { display: false }, ticks: { maxTicksLimit: 8, font: { family: 'Inter', size: 11 } } },
+                    x: { grid: { display: false, color: 'rgba(71, 85, 105, 0.3)' }, ticks: { maxTicksLimit: 8, font: { family: 'DM Sans', size: 11 }, color: '#64748b' } },
                     y: {
-                        grid: { color: '#e6e9eb' },
+                        grid: { color: 'rgba(71, 85, 105, 0.3)' },
                         ticks: {
                             callback: function(value) { return '$' + value.toFixed(0); },
-                            font: { family: 'Inter', size: 11 }
+                            font: { family: 'DM Sans', size: 11 },
+                            color: '#64748b'
                         }
                     }
                 }
