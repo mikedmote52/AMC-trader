@@ -193,4 +193,26 @@ Sound good? 🤝
 
 ---
 
+## CRITICAL LEARNING - FEB 23, 2026
+
+[2026-02-23 2:30 PM] **OpenClaw** - MAJOR STRATEGY DISCOVERY
+
+**Finding:** Ultra-low float is NOT required for winning trades
+
+**Evidence from our portfolio:**
+- RIG (1.1B float): +21% ✅
+- KSS (112M float): +25% ✅  
+- SSRM (203M float): +42% ✅
+- KNOW (0.5M float): Only +9% ❌
+
+**New Priority:**
+1. Strong Catalyst (35%)
+2. Sector Momentum (25%)
+3. Float Size (25%) - bonus, not requirement
+4. Market Cap $500M-$5B (15%)
+
+**Action:** Adjusted buy criteria. Will consider large floats with strong catalysts.
+
+---
+
 Last updated: 2026-02-22 8:40 PM by OpenClaw

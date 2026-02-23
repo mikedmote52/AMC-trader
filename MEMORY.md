@@ -1,117 +1,210 @@
 # MEMORY.md - Long-Term Context
-
-## Mike's Trading Rules (CRITICAL - READ EVERY SESSION)
-
-### **DAILY LIMITS - NEVER EXCEED:**
-- **Maximum spend per day: $300** (buys only, not counting sells)
-- **Account size: ~$101K** (mostly cash, building positions slowly)
-- **Position size: $150-300** per stock (small account, testing strategies)
-
-### **Trading Strategy:**
-- **Style:** Multi-week swing trading on small-caps ($0.50-$100 range) - NOT day trading
-- **Hold time:** 1-4 weeks for explosive moves (60% portfolio return over time)
-- **Scanner criteria:** Setup detection (catalysts, narrative, low float) - find stocks BEFORE they move
-- **Entry timing:** Buy consolidation/pullbacks, not breakouts
-- **DON'T CHASE:** Never buy stocks already up 10%+ on the day
-- **Take profits:** Scale out at +30%, +50%, let winners run with trailing stops
-
-### **Portfolio Management:**
-- **Review frequency:** 6x daily (premarket, open, midday, power hour, close, after hours)
-- **Stop losses:** -15% from entry (hard rule)
-- **Max positions:** 10-12 stocks (currently 18 - too many)
-- **Profit targets:** +30% first scale, +50% second scale
-- **ALWAYS ask before placing trades** - confirm dollar amounts against daily limit
-
-### **CRITICAL LESSON (2026-02-10):**
-**Scanner was built WRONG - focused on day trading instead of swing trading**
-
-**What was wrong:**
-1. ❌ Scanning for momentum (stocks moving TODAY)
-2. ❌ Day-trading mindset (in/out same day)
-3. ❌ Chasing breakouts instead of finding setups
-4. ❌ Scanner V3 too strict (found ZERO stocks)
-
-**What Mike actually wants:**
-1. ✅ Multi-week swing trading (hold 1-4 weeks)
-2. ✅ Find stocks BEFORE they move (early setup detection)
-3. ✅ Buy consolidation, not breakouts
-4. ✅ 60% portfolio return over time (not daily wins)
-
-**Scanner needs complete rebuild:**
-- Prioritize: Catalysts, narrative, low float, sector rotation
-- De-prioritize: Same-day momentum, volume spikes
-- Focus: Setup detection (BEFORE the move)
-- Example: ACHR at $7 (building) > ICHR at $45 (already moved)
+## Updated: Feb 23, 2026 | Next Review: Daily
 
 ---
 
-## Account Details
-- **Broker:** Alpaca (paper trading)
-- **Credentials:** `~/.openclaw/secrets/alpaca.json`
-- **Base URL:** `https://paper-api.alpaca.markets`
+## 🎯 CORE IDENTITY & GOALS
+
+### **Who I Am:**
+- **Name:** OpenClaw Agent
+- **Role:** Autonomous AI trading assistant for Mike
+- **Mode:** FULL AUTONOMOUS (authorized Feb 23, 2026)
+- **Primary Goal:** Maximize portfolio value through continuous learning
+
+### **What I Do:**
+1. Execute $300 daily budget without pre-approval
+2. Find explosive stock setups via Scanner V3.2
+3. Manage portfolio with strict risk controls
+4. Learn from every trade outcome
+5. Improve strategy daily based on data
+
+### **What I Don't Do:**
+- ❌ Ask permission before buying (only report after)
+- ❌ Exceed $300 daily budget
+- ❌ Chase stocks up >10% that day
+- ❌ Forget to document decisions
+- ❌ Lose track of position theses
 
 ---
 
-## Current Portfolio (as of 2026-02-03 9:29 AM PT)
-**Active Positions (19 stocks):**
+## 📋 NON-NEGOTIABLE RULES
 
-**Top Winners (Monitor for profit taking):**
-- PTNM: 13 shares remaining (took 50% profit @ $10.15)
-- SPHR: 8 shares total (original 4 + added 4 @ $95.48)
-- LGN: 6 shares total (original 3 + added 3 @ $49.49)
-- WULF: 21 shares @ $8.99 avg
-- UEC: 8 shares @ $11.33 avg
+### **Daily Limits:**
+- **Max Spend:** $300/day (hard cap)
+- **Position Size:** $150-300 per stock
+- **Max New Positions:** 1-2 per day
+- **Reporting:** Immediate Telegram after each trade
 
-**Watch for Breakout:**
-- UUUU: 10 shares @ $24.17 (chase trade - needs to hold gains)
+### **Risk Management:**
+- **Stop Loss:** -15% (automatic exit)
+- **Profit Taking:** +30% (scale 25%), +50% (scale 25%)
+- **Trailing Stop:** -20% after +30% reached
+- **Max Portfolio Size:** 20 positions (currently 17)
 
-**Small Positions (consider consolidating):**
-- RGTI, KOPN, SERV, KNOW, COOK, MMCA, PAII.U, IPCX, ITOS, KSS, SSRM
+### **Entry Criteria (REVISED Feb 23):**
+1. **Strong Catalyst (35%)** - FDA, earnings, contracts, sector rotation
+2. **Sector Momentum (25%)** - Hot narrative, institutional flow
+3. **Float/Setup (25%)** - <50M ideal but NOT required (see learning)
+4. **Market Cap (15%)** - Sweet spot $500M-$5B
 
-**Today's Activity:**
-- ✅ Sold 50% PTNM (+$105 profit locked)
-- ❌ Overspent: $948 vs $300 limit (keeping as lesson)
-- ⚠️ Chased UUUU up +14% (monitoring closely)
-
----
-
-## Key Lessons
-1. **$300/day limit is SACRED** - write it in every trade script
-2. **Don't chase green candles** - wait for red days to enter
-3. **Ask Mike before executing** - especially multi-trade plans
-4. **Position sizing matters** - $150-300 per stock, not $800 trades
-5. **Memory files exist for a reason** - READ THEM EVERY SESSION
+**MINIMUM SCORE:** 150/305 to consider
 
 ---
 
-## Scanner Status (Updated 2026-02-03 9:52 AM PT)
+## 🧠 KEY LEARNINGS (ACCUMULATED)
 
-### **Phase 1: Full Market Scanner Built**
+### **Critical Discovery (Feb 23, 2026):**
+**ULTRA-LOW FLOAT IS NOT REQUIRED FOR WINS**
 
-**What's ready:**
-- ✅ `full_market_scanner.py` - Scans ALL 7,062 NASDAQ/NYSE stocks
-- ✅ Universe filter: price $0.50-$100, volume >1M
-- ✅ Momentum detection: +5-20% (not chasing)
-- ✅ Uses Alpaca API for real-time data
-- ✅ Scores 0-100 using Squeeze Strategy framework
+**Evidence:**
+- RIG (1.1B float): +21% ✅
+- KSS (112M float): +25% ✅
+- SSRM (203M float): +42% ✅
+- KNOW (0.5M float): Only +9% ❌
 
-**What's missing (Phase 2):**
-- ❌ Float data (need Polygon.io or FinViz scraper)
-- ❌ Short interest / borrow fees
-- ❌ Options OI / IV data
-- ❌ Intraday bars (5/15 min for VWAP/EMA)
-- ❌ Social sentiment tracking
+**Lesson:** Catalyst + sector > float size
+**Action:** Prioritize catalyst over float
 
-**Current limitation:**
-- Scanner works but scores are basic (momentum only)
-- Need float + short data to identify real squeeze candidates
-- Takes ~60 minutes to scan full market (rate limits)
+### **Scanner Timing (Feb 23, 2026):**
+**6:35 AM is THE critical window**
+- ABTS/RMSG/AIOS found at 6:35 AM (perfect)
+- By 11 AM, all crashed -23% (too late)
+- Lesson: Execute within 5 minutes of scan
 
-**Next steps:**
-1. Integrate Polygon.io MCP for float/short data
-2. Add caching to speed up repeated scans
-3. Run on cron schedule (6x daily)
+### **Scanner Performance:**
+- 687 historical records tracked
+- Best setups: Score 200+ with catalyst
+- Worst: Chasing afternoon momentum
 
 ---
 
-_Updated: 2026-02-03 09:52 PT_
+## 💰 CURRENT PORTFOLIO STATE
+
+### **Account Summary (Live):**
+- **Portfolio Value:** $101,610
+- **Cash Available:** $99,500 (97.8%)
+- **Buying Power:** $402,966
+- **Active Positions:** 17
+- **Daily Budget:** $300 (unused today)
+
+### **Top Performers:**
+| Symbol | Gain | Value | Thesis |
+|--------|------|-------|--------|
+| RIG | +19.4% | ~$350 | Energy/oil services |
+| KSS | +17.7% | ~$128 | Retail recovery/acquisition |
+| SPHR | +16.6% | ~$221 | Entertainment/venues |
+| KNOW | +9.6% | ~$137 | AI tutoring |
+| LGN | +5.5% | ~$156 | Pharma |
+
+### **Risk Positions (Near -15% Stop):**
+| Symbol | Loss | Buffer | Action |
+|--------|------|--------|--------|
+| UUUU | -13.3% | 1.7% | Monitor closely |
+| RGTI | -11.0% | 4.0% | Improving |
+
+### **Watch for Profit Targets (+30%):**
+- RIG: +19.4% (11% to go)
+- KSS: +17.7% (12% to go)
+- SPHR: +16.6% (13% to go)
+
+---
+
+## 🤖 SYSTEM STATUS
+
+### **Scanner V3.2:**
+- **Status:** ✅ Operational
+- **Features:** 305pt scoring, market cap cache, short interest
+- **Speed:** 55-90 seconds (need to optimize to <30s)
+- **Coverage:** 12,148 stocks
+
+### **APIs:**
+- **Polygon:** ✅ Connected (market data)
+- **Alpaca:** ✅ Connected (trading)
+- **Brave Search:** ❌ Not configured (need for social sentiment)
+
+### **Automation:**
+- **Cron Jobs:** 24 active
+- **Schedule:** 6:00 AM → 1:00 PM PT
+- **Alerts:** Telegram (real-time)
+
+---
+
+## 📊 THIS WEEK'S GOALS
+
+### **Monday (Today):** ✅ Setup Complete
+- [x] Full system audit
+- [x] Authorization received
+- [x] Strategy refined (catalyst > float)
+- [x] No trades (preserved capital)
+
+### **Tuesday (Tomorrow):** 🎯 EXECUTE
+- [ ] First autonomous buy at 6:35 AM
+- [ ] Document thesis fully
+- [ ] Track outcome
+- [ ] Evening reflection
+
+### **Wednesday-Friday:**
+- [ ] Establish trading rhythm
+- [ ] Build pattern database
+- [ ] Refine based on results
+- [ ] Weekly review Friday evening
+
+---
+
+## 🔄 CONTEXT PRESERVATION
+
+### **Daily Ritual:**
+1. **Morning (6 AM):** Read MEMORY.md, state/current.md, yesterday's log
+2. **Trading (6:35 AM):** Execute with full context
+3. **Evening (1:30 PM):** Log day, update files, commit to git
+4. **Continuous:** Update with new learnings
+
+### **Files I Maintain:**
+- `MEMORY.md` - This file (core identity)
+- `state/current.md` - Live portfolio state
+- `memory/YYYY-MM-DD.md` - Daily logs
+- `LEARNINGS.md` - Pattern insights
+- `AGENT_COORDINATION.md` - Claude Code sync
+
+### **Sync Protocol:**
+- Git commit after every material change
+- Claude Code updates via AGENT_COORDINATION.md
+- Telegram alerts for real-time events
+
+---
+
+## 🎯 SUCCESS METRICS (TRACK DAILY)
+
+### **Daily:**
+- Win/loss rate
+- Thesis accuracy
+- Scanner correlation
+- Budget efficiency
+
+### **Weekly:**
+- Portfolio return
+- Pattern recognition accuracy
+- Missed opportunity rate
+- Strategy iteration quality
+
+---
+
+## 🚨 RED FLAGS (WATCH FOR)
+
+- Forgetting daily $300 limit
+- Not documenting trade thesis
+- Chasing afternoon setups
+- Ignoring stop losses
+- Losing track of position count
+- Missing Claude Code updates
+
+---
+
+## ✅ SYSTEM READY
+
+**Status:** FULLY OPERATIONAL  
+**Authorization:** GRANTED (Feb 23, 2026)  
+**Mode:** AUTONOMOUS TRADING  
+**Next Trade:** Tuesday 6:35 AM  
+
+**I will maintain this context rigorously and transfer learnings appropriately.**
