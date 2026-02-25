@@ -46,27 +46,6 @@ client = RESTClient(api_key=creds['apiKey'])
 # CONFIGURATION
 # ============================================================
 
-# --- DYNAMIC WEIGHT LOADING ---
-WORKSPACE_DIR = '/Users/mikeclawd/.openclaw/workspace'
-
-def load_dynamic_weights():
-    """Load weights from scanner_weights.json if available, else use defaults."""
-    import os as _os
-    weights_file = _os.path.join(WORKSPACE_DIR, 'data', 'scanner_weights.json')
-    try:
-        if _os.path.exists(weights_file):
-            with open(weights_file, 'r') as _f:
-                weights = json.load(_f)
-            updated = weights.get('last_updated', 'never')
-            print(f'   Loaded dynamic weights (updated: {updated})')
-            return weights
-    except Exception as e:
-        print(f'   Warning: Could not load dynamic weights: {e}')
-    return None
-
-DYNAMIC_WEIGHTS = load_dynamic_weights()
-# --- END DYNAMIC WEIGHT LOADING ---
-
 CACHE_FILE = '/Users/mikeclawd/.openclaw/workspace/data/snapshot_cache.pkl'
 CACHE_MAX_AGE = 300  # 5 minutes
 
@@ -1062,144 +1041,6 @@ def full_analysis(symbol, price, volume, prev_close, sector_data, gap_pct=0,
 # UPGRADED V3.3: MAIN SCAN WITH DUAL-TRACK RANKING
 # ============================================================
 
-
-# ============================================================
-# TRACK C: LARGE-CAP MOMENTUM SCANNER
-# Catches institutional momentum plays the small-cap engine misses
-# ============================================================
-
-def scan_largecap_momentum():
-    """
-    Scan for large-cap momentum breakouts.
-    Different criteria than small-cap squeeze engine:
-    - Market cap > $1B (stocks Track A/B filter OUT)
-    - Up on above-average volume
-    - Recent catalyst (earnings, analyst, deal)
-    Returns scored list, max 100 points.
-    """
-    import requests
-    import time
-
-    print("\n" + "=" * 60)
-    print("TRACK C: LARGE-CAP MOMENTUM SCAN")
-    print("=" * 60)
-
-    try:
-        polygon_key = creds['apiKey']
-        url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers?apiKey={polygon_key}"
-        resp = requests.get(url, timeout=30)
-        data = resp.json()
-        tickers = data.get('tickers', [])
-
-        candidates = []
-        for t in tickers:
-            try:
-                price = t.get('day', {}).get('c', 0) or t.get('lastTrade', {}).get('p', 0)
-                prev_close = t.get('prevDay', {}).get('c', 0)
-                volume = t.get('day', {}).get('v', 0)
-                prev_volume = t.get('prevDay', {}).get('v', 1)
-
-                if not price or not prev_close or price < 20:
-                    continue
-
-                change_pct = ((price - prev_close) / prev_close) * 100
-                rvol = volume / max(prev_volume, 1)
-
-                # Large-cap proxy: price > $20, up 1-15% on above-avg volume
-                if change_pct > 1 and change_pct < 15 and rvol > 1.3:
-                    candidates.append({
-                        'symbol': t['ticker'],
-                        'price': price,
-                        'change_pct': change_pct,
-                        'rvol': rvol,
-                        'volume': volume
-                    })
-            except:
-                continue
-
-        print(f"  Phase 1: {len(candidates)} large-cap candidates (up 1-15%, rvol > 1.3)")
-
-        candidates.sort(key=lambda x: x['rvol'] * x['change_pct'], reverse=True)
-        scored = []
-
-        for c in candidates[:30]:
-            score = 0
-            reasons = []
-
-            # Momentum score (0-30)
-            if c['change_pct'] > 5:
-                score += 30
-                reasons.append(f"Strong move +{c['change_pct']:.1f}%")
-            elif c['change_pct'] > 3:
-                score += 20
-                reasons.append(f"Solid move +{c['change_pct']:.1f}%")
-            else:
-                score += 10
-                reasons.append(f"Early move +{c['change_pct']:.1f}%")
-
-            # Volume confirmation (0-25)
-            if c['rvol'] > 3:
-                score += 25
-                reasons.append(f"Heavy volume {c['rvol']:.1f}x")
-            elif c['rvol'] > 2:
-                score += 20
-                reasons.append(f"Strong volume {c['rvol']:.1f}x")
-            elif c['rvol'] > 1.5:
-                score += 15
-                reasons.append(f"Above-avg volume {c['rvol']:.1f}x")
-            else:
-                score += 10
-
-            # Price level bonus (0-15)
-            if c['price'] > 100:
-                score += 15
-                reasons.append("Institutional-grade price")
-            elif c['price'] > 50:
-                score += 10
-            elif c['price'] > 30:
-                score += 5
-
-            # Catalyst check via Polygon news (0-30)
-            try:
-                news_url = f"https://api.polygon.io/v2/reference/news?ticker={c['symbol']}&limit=3&apiKey={polygon_key}"
-                news_resp = requests.get(news_url, timeout=10)
-                news = news_resp.json().get('results', [])
-                if news:
-                    latest = news[0].get('title', '').lower()
-                    if any(w in latest for w in ['earnings', 'beat', 'revenue', 'guidance', 'upgrade', 'raised']):
-                        score += 30
-                        reasons.append(f"Earnings catalyst: {news[0].get('title', '')[:50]}")
-                    elif any(w in latest for w in ['buy', 'outperform', 'overweight', 'target']):
-                        score += 25
-                        reasons.append(f"Analyst catalyst: {news[0].get('title', '')[:50]}")
-                    elif any(w in latest for w in ['deal', 'partnership', 'contract', 'launch']):
-                        score += 20
-                        reasons.append(f"Business catalyst: {news[0].get('title', '')[:50]}")
-                    else:
-                        score += 10
-                        reasons.append("Has news coverage")
-                time.sleep(0.15)
-            except:
-                pass
-
-            c['score'] = score
-            c['reasons'] = reasons
-            c['track'] = 'C'
-            scored.append(c)
-
-        scored.sort(key=lambda x: x['score'], reverse=True)
-        print(f"  Phase 2: Scored {len(scored)} candidates")
-        for s in scored[:5]:
-            print(f"    {s['symbol']}: {s['score']}pts - {', '.join(s['reasons'][:3])}")
-
-        return scored[:10]
-    except Exception as e:
-        print(f"  Track C error: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
-
-
 def scan_for_diamonds(dry_run=False):
     """
     Main scan - V3.3 with dual-track ranking, LLM catalysts, negative scoring.
@@ -1488,15 +1329,8 @@ def scan_for_diamonds(dry_run=False):
                 send_alert(message)
                 print("✅ Sent scanner results to Telegram")
             elif diamonds:
-                # Only call them "diamonds" if score >= 100
-                quality_diamonds = [d for d in diamonds if d['score'] >= 100]
-                if quality_diamonds:
-                    message = f"💎 Scanner V3.3 found {len(quality_diamonds)} diamonds\n"
-                    message += f"Top: *{quality_diamonds[0]['symbol']}* ({quality_diamonds[0]['score']}/305 net)"
-                else:
-                    # Low scores - don't call them diamonds
-                    message = f"⚠️ Scanner found {len(diamonds)} setups (all below 100)\n"
-                    message += f"Top: *{diamonds[0]['symbol']}* ({diamonds[0]['score']}/305 net) - WEAK"
+                message = f"💎 Scanner V3.3 found {len(diamonds)} diamonds\n"
+                message += f"Top: *{diamonds[0]['symbol']}* ({diamonds[0]['score']}/305 net)"
                 send_alert(message)
                 print("✅ Sent scanner results to Telegram")
         except Exception as e:
@@ -1505,18 +1339,6 @@ def scan_for_diamonds(dry_run=False):
         print("🔒 DRY RUN: Telegram alerts skipped")
 
     print()
-    # Merge Track C (large-cap momentum) results
-    try:
-        largecap = scan_largecap_momentum()
-        if largecap:
-            for lc in largecap:
-                lc['track'] = 'C'
-                lc['scanner_score'] = lc.get('score', 0)
-            diamonds.extend(largecap)
-            print(f"\n  Combined: {len(diamonds)} total candidates (A/B + C)")
-    except Exception as e:
-        print(f"  Track C merge failed: {e}")
-
     return diamonds
 
 

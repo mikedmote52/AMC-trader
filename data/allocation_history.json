@@ -1,0 +1,47 @@
+[
+  {
+    "action": "BUY",
+    "confidence": 8,
+    "allocations": [
+      {
+        "symbol": "IKT",
+        "amount": 300,
+        "thesis": "IKT presents a compelling micro-cap squeeze setup with explosive volume acceleration (50x+) and a pre-breakout momentum profile. The VIGL partial pattern (RVL 71.6x, +2.3%) suggests stealth accumulation, aligning with the reference benchmark's top performers. Despite the large float, the extreme volume indicates significant interest. The near penny territory is a flag, but the overall setup for a short-term pop is strong."
+      }
+    ],
+    "reasoning": "IKT is the clear high-conviction pick today, exhibiting key characteristics of the successful micro-cap squeeze plays from the reference benchmark, particularly the VIGL pattern and explosive volume. VNDA has too much chase risk. Concentrating the full $300 on IKT maximizes potential short-term gains.",
+    "trade_type": "squeeze",
+    "expected_hold_days": 5,
+    "risk_notes": "Low float is absent, which is a deviation from ideal squeeze plays. Near penny territory ($1.64 low) can be volatile. No clear catalyst identified, relying solely on technicals and volume. Monitor for reversal if volume dries up.",
+    "date": "2026-02-23",
+    "remaining_budget": 300,
+    "scanner_top_score": 125,
+    "llm_cost": 0.0004056,
+    "summary": "BUY: IKT $300"
+  },
+  {
+    "action": "BUY",
+    "confidence": 8,
+    "allocations": [
+      {
+        "symbol": "NCI",
+        "amount": 150,
+        "thesis": "NCI presents a compelling micro-cap squeeze opportunity with an ultra-tiny float and perfect pre-breakout momentum. The 5x volume spike indicates early accumulation, and despite the 'dead cat' flag, the low float combined with a low DTC (1.8) makes it a high-potential squeeze candidate, similar to the VIGL pattern."
+      },
+      {
+        "symbol": "VNDA",
+        "amount": 150,
+        "thesis": "VNDA shows strong pre-breakout momentum with a perfect score and a significant 10x+ volume spike, indicating strong interest. While the float is larger than ideal, the moderate DTC (3.9) suggests squeeze potential. The 'VIGL PARTIAL' pattern with 18.5x RVOL makes it a strong momentum play with potential for a short squeeze."
+      }
+    ],
+    "reasoning": "Both NCI and VNDA exhibit strong pre-breakout momentum and significant volume spikes, aligning with the VIGL pattern for early accumulation. NCI's ultra-tiny float offers explosive squeeze potential, while VNDA provides a more balanced squeeze/momentum play. Splitting the allocation mitigates risk while still targeting high-conviction setups.",
+    "trade_type": "mixed",
+    "expected_hold_days": 5,
+    "risk_notes": "NCI carries 'dead cat' risk and is near penny territory, requiring close monitoring. VNDA has a larger float, which could limit the magnitude of a squeeze. Both are pre-market, so initial price action will be crucial.",
+    "date": "2026-02-24",
+    "remaining_budget": 300,
+    "scanner_top_score": 135,
+    "llm_cost": 0.00062535,
+    "summary": "BUY: NCI $150, VNDA $150"
+  }
+]

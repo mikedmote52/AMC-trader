@@ -1,0 +1,166 @@
+{
+  "timestamp": "2026-02-24 09:32:19",
+  "date": "February 24, 2026",
+  "account_value": 101636.23,
+  "cash": 99500.95,
+  "buying_power": 402877.12,
+  "positions_count": 17,
+  "positions": [
+    {
+      "symbol": "CFLT",
+      "qty": 3.0,
+      "avg_entry": 30.45,
+      "current_price": 30.68,
+      "market_value": 92.04,
+      "pl_pct": 0.7553366174055829,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "IPCX",
+      "qty": 9.0,
+      "avg_entry": 10.15,
+      "current_price": 10.16,
+      "market_value": 91.44,
+      "pl_pct": 0.09852216748768472,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "ITOS",
+      "qty": 9.0,
+      "avg_entry": 10.151111,
+      "current_price": 10.15,
+      "market_value": 91.35,
+      "pl_pct": -0.010944614830829846,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "KNOW",
+      "qty": 11.0,
+      "avg_entry": 11.427273,
+      "current_price": 12.555,
+      "market_value": 138.105,
+      "pl_pct": 9.868732461366768,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "KOPN",
+      "qty": 43.0,
+      "avg_entry": 2.36,
+      "current_price": 2.19,
+      "market_value": 94.17,
+      "pl_pct": -7.203389830508473,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "KRE",
+      "qty": 1.0,
+      "avg_entry": 70.81,
+      "current_price": 68.49,
+      "market_value": 68.49,
+      "pl_pct": -3.276373393588476,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "KSS",
+      "qty": 7.0,
+      "avg_entry": 15.411429,
+      "current_price": 17.94,
+      "market_value": 125.58,
+      "pl_pct": 16.40711578400679,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "LGN",
+      "qty": 3.0,
+      "avg_entry": 49.49,
+      "current_price": 53.59,
+      "market_value": 160.77,
+      "pl_pct": 8.284501919579714,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "MMCA",
+      "qty": 4.0,
+      "avg_entry": 21.75,
+      "current_price": 22.21,
+      "market_value": 88.84,
+      "pl_pct": 2.1149425287356323,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "PAAA",
+      "qty": 3.0,
+      "avg_entry": 51.4,
+      "current_price": 51.47,
+      "market_value": 154.41,
+      "pl_pct": 0.13618677042801558,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "PAII.U",
+      "qty": 9.0,
+      "avg_entry": 10.22,
+      "current_price": 10.26,
+      "market_value": 92.34,
+      "pl_pct": 0.3913894324853229,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "RGTI",
+      "qty": 3.0,
+      "avg_entry": 18.03,
+      "current_price": 16.12,
+      "market_value": 48.36,
+      "pl_pct": -10.593455352190793,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "RIG",
+      "qty": 55.0,
+      "avg_entry": 5.35,
+      "current_price": 6.535,
+      "market_value": 359.425,
+      "pl_pct": 22.149532710280372,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "RIVN",
+      "qty": 13.0,
+      "avg_entry": 14.4,
+      "current_price": 15.23,
+      "market_value": 197.99,
+      "pl_pct": 5.763888888888888,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "SERV",
+      "qty": 10.0,
+      "avg_entry": 9.72,
+      "current_price": 9.43,
+      "market_value": 94.3,
+      "pl_pct": -2.983539094650206,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "SPHR",
+      "qty": 2.0,
+      "avg_entry": 95.48,
+      "current_price": 115.08,
+      "market_value": 230.16,
+      "pl_pct": 20.527859237536656,
+      "status": "HOLD"
+    },
+    {
+      "symbol": "UUUU",
+      "qty": 0.342987174,
+      "avg_entry": 24.17,
+      "current_price": 21.91,
+      "market_value": 7.514849,
+      "pl_pct": -9.350434258142341,
+      "status": "HOLD"
+    }
+  ],
+  "trades_executed": [],
+  "stop_loss_count": 0,
+  "profit_target_count": 0
+}

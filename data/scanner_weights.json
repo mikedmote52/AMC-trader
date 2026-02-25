@@ -1,0 +1,72 @@
+{
+  "float": {
+    "ultra_tiny": 60,
+    "ultra_low": 50,
+    "very_low": 35,
+    "low": 20,
+    "moderate": 10,
+    "large": 0
+  },
+  "momentum": {
+    "perfect": 40,
+    "early": 30,
+    "moving": 15,
+    "late": 5
+  },
+  "volume_acceleration": {
+    "strong": 30,
+    "moderate": 20,
+    "none": 0
+  },
+  "volume_explosive": {
+    "mega": 30,
+    "explosive": 25,
+    "major": 20,
+    "strong": 15,
+    "spike": 10,
+    "elevated": 5
+  },
+  "catalyst": {
+    "strong_bullish": 30,
+    "bullish": 20,
+    "neutral": 10,
+    "bearish": -10
+  },
+  "squeeze": {
+    "extreme": 30,
+    "high": 25,
+    "moderate": 20,
+    "low": 15,
+    "minimal": 5
+  },
+  "squeeze_jackpot_bonus": 15,
+  "gap": {
+    "huge": 20,
+    "big": 15,
+    "moderate": 10,
+    "dip": 5
+  },
+  "multiday": {
+    "ideal": 20,
+    "building": 10
+  },
+  "vwap": {
+    "above_with_volume": 20,
+    "above": 10
+  },
+  "sector_hot": 15,
+  "breakout": 25,
+  "vigl": {
+    "perfect": 15,
+    "near": 10,
+    "partial": 5
+  },
+  "market_cap": {
+    "ideal": 15,
+    "micro": 10,
+    "nano": 5
+  },
+  "version": "3.3.0",
+  "last_updated": "2026-02-24",
+  "update_history": []
+}

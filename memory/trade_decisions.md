@@ -1,5 +1,65 @@
 # Trade Decision Tracker
 
+## Decision #5 - February 24, 2026 (Morning Trades - 9:30 AM) ✅ SUCCESS
+
+**Status: COMPLETED - No Actions Required**
+
+**Execution Summary:**
+- **Time:** 09:32 AM PT
+- **Account Value:** $101,636.23
+- **Cash:** $99,500.95
+- **Buying Power:** $402,877.12
+- **Positions Analyzed:** 17 stocks
+- **Trades Executed:** 0
+- **API Status:** ✅ Connected
+
+**Trading Rules Applied:**
+- ✅ Stop-loss check (-15%): No positions triggered
+- ✅ Profit target check (+30%): No positions triggered
+- ✅ All positions within acceptable risk parameters
+
+**Portfolio Status:**
+| Symbol | Qty | P/L % | Status |
+|--------|-----|-------|--------|
+| **RIG** | 55 | **+22.15%** | 🎯 **LEADING** - 7.85% from +30% target |
+| **SPHR** | 2 | **+20.53%** | 📈 Building toward target |
+| **KSS** | 7 | **+16.41%** | 📈 Building toward target |
+| **KNOW** | 11 | +9.87% | 📈 Building |
+| **LGN** | 3 | +8.28% | 📈 Building |
+| **RIVN** | 13 | +5.76% | 📈 Green |
+| **MMCA** | 4 | +2.11% | 📈 Green |
+| **CFLT** | 3 | +0.76% | 📈 Green |
+| **PAII.U** | 9 | +0.39% | 📈 Green |
+| **PAAA** | 3 | +0.14% | 📈 Green |
+| **IPCX** | 9 | +0.10% | ➖ Flat |
+| **ITOS** | 9 | -0.01% | ➖ Flat |
+| **SERV** | 10 | -2.98% | ➖ Watch |
+| **KRE** | 1 | -3.28% | ➖ Watch |
+| **KOPN** | 43 | -7.20% | ⚠️ Monitor |
+| **RGTI** | 3 | -10.59% | ⚠️ Closest to -15% stop (4.41% buffer) |
+| **UUUU** | 0.34 | -9.35% | ⚠️ Fractional position, improved from -13% |
+
+**Notable Changes Since Feb 20:**
+| Symbol | Feb 20 | Feb 24 | Change |
+|--------|--------|--------|--------|
+| **RIG** | +18.69% | +22.15% | **+3.46%** 🚀 Climbing toward target |
+| **SPHR** | +19.79% | +20.53% | **+0.74%** 📈 Steady |
+| **KSS** | +17.54% | +16.41% | **-1.13%** ➖ Slight pullback |
+| **RGTI** | -12.92% | -10.59% | **+2.33%** ✅ Improving |
+| **UUUU** | -14.34% | -9.35% | **+4.99%** ✅ Significant recovery |
+
+**No Trades Triggered:**
+Portfolio is healthy. All positions are within the -15% stop-loss and +30% profit-taking thresholds. System will continue monitoring.
+
+**Key Observations:**
+- 🎯 **RIG now leading** at +22.15% - approaching +30% profit target (7.85% away)
+- 🚀 RIG gained +3.46% since Friday - strongest performer
+- ✅ **Risk positions improving:** RGTI and UUUU both recovering from near-stop territory
+- ✅ UUUU recovered +4.99% - now much safer from -15% stop
+- 📊 Overall portfolio stable with healthy mix of gainers
+
+---
+
 ## Decision #4 - February 20, 2026 (Morning Trades - 9:30 AM) ✅ SUCCESS
 
 **Status: COMPLETED - No Actions Required**
@@ -50,6 +110,7 @@ Portfolio is healthy. All positions are within the -15% stop-loss and +30% profi
 - **Time:** 09:31 AM PT
 - **Account Value:** $101,608.53
 - **Cash:** $99,500.95
+- **Buying Power:** $402,902.37
 - **Positions Analyzed:** 17 stocks
 - **Trades Executed:** 0
 - **API Status:** ✅ Connected
@@ -60,7 +121,7 @@ Portfolio is healthy. All positions are within the -15% stop-loss and +30% profi
 | KSS | 7 | +23.90% | 🎯 Closest to +30% target (6.1% away) |
 | SPHR | 2 | +20.42% | 📈 Building toward target |
 | RIG | 55 | +16.26% | 📈 Building toward target |
-| KNOW | 11 | +9.56% | 📈 Building toward target |
+| KNOW | 11 | +9.56% | 📈 Building |
 | RGTI | 3 | -9.59% | ⚠️ Closest to -15% stop (5.4% away) |
 | UUUU | 0 | -12.37% | ⚠️ Fractional position |
 | LGN | 3 | -6.04% | ⚠️ Watch |
