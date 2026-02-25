@@ -1,3 +1,33 @@
 venv*/
 *.pyc
 __pycache__/
+
+# Secrets - NEVER commit
+.openclaw/secrets/
+*.env
+config/.env
+*.pem
+*.key
+*.json.key
+
+# Logs
+logs/
+*.log
+
+# Data caches
+*.pkl
+*.cache
+data/snapshot_cache.pkl
+
+# Temporary
+*.tmp
+*.swp
+.DS_Store
+
+# Archive (deprecated files)
+# archive/  # Uncomment if you want to ignore archived files
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*

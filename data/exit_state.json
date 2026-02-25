@@ -29,7 +29,7 @@
   },
   "KOPN": {
     "trade_type": "default",
-    "peak_gain": -7.202999999999999,
+    "peak_gain": -6.78,
     "entry_date": "2026-02-23",
     "partial_taken": false,
     "current_gain": -7.627000000000001
@@ -50,7 +50,7 @@
   },
   "LGN": {
     "trade_type": "default",
-    "peak_gain": 11.295,
+    "peak_gain": 11.72,
     "entry_date": "2026-02-23",
     "partial_taken": false,
     "current_gain": 10.850999999999999
@@ -78,14 +78,14 @@
   },
   "RGTI": {
     "trade_type": "default",
-    "peak_gain": -8.464,
+    "peak_gain": -8.43,
     "entry_date": "2026-02-23",
     "partial_taken": false,
     "current_gain": -8.712
   },
   "RIG": {
     "trade_type": "default",
-    "peak_gain": 22.804,
+    "peak_gain": 23.738,
     "entry_date": "2026-02-23",
     "partial_taken": false,
     "current_gain": 22.804

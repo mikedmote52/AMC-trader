@@ -1,5 +1,5 @@
 # MEMORY.md - Long-Term Context
-## Updated: Feb 23, 2026 | Next Review: Daily
+## Updated: Feb 24, 2026 | Next Review: Daily
 
 ---
 
@@ -13,7 +13,7 @@
 
 ### **What I Do:**
 1. Execute $300 daily budget without pre-approval
-2. Find explosive stock setups via Scanner V3.2
+2. Find explosive stock setups via Scanner V3.3
 3. Manage portfolio with strict risk controls
 4. Learn from every trade outcome
 5. Improve strategy daily based on data
@@ -80,24 +80,28 @@
 
 ## 💰 CURRENT PORTFOLIO STATE
 
-### **Account Summary (Live):**
-- **Portfolio Value:** $101,610
-- **Cash Available:** $99,500 (97.8%)
-- **Buying Power:** $402,966
+### **Account Summary (Live - Feb 24, 2026):**
+- **Portfolio Value:** $101,638
+- **Cash Available:** $99,500 (97.9%)
+- **Buying Power:** $402,877
 - **Active Positions:** 17
-- **Daily Budget:** $300 (unused today)
+- **Daily Budget:** $300 (fresh for tomorrow)
 
 ### **Top Performers:**
-| Symbol | Gain | Value | Thesis |
-|--------|------|-------|--------|
-| RIG | +19.4% | ~$350 | Energy/oil services |
-| KSS | +17.7% | ~$128 | Retail recovery/acquisition |
-| SPHR | +16.6% | ~$221 | Entertainment/venues |
-| KNOW | +9.6% | ~$137 | AI tutoring |
-| LGN | +5.5% | ~$156 | Pharma |
+| Symbol | Gain | Value | Thesis | Exit Profile |
+|--------|------|-------|--------|--------------|
+| RIG | +22.4% | ~$360 | Energy/oil services | SQUEEZE (wide stops) |
+| SPHR | +18.6% | ~$226 | Entertainment/venues | MOMENTUM |
+| KSS | +15.1% | ~$124 | Retail recovery | MOMENTUM |
+| LGN | +10.9% | ~$165 | Pharma | DEFAULT |
+| KNOW | +10.1% | ~$138 | AI tutoring | DEFAULT |
 
 ### **Risk Positions (Near -15% Stop):**
-| Symbol | Loss | Buffer | Action |
+| Symbol | Loss | Buffer | Action | Exit Profile |
+|--------|------|--------|--------|--------------|
+| RGTI | -8.8% | 6.2% | Monitor closely | DEFAULT |
+| KOPN | -8.5% | 6.5% | Watch | DEFAULT |
+| UUUU | -6.0% | 9.0% | Improving | DEFAULT |
 |--------|------|--------|--------|
 | UUUU | -13.3% | 1.7% | Monitor closely |
 | RGTI | -11.0% | 4.0% | Improving |
