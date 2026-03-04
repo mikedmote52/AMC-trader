@@ -12,6 +12,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from scanner_performance_tracker import link_trade_to_scan
+from pytz import timezone
 
 WORKSPACE = Path('/Users/mikeclawd/.openclaw/workspace')
 SECRETS = Path('/Users/mikeclawd/.openclaw/secrets/alpaca.json')

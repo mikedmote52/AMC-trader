@@ -1,0 +1,26 @@
+{
+  "tracking": [
+    {
+      "symbol": "ENSC",
+      "exit_date": "2026-03-02",
+      "exit_time": "07:32 AM PT",
+      "exit_price": "$0.47 (est -17.1% from $0.57)",
+      "exit_reason": "Stop-loss -15% triggered",
+      "holding_period": "1 hour",
+      "loss_amount": -251,
+      "loss_percent": -16.4,
+      "thesis_at_entry": "Pre-breakout, 3.6M float, 184x volume, score 185",
+      "pattern_flags": ["dead_cat_bounce", "ultra_nano_cap"],
+      "tracking": {
+        "check_times": ["10:00 AM", "12:00 PM", "Market Close", "Tomorrow Open"],
+        "key_questions": [
+          "Did it bounce back above $0.57? (stop too tight?)",
+          "Did it crash further below $0.47? (stop saved capital?)",
+          "Did volume sustain or drop off?",
+          "Was dead cat pattern the right call?"
+        ]
+      },
+      "learning_status": "ACTIVE - monitoring post-exit performance"
+    }
+  ]
+}

@@ -1,96 +1,84 @@
 {
-  "timestamp": "2026-02-23 09:32:22 PT",
-  "portfolio_value": 101603.33,
-  "cash": 99500.95,
-  "buying_power": 402966.89,
-  "position_count": 17,
-  "stop_violations": 1,
+  "timestamp": "2026-02-25 12:03:55 PT",
+  "portfolio_value": 101658.58,
+  "cash": 99621.63,
+  "buying_power": 402942.51,
+  "position_count": 16,
+  "stop_violations": 0,
   "profit_targets": 0,
-  "executed_trades": [
-    {
-      "timestamp": "2026-02-23 09:32:22 PT",
-      "type": "stop_loss",
-      "symbol": "UUUU",
-      "qty": 0,
-      "price": 20.1,
-      "pnl_pct": -16.839000000000002,
-      "pnl_dollar": -1.395958,
-      "status": "failed",
-      "error": "{\"code\":40010001,\"message\":\"qty must be \\u003e 0\"}"
-    }
-  ],
+  "executed_trades": [],
   "positions": [
-    {
-      "symbol": "RIG",
-      "qty": 55.0,
-      "avg_entry": 5.35,
-      "current": 6.46,
-      "market_value": 355.3,
-      "unrealized_pl": 61.05,
-      "unrealized_plpc": 20.748
-    },
     {
       "symbol": "SPHR",
       "qty": 2.0,
       "avg_entry": 95.48,
-      "current": 111.815,
-      "market_value": 223.63,
-      "unrealized_pl": 32.67,
-      "unrealized_plpc": 17.108
+      "current": 115.21,
+      "market_value": 230.42,
+      "unrealized_pl": 39.46,
+      "unrealized_plpc": 20.663999999999998
     },
     {
-      "symbol": "KSS",
-      "qty": 7.0,
-      "avg_entry": 15.411429,
-      "current": 17.3899,
-      "market_value": 121.7293,
-      "unrealized_pl": 13.849297,
-      "unrealized_plpc": 12.838
-    },
-    {
-      "symbol": "KNOW",
-      "qty": 11.0,
-      "avg_entry": 11.427273,
-      "current": 12.5214,
-      "market_value": 137.7354,
-      "unrealized_pl": 12.035397,
-      "unrealized_plpc": 9.575
+      "symbol": "RIG",
+      "qty": 55.0,
+      "avg_entry": 5.35,
+      "current": 6.435,
+      "market_value": 353.925,
+      "unrealized_pl": 59.675,
+      "unrealized_plpc": 20.28
     },
     {
       "symbol": "LGN",
       "qty": 3.0,
       "avg_entry": 49.49,
-      "current": 52.335,
-      "market_value": 157.005,
-      "unrealized_pl": 8.535,
-      "unrealized_plpc": 5.749
+      "current": 56.16,
+      "market_value": 168.48,
+      "unrealized_pl": 20.01,
+      "unrealized_plpc": 13.477
+    },
+    {
+      "symbol": "KNOW",
+      "qty": 11.0,
+      "avg_entry": 11.427273,
+      "current": 12.5785,
+      "market_value": 138.3635,
+      "unrealized_pl": 12.663497,
+      "unrealized_plpc": 10.074
+    },
+    {
+      "symbol": "SERV",
+      "qty": 10.0,
+      "avg_entry": 9.72,
+      "current": 10.435,
+      "market_value": 104.35,
+      "unrealized_pl": 7.15,
+      "unrealized_plpc": 7.356
     },
     {
       "symbol": "RIVN",
       "qty": 13.0,
       "avg_entry": 14.4,
-      "current": 14.785,
-      "market_value": 192.205,
-      "unrealized_pl": 5.005,
-      "unrealized_plpc": 2.674
+      "current": 15.295,
+      "market_value": 198.835,
+      "unrealized_pl": 11.635,
+      "unrealized_plpc": 6.215
     },
     {
       "symbol": "MMCA",
       "qty": 4.0,
       "avg_entry": 21.75,
-      "current": 22.2,
-      "market_value": 88.8,
-      "unrealized_pl": 1.8,
-      "unrealized_plpc": 2.069
+      "current": 22.2212,
+      "market_value": 88.8848,
+      "unrealized_pl": 1.8848,
+      "unrealized_plpc": 2.166
     },
     {
       "symbol": "CFLT",
       "qty": 3.0,
       "avg_entry": 30.45,
-      "current": 30.72,
-      "market_value": 92.16,
-      "unrealized_pl": 0.81,
-      "unrealized_plpc": 0.8869999999999999
+      "current": 30.6484,
+      "market_value": 91.9452,
+      "unrealized_pl": 0.5952,
+      "unrealized_plpc": 0.652
     },
     {
       "symbol": "PAII.U",
@@ -102,22 +90,22 @@
       "unrealized_plpc": 0.391
     },
     {
-      "symbol": "PAAA",
-      "qty": 3.0,
-      "avg_entry": 51.4,
-      "current": 51.4798,
-      "market_value": 154.4394,
-      "unrealized_pl": 0.2394,
-      "unrealized_plpc": 0.155
-    },
-    {
       "symbol": "IPCX",
       "qty": 9.0,
       "avg_entry": 10.15,
-      "current": 10.16,
-      "market_value": 91.44,
-      "unrealized_pl": 0.09,
-      "unrealized_plpc": 0.099
+      "current": 10.17,
+      "market_value": 91.53,
+      "unrealized_pl": 0.18,
+      "unrealized_plpc": 0.197
+    },
+    {
+      "symbol": "PAAA",
+      "qty": 3.0,
+      "avg_entry": 51.4,
+      "current": 51.4769,
+      "market_value": 154.4307,
+      "unrealized_pl": 0.2307,
+      "unrealized_plpc": 0.15
     },
     {
       "symbol": "ITOS",
@@ -129,49 +117,40 @@
       "unrealized_plpc": -0.011000000000000001
     },
     {
-      "symbol": "KRE",
-      "qty": 1.0,
-      "avg_entry": 70.81,
-      "current": 68.625,
-      "market_value": 68.625,
-      "unrealized_pl": -2.185,
-      "unrealized_plpc": -3.086
-    },
-    {
-      "symbol": "SERV",
-      "qty": 10.0,
-      "avg_entry": 9.72,
-      "current": 8.9893,
-      "market_value": 89.893,
-      "unrealized_pl": -7.307,
-      "unrealized_plpc": -7.517
-    },
-    {
       "symbol": "KOPN",
       "qty": 43.0,
       "avg_entry": 2.36,
-      "current": 2.135,
-      "market_value": 91.805,
-      "unrealized_pl": -9.675,
-      "unrealized_plpc": -9.533999999999999
+      "current": 2.355,
+      "market_value": 101.265,
+      "unrealized_pl": -0.215,
+      "unrealized_plpc": -0.212
+    },
+    {
+      "symbol": "KRE",
+      "qty": 1.0,
+      "avg_entry": 70.81,
+      "current": 69.88,
+      "market_value": 69.88,
+      "unrealized_pl": -0.93,
+      "unrealized_plpc": -1.313
     },
     {
       "symbol": "RGTI",
       "qty": 3.0,
       "avg_entry": 18.03,
-      "current": 15.675,
-      "market_value": 47.025,
-      "unrealized_pl": -7.065,
-      "unrealized_plpc": -13.062000000000001
+      "current": 17.655,
+      "market_value": 52.965,
+      "unrealized_pl": -1.125,
+      "unrealized_plpc": -2.08
     },
     {
       "symbol": "UUUU",
       "qty": 0.342987174,
       "avg_entry": 24.17,
-      "current": 20.1,
-      "market_value": 6.894042,
-      "unrealized_pl": -1.395958,
-      "unrealized_plpc": -16.839000000000002
+      "current": 23.245,
+      "market_value": 7.972737,
+      "unrealized_pl": -0.317263,
+      "unrealized_plpc": -3.827
     }
   ]
 }

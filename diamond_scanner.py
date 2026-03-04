@@ -342,18 +342,16 @@ def detect_red_flags(symbol, ticker_details, bars, price, volume):
     # 3. Price below $1 recently (reverse split / delisting risk)
     if bars:
         recent_lows = [bar.low for bar in bars if bar.low and bar.low > 0]
-        if recent_lows and min(recent_lows) < 1.0:
-            penalty -= 20
-            flags.append(f"🚩 Sub-$1 recently: low was ${min(recent_lows):.2f}")
-        elif recent_lows and min(recent_lows) < 2.0:
-            penalty -= 10
-            flags.append(f"⚠️  Near penny territory: low was ${min(recent_lows):.2f}")
+        # Note: Sub-$1 stocks NOT penalized - can still be explosive squeeze candidates
 
     # 4. Extreme price drop followed by bounce (dead cat bounce risk)
+    # Uses DYNAMIC_WEIGHTS for penalties
+    weights = DYNAMIC_WEIGHTS or {}
+    dead_cat_weights = weights.get('dead_cat_pattern', {'severe': -20, 'moderate': -10, 'none': 0})
+    
     if bars and len(bars) >= 5:
         prices = [bar.close for bar in bars]
         if len(prices) >= 5:
-            # Check if stock dropped 30%+ in last 5 days then bounced
             max_price_5d = max(prices)
             min_price_5d = min(prices)
             if max_price_5d > 0:
@@ -361,16 +359,14 @@ def detect_red_flags(symbol, ticker_details, bars, price, volume):
                 current_bounce = (price - min_price_5d) / min_price_5d * 100 if min_price_5d > 0 else 0
 
                 if drop_pct > 40 and current_bounce > 10:
-                    penalty -= 20
+                    penalty += dead_cat_weights.get('severe', -20)
                     flags.append(f"🚩 DEAD CAT: -{drop_pct:.0f}% drop then +{current_bounce:.0f}% bounce")
                 elif drop_pct > 30 and current_bounce > 10:
-                    penalty -= 10
+                    penalty += dead_cat_weights.get('moderate', -10)
                     flags.append(f"⚠️  Bounce after -{drop_pct:.0f}% drop")
 
-    # 5. Extremely low price + micro volume = illiquid trash
-    if price < 1.0 and volume < 2_000_000:
-        penalty -= 20
-        flags.append(f"🚩 Illiquid penny: ${price:.2f} with {volume/1e6:.1f}M vol")
+    # Note: Price-based penalties removed - sub-$1 stocks can be explosive
+    # Volume requirements already enforced in candidate filtering
 
     return penalty, flags
 
@@ -381,15 +377,18 @@ def detect_red_flags(symbol, ticker_details, bars, price, volume):
 def calculate_chase_risk(gap_pct, rvol, change_pct, price, prev_close):
     """
     Detect when multiple signals suggest you'd be chasing a move that already happened.
-    Returns: (penalty, description)
-
-    The insight: gap-up + explosive volume + price already moved = the move is DONE.
-    Entering now means buying what someone else is selling.
+    Uses DYNAMIC_WEIGHTS from scanner_weights.json for penalties.
     """
+    weights = DYNAMIC_WEIGHTS or {}
+    chase_weights = weights.get('chase_risk', {
+        'extreme_moved': -35,
+        'high_moved': -25,
+        'moderate_moved': -15,
+        'early_mover': 0
+    })
+    
     penalty = 0
     reasons = []
-
-    # Count chase signals
     chase_signals = 0
 
     if gap_pct >= 10:
@@ -404,20 +403,22 @@ def calculate_chase_risk(gap_pct, rvol, change_pct, price, prev_close):
         chase_signals += 1
         reasons.append(f"up {change_pct:.0f}%")
 
-    # Price already extended far from previous close
     if prev_close > 0 and price > prev_close * 1.15:
         chase_signals += 1
         reasons.append("extended 15%+")
 
-    # Apply penalty based on number of co-occurring chase signals
+    # Apply dynamic penalties
     if chase_signals >= 3:
-        penalty = -35
+        penalty = chase_weights.get('extreme_moved', -35)
         desc = f"🚩 HIGH CHASE RISK ({', '.join(reasons)})"
     elif chase_signals == 2:
-        penalty = -15
+        penalty = chase_weights.get('high_moved', -25)
         desc = f"⚠️  Chase risk ({', '.join(reasons)})"
+    elif chase_signals == 1:
+        penalty = chase_weights.get('moderate_moved', -15)
+        desc = f"⚠️  Mild chase risk ({', '.join(reasons)})"
     else:
-        penalty = 0
+        penalty = chase_weights.get('early_mover', 0)
         desc = ""
 
     return penalty, desc
@@ -1043,6 +1044,35 @@ def full_analysis(symbol, price, volume, prev_close, sector_data, gap_pct=0,
             details['red_flags'].append(chase_desc)
         else:
             details['chase_risk'] = "Low"
+
+        # Entry timing bonus/penalty (-15 to +10 pts)
+        weights = DYNAMIC_WEIGHTS or {}
+        timing_weights = weights.get('entry_timing', {
+            'pre_market': 10,
+            'market_open': 5,
+            'midday': 0,
+            'afternoon': -5,
+            'post_market': -15
+        })
+        
+        profile_name = scan_profile.get('name', 'UNKNOWN')
+        timing_bonus = 0
+        if profile_name == 'PRE-MARKET':
+            timing_bonus = timing_weights.get('pre_market', 10)
+        elif profile_name == 'MARKET OPEN':
+            timing_bonus = timing_weights.get('market_open', 5)
+        elif profile_name == 'MORNING SESSION':
+            timing_bonus = timing_weights.get('midday', 0)
+        elif profile_name == 'MIDDAY':
+            timing_bonus = timing_weights.get('afternoon', -5)
+        elif profile_name == 'AFTER HOURS':
+            timing_bonus = timing_weights.get('post_market', -15)
+        
+        if timing_bonus != 0:
+            score += timing_bonus
+            details['entry_timing'] = f"{profile_name}: {'+' if timing_bonus > 0 else ''}{timing_bonus} pts"
+        else:
+            details['entry_timing'] = profile_name
 
         # Apply penalties
         net_score = score + penalties

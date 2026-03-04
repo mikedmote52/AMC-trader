@@ -57,5 +57,47 @@
     "scanner_top_score": 89,
     "llm_cost": 0.00029549999999999997,
     "summary": "The only stock presented, LRMR, has a low net score of 89 and significant red fl"
+  },
+  {
+    "action": "PASS",
+    "confidence": 3,
+    "allocations": [],
+    "reasoning": "LRMR, the only stock presented, has a low net score of 89 and significant red flags including high chase risk, late momentum, and a large float. It does not fit the high-conviction micro-cap squeeze or strong momentum criteria for a concentrated bet, nor does it offer a compelling reason to split funds. The reference benchmark's success was built on high-conviction plays, and LRMR does not meet that standard.",
+    "trade_type": "N/A",
+    "expected_hold_days": 0,
+    "risk_notes": "N/A",
+    "date": "2026-02-25",
+    "remaining_budget": 300,
+    "scanner_top_score": 89,
+    "llm_cost": 0.0003021,
+    "summary": "LRMR, the only stock presented, has a low net score of 89 and significant red fl"
+  },
+  {
+    "action": "PASS",
+    "confidence": 7,
+    "allocations": [],
+    "reasoning": "The only stock presented, LRMR, has a low net score of 135, which is below our 150 threshold for a 'diamond' pick. While it shows some promising volume characteristics and a partial VIGL pattern, the large float and low squeeze potential (1.0 DTC) are significant red flags that prevent it from being a high-conviction play for a micro-cap squeeze strategy. Given the lack of other strong candidates, passing is the most prudent decision to preserve capital.",
+    "trade_type": "N/A",
+    "expected_hold_days": 0,
+    "risk_notes": "N/A",
+    "date": "2026-02-26",
+    "remaining_budget": 300,
+    "scanner_top_score": 135,
+    "llm_cost": 0.00030585,
+    "summary": "The only stock presented, LRMR, has a low net score of 135, which is below our 1"
+  },
+  {
+    "action": "PASS",
+    "confidence": 7,
+    "allocations": [],
+    "reasoning": "Both ENSC and EDSA present significant red flags, including 'DEAD CAT' bounces and 'HIGH CHASE RISK' after substantial recent gains. Neither stock meets the 150 net score threshold, and their ultra-nano market caps and late momentum suggest high risk for limited short-term upside given our mandate for maximum short-term gains with managed downside risk. The VIGL pattern is also absent.",
+    "trade_type": "N/A",
+    "expected_hold_days": 0,
+    "risk_notes": "Avoiding high chase risk and dead cat bounces in ultra-nano caps. Waiting for a cleaner setup with a higher net score and fewer red flags.",
+    "date": "2026-02-27",
+    "remaining_budget": 300.0,
+    "scanner_top_score": 144,
+    "llm_cost": 0.0003648,
+    "summary": "Both ENSC and EDSA present significant red flags, including 'DEAD CAT' bounces a"
   }
 ]

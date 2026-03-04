@@ -66,7 +66,36 @@
     "micro": 10,
     "nano": 5
   },
-  "version": "3.3.0",
-  "last_updated": "2026-02-24",
-  "update_history": []
+  "chase_risk": {
+    "extreme_moved": -35,
+    "high_moved": -25,
+    "moderate_moved": -15,
+    "early_mover": 0
+  },
+  "dead_cat_pattern": {
+    "severe": -20,
+    "moderate": -10,
+    "none": 0
+  },
+  "entry_timing": {
+    "pre_market": 10,
+    "market_open": 5,
+    "midday": 0,
+    "afternoon": -5,
+    "post_market": -15
+  },
+  "version": "3.3.1",
+  "last_updated": "2026-03-03",
+  "update_history": [
+    {
+      "date": "2026-02-27",
+      "version": "3.3.0 \u2192 3.3.1",
+      "changes": [
+        "Added chase_risk penalty based on ENSC lesson (post-breakout = bad)",
+        "Added dead_cat_pattern penalty (weak foundation)",
+        "Added entry_timing factor (pre-market/early = better)"
+      ],
+      "trigger": "ENSC cancellation - learned post-breakout chasing fails"
+    }
+  ]
 }

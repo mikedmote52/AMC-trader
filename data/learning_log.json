@@ -1,0 +1,30 @@
+{
+  "manual_lessons": [
+    {
+      "date": "2026-02-27",
+      "symbol": "ENSC",
+      "decision": "CANCELLED",
+      "lesson_type": "PROCESS_IMPROVEMENT",
+      "trigger": "Post-market order + chase buy",
+      "factors": {
+        "score": 144,
+        "time_of_day": "14:00 PT (after market close)",
+        "already_moved": "+57% today",
+        "pattern": "Dead cat bounce",
+        "float": "3.6M (good)",
+        "volume": "271x (good but post-breakout)"
+      },
+      "corrective_action": [
+        "Add market hours gate (6:30 AM - 1:00 PM PT only)",
+        "Add 'already moved' filter (>15% daily move = skip)",
+        "Change time-in-force to IOC (no overnight holds)",
+        "Focus on pre-breakout, not post-breakout"
+      ],
+      "key_insight": "Pre-breakout entries outperform post-breakout chases. Time-of-day discipline prevents bad fills.",
+      "outcome": "Order cancelled before execution - lesson learned without loss"
+    }
+  ],
+  "factor_performance": {},
+  "weight_adjustment_history": [],
+  "last_updated": "2026-02-27"
+}
