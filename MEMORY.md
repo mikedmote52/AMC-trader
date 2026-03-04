@@ -1,5 +1,5 @@
 # MEMORY.md - Long-Term Context
-## Updated: Feb 24, 2026 | Next Review: Daily
+## Updated: Mar 04, 2026 | Next Review: Daily
 
 ---
 
@@ -80,36 +80,34 @@
 
 ## 💰 CURRENT PORTFOLIO STATE
 
-### **Account Summary (Live - Feb 24, 2026):**
-- **Portfolio Value:** $101,638
-- **Cash Available:** $99,500 (97.9%)
-- **Buying Power:** $402,877
+### **Account Summary (Live - Mar 04, 2026):**
+- **Portfolio Value:** $101,542
+- **Cash Available:** $99,217 (97.7%)
+- **Buying Power:** $400,356
 - **Active Positions:** 17
-- **Daily Budget:** $300 (fresh for tomorrow)
+- **Daily Budget:** $300 (already used today - USEG buy)
 
 ### **Top Performers:**
 | Symbol | Gain | Value | Thesis | Exit Profile |
 |--------|------|-------|--------|--------------|
-| RIG | +22.4% | ~$360 | Energy/oil services | SQUEEZE (wide stops) |
-| SPHR | +18.6% | ~$226 | Entertainment/venues | MOMENTUM |
-| KSS | +15.1% | ~$124 | Retail recovery | MOMENTUM |
-| LGN | +10.9% | ~$165 | Pharma | DEFAULT |
-| KNOW | +10.1% | ~$138 | AI tutoring | DEFAULT |
+| SPHR | +21.7% | ~$232 | Entertainment/venues | MOMENTUM |
+| RIG | +19.5% | ~$351 | Energy/oil services | SQUEEZE (wide stops) |
+| LGN | +13.2% | ~$168 | Pharma | DEFAULT |
+| KNOW | +9.4% | ~$138 | AI tutoring | DEFAULT |
+| RIVN | +3.5% | ~$194 | EV/Auto | DEFAULT |
 
 ### **Risk Positions (Near -15% Stop):**
 | Symbol | Loss | Buffer | Action | Exit Profile |
 |--------|------|--------|--------|--------------|
-| RGTI | -8.8% | 6.2% | Monitor closely | DEFAULT |
-| KOPN | -8.5% | 6.5% | Watch | DEFAULT |
-| UUUU | -6.0% | 9.0% | Improving | DEFAULT |
-|--------|------|--------|--------|
-| UUUU | -13.3% | 1.7% | Monitor closely |
-| RGTI | -11.0% | 4.0% | Improving |
+| UUUU | -8.3% | 6.7% | Improving | DEFAULT |
+| KRE | -4.3% | 10.7% | Monitor | DEFAULT |
+| RGTI | -3.0% | 12.0% | Improving | DEFAULT |
+| KOPN | -1.7% | 13.3% | Stable | DEFAULT |
 
 ### **Watch for Profit Targets (+30%):**
-- RIG: +19.4% (11% to go)
-- KSS: +17.7% (12% to go)
-- SPHR: +16.6% (13% to go)
+- SPHR: +21.7% (HIT +20% SCALE-OUT - review position!)
+- RIG: +19.5% (0.5% to +20% scale-out)
+- LGN: +13.2% (16.8% to +30%)
 
 ---
 
