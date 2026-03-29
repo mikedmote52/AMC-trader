@@ -1,14 +1,14 @@
 {
   "CFLT": {
     "trade_type": "momentum",
-    "peak_gain": 1.166,
+    "peak_gain": 1.773,
     "entry_date": "2026-02-23",
     "partial_taken": false,
     "current_gain": 0.5910000000000001
   },
   "IPCX": {
     "trade_type": "default",
-    "peak_gain": 0.49300000000000005,
+    "peak_gain": 0.5910000000000001,
     "entry_date": "2026-02-23",
     "partial_taken": false,
     "current_gain": 0.099
@@ -64,21 +64,14 @@
   },
   "PAII.U": {
     "trade_type": "default",
-    "peak_gain": 0.391,
+    "peak_gain": 10.861,
     "entry_date": "2026-02-23",
     "partial_taken": false,
     "current_gain": 0.391
   },
-  "RGTI": {
-    "trade_type": "squeeze",
-    "peak_gain": 4.437,
-    "entry_date": "2026-02-23",
-    "partial_taken": false,
-    "current_gain": -8.712
-  },
   "RIG": {
     "trade_type": "squeeze",
-    "peak_gain": 27.29,
+    "peak_gain": 29.532999999999998,
     "entry_date": "2026-02-23",
     "partial_taken": false,
     "current_gain": 22.804
@@ -97,13 +90,6 @@
     "partial_taken": false,
     "current_gain": -0.514
   },
-  "SPHR": {
-    "trade_type": "momentum",
-    "peak_gain": 25.073,
-    "entry_date": "2026-02-23",
-    "partial_taken": false,
-    "current_gain": 18.569
-  },
   "UUUU": {
     "trade_type": "momentum",
     "peak_gain": -3.1649999999999996,
@@ -113,7 +99,7 @@
   },
   "USEG": {
     "trade_type": "default",
-    "peak_gain": 1.327,
+    "peak_gain": 16.814,
     "entry_date": "2026-03-04",
     "partial_taken": false
   }

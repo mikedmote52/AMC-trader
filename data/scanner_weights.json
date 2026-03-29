@@ -77,6 +77,12 @@
     "moderate": -10,
     "none": 0
   },
+  "coil_spring": {
+    "perfect": 100,
+    "strong": 80,
+    "moderate": 60,
+    "weak": 40
+  },
   "entry_timing": {
     "pre_market": 10,
     "market_open": 5,
@@ -85,7 +91,7 @@
     "post_market": -15
   },
   "version": "3.3.1",
-  "last_updated": "2026-03-03",
+  "last_updated": "2026-03-06",
   "update_history": [
     {
       "date": "2026-02-27",

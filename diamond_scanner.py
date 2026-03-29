@@ -32,6 +32,7 @@ import hashlib
 sys.path.insert(0, '/Users/mikeclawd/.openclaw/workspace/scripts')
 from scanner_performance_tracker import log_scanner_picks
 from telegram_alert import send_alert
+from coil_detector import detect_coil_setup, get_coil_entry_trigger
 
 # Import sector tracker
 sys.path.insert(0, '/Users/mikeclawd/.openclaw/workspace')
@@ -344,26 +345,48 @@ def detect_red_flags(symbol, ticker_details, bars, price, volume):
         recent_lows = [bar.low for bar in bars if bar.low and bar.low > 0]
         # Note: Sub-$1 stocks NOT penalized - can still be explosive squeeze candidates
 
-    # 4. Extreme price drop followed by bounce (dead cat bounce risk)
-    # Uses DYNAMIC_WEIGHTS for penalties
+    # 4. Extreme price drop followed by bounce (dead cat bounce risk vs coil spring opportunity)
+    # Uses DYNAMIC_WEIGHTS for penalties OR coil spring bonuses
     weights = DYNAMIC_WEIGHTS or {}
     dead_cat_weights = weights.get('dead_cat_pattern', {'severe': -20, 'moderate': -10, 'none': 0})
+    coil_weights = weights.get('coil_spring', {'perfect': 100, 'strong': 80, 'moderate': 60, 'weak': 40})
     
-    if bars and len(bars) >= 5:
-        prices = [bar.close for bar in bars]
-        if len(prices) >= 5:
-            max_price_5d = max(prices)
-            min_price_5d = min(prices)
-            if max_price_5d > 0:
-                drop_pct = (max_price_5d - min_price_5d) / max_price_5d * 100
-                current_bounce = (price - min_price_5d) / min_price_5d * 100 if min_price_5d > 0 else 0
+    if bars and len(bars) >= 10:
+        # Check for coil pattern (10-day lookback)
+        coil_score, coil_desc = detect_coil_setup(symbol, bars)
+        if coil_score > 0:
+            # COIL DETECTED - add bonus instead of penalty
+            if coil_score >= 80:
+                bonus = coil_weights.get('perfect', 100)
+                flags.append(f"🌀 COIL SPRING: {coil_desc[:50]}... (+{bonus} pts)")
+            elif coil_score >= 60:
+                bonus = coil_weights.get('strong', 80)
+                flags.append(f"🌀 Strong coil: {coil_desc[:50]}... (+{bonus} pts)")
+            elif coil_score >= 40:
+                bonus = coil_weights.get('moderate', 60)
+                flags.append(f"🌀 Moderate coil: {coil_desc[:40]}... (+{bonus} pts)")
+            else:
+                bonus = coil_weights.get('weak', 40)
+                flags.append(f"🌀 Weak coil: {coil_desc[:30]}... (+{bonus} pts)")
+            
+            penalty += bonus  # Actually add to score (penalty is negative, so positive = bonus)
+            
+        else:
+            # No coil - check for dead cat bounce (already bounced, not at bottom)
+            prices = [bar.close for bar in bars]
+            if len(prices) >= 5:
+                max_price_5d = max(prices)
+                min_price_5d = min(prices)
+                if max_price_5d > 0:
+                    drop_pct = (max_price_5d - min_price_5d) / max_price_5d * 100
+                    current_bounce = (price - min_price_5d) / min_price_5d * 100 if min_price_5d > 0 else 0
 
-                if drop_pct > 40 and current_bounce > 10:
-                    penalty += dead_cat_weights.get('severe', -20)
-                    flags.append(f"🚩 DEAD CAT: -{drop_pct:.0f}% drop then +{current_bounce:.0f}% bounce")
-                elif drop_pct > 30 and current_bounce > 10:
-                    penalty += dead_cat_weights.get('moderate', -10)
-                    flags.append(f"⚠️  Bounce after -{drop_pct:.0f}% drop")
+                    if drop_pct > 40 and current_bounce > 10:
+                        penalty += dead_cat_weights.get('severe', -20)
+                        flags.append(f"🚩 DEAD CAT: -{drop_pct:.0f}% drop then +{current_bounce:.0f}% bounce")
+                    elif drop_pct > 30 and current_bounce > 10:
+                        penalty += dead_cat_weights.get('moderate', -10)
+                        flags.append(f"⚠️  Bounce after -{drop_pct:.0f}% drop")
 
     # Note: Price-based penalties removed - sub-$1 stocks can be explosive
     # Volume requirements already enforced in candidate filtering

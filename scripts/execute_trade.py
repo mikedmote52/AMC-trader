@@ -50,13 +50,13 @@ def check_daily_limit():
     return total_spent
 
 def execute_order(symbol, qty, side, order_type='market', limit_price=None, stop_price=None):
-    """Execute order via Alpaca"""
+    """Execute order via Alpaca with IOC (immediate-or-cancel)"""
     order_data = {
         'symbol': symbol,
         'qty': qty,
         'side': side,
         'type': order_type,
-        'time_in_force': 'day'
+        'time_in_force': 'ioc'  # IMMEDIATE OR CANCEL - no overnight holds
     }
     
     if limit_price:
@@ -86,8 +86,52 @@ def log_trade(symbol, qty, side, price, thesis=None):
         if thesis:
             f.write(f"- Thesis: {thesis}\n")
 
+def is_market_open_for_trading():
+    """Check if US market is open for new trades (6:30 AM - 1:00 PM PT)"""
+    PT = timezone('America/Los_Angeles')
+    ET = timezone('America/New_York')
+    
+    now_pt = datetime.now(PT)
+    now_et = now_pt.astimezone(ET)
+    
+    hour_pt = now_pt.hour + now_pt.minute / 60.0
+    hour_et = now_et.hour + now_et.minute / 60.0
+    
+    # Trading window: 6:30 AM PT to 1:00 PM PT (9:30 AM - 4:00 PM ET)
+    # But we stop taking new trades at 1 PM PT to avoid afternoon fade
+    TRADING_START_PT = 6.5  # 6:30 AM PT
+    TRADING_END_PT = 13.0    # 1:00 PM PT (hard stop)
+    
+    # Check weekend
+    if now_et.weekday() >= 5:
+        return False, "Weekend - markets closed"
+    
+    # Check market hours
+    if hour_pt < TRADING_START_PT:
+        return False, f"Too early ({now_pt.strftime('%I:%M %p')} PT) - trading starts 6:30 AM PT"
+    
+    if hour_pt > TRADING_END_PT:
+        return False, f"Too late ({now_pt.strftime('%I:%M %p')} PT) - no new trades after 1:00 PM PT"
+    
+    # Check if market is actually open (9:30 AM - 4:00 PM ET)
+    if hour_et < 9.5 or hour_et >= 16.0:
+        return False, f"Markets closed ({now_et.strftime('%I:%M %p')} ET)"
+    
+    return True, f"Markets open ({now_pt.strftime('%I:%M %p')} PT / {now_et.strftime('%I:%M %p')} ET)"
+
+
 def buy_with_thesis(symbol, dollar_amount, thesis):
     """Buy stock with required thesis"""
+    
+    # CRITICAL: Check market hours FIRST
+    market_ok, market_msg = is_market_open_for_trading()
+    if not market_ok:
+        print(f"❌ MARKET HOURS VIOLATION: {market_msg}")
+        print(f"   Trade rejected to prevent overnight gap risk.")
+        return None
+    else:
+        print(f"✅ {market_msg}")
+    
     # Check daily limit
     spent_today = check_daily_limit()
     remaining = 300 - spent_today
