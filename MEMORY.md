@@ -204,9 +204,18 @@
 
 ## ✅ SYSTEM READY
 
-**Status:** FULLY OPERATIONAL  
-**Authorization:** GRANTED (Feb 23, 2026)  
-**Mode:** AUTONOMOUS TRADING  
-**Next Trade:** Tuesday 6:35 AM  
+**Status:** FULLY OPERATIONAL
+**Authorization:** GRANTED (Feb 23, 2026)
+**Mode:** AUTONOMOUS TRADING
+**Next Trade:** Tuesday 6:35 AM
 
 **I will maintain this context rigorously and transfer learnings appropriately.**
+---
+
+## Julia Vaganova / MoteOps Client Context (Added 2026-06-25)
+
+- Active client context: Julia Vaganova.
+- Julia is onboarding as a MoteOps client for a professional artistic portfolio, modeling portfolio, and creative showcase platform.
+- Core goal: help Julia showcase her modeling portfolio and creative identity to gain more exposure.
+- Initial working document: `clients/julia-vaganova/onboarding.md`.
+- Current session state is tracked in `state/current.md`.

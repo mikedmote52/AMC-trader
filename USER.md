@@ -2,15 +2,21 @@
 
 *Learn about the person you're helping. Update this as you go.*
 
-- **Name:** 
-- **What to call them:** 
-- **Pronouns:** *(optional)*
-- **Timezone:** 
-- **Notes:** 
+- **Name:** Julia Vaganova
+- **What to call them:** Julia
+- **Pronouns:** she/her
+- **Timezone:** Unknown
+- **Notes:** MoteOps client onboarding for a professional artistic portfolio, modeling presence, and creative showcase platform.
 
 ## Context
 
-*(What do they care about? What projects are they working on? What annoys them? What makes them laugh? Build this over time.)*
+Julia wants to build a polished professional artistic portfolio and modeling platform that helps her showcase her modeling work, creative identity, and artistic range to gain more exposure.
+
+Primary project themes:
+- Professional modeling portfolio presentation
+- Creative/artistic personal brand
+- Exposure and discoverability
+- A platform suitable for sharing with collaborators, agencies, photographers, stylists, casting contacts, and creative partners
 
 ---
 
